@@ -471,7 +471,7 @@ class ExplorationStrategy:
         # which is the case `search_room_saturation` cannot reach.
         novelty = self._room_novelty(world)
         if novelty:
-            order_before = [c.ref_id for c in sorted(cands, key=lambda c: -c.prior)]
+            top_before = max(cands, key=lambda c: c.prior).ref_id
             for c in cands:
                 node = world.scene_graph.containers.get(c.ref_id)
                 if node is None or not node.room_id:
@@ -482,8 +482,12 @@ class ExplorationStrategy:
                 c.prior *= w
                 self._novelty_applied += 1
                 self._novelty_min = min(self._novelty_min, w)
-            order_after = [c.ref_id for c in sorted(cands, key=lambda c: -c.prior)]
-            if order_before != order_after:
+            # Count only a change to the WINNER, not to the ordering. Measured on
+            # run NV_848: the full-ordering test fired in 14 of 30 episodes
+            # while only 7 changed the agent's behaviour at all -- a swap at
+            # rank 40 against rank 41 changes no decision, and counting it makes
+            # a half-inert arm look live. The counter has to name the decision.
+            if max(cands, key=lambda c: c.prior).ref_id != top_before:
                 self._novelty_reordered += 1
 
         room_bonus = float(self.cfg.search_same_room_bonus)
