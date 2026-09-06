@@ -1,0 +1,27 @@
+# @package _global_
+#
+# F1: stop retiring the real target for being hard to stand next to.
+#
+# Targets failure buckets C and D (7 of the 26 cross_anchor failures).
+#
+# `nav_greedy_failed_unreachable` is 0 for ALL 25 cross_anchor successes and a
+# median 4-10 for the failures. `candidate._reachable` asks the viewpoint
+# planner for a standable pose; when it cannot find one the track takes
+# `identity_rejections += 1`, and `candidates()` drops any track at
+# `max_identity_rejections` (2). Bucket C's median `unreachable_skip` is exactly
+# 2 -- the threshold.
+#
+# Cross_anchor puts objects on BEDS (00848: bed 12 of 18 destinations). A bed's
+# centre is off-navmesh, so two failed ring-viewpoint probes permanently retire
+# the true target -- even though the benchmark guarantees a navigable point
+# within 1.6 m of every authored pose, so a reachable viewpoint always exists.
+#
+# 5, not 0: the channel still retires a track the agent has walked to and
+# disproved, which `candidates()` documents is the one job presence cannot do
+# ("one episode committed to the same wrong track 251 times in 500 steps").
+# This only buys the target more attempts at finding a stance.
+defaults:
+  - ycb_dynamic_cross
+scene_graph:
+  presence:
+    max_identity_rejections: 5

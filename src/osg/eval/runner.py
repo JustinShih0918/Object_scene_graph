@@ -77,6 +77,11 @@ def run_eval(cfg) -> dict:
         scorer.reset()
 
         profiler = Profiler()
+        # The outgoing agent owns a worker thread for the room-prior query; a
+        # run is 100+ episodes and each builds a fresh NavAgent.
+        prev = locals().get("agent")
+        if prev is not None and getattr(prev, "exploration", None) is not None:
+            prev.exploration.shutdown()
         agent = NavAgent(
             cfg, detector, scorer, verifier, target,
             keyframe_dir=str(out_dir / "keyframes" / ep_tag) if cfg.eval.save_viz else None,
@@ -123,6 +128,11 @@ def run_eval(cfg) -> dict:
         json.dump(summary, f, indent=2)
     profiler_all.write_csv(str(out_dir / "timing.csv"))
     scorer.shutdown()
+    # `agent` is rebuilt per episode; the last one still owns the room-prior
+    # worker thread. Guarded because a run with zero episodes never binds it.
+    last_agent = locals().get("agent")
+    if last_agent is not None and getattr(last_agent, "exploration", None) is not None:
+        last_agent.exploration.shutdown()
     env.close()
     print(json.dumps(summary["metrics"], indent=2))
     return summary

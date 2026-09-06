@@ -1,0 +1,35 @@
+# @package _global_
+#
+# Condition X3: X2 with the room posterior floored at neutral.
+#
+# X2 replaced the positional x4 same-room bonus with the model's ranking, in
+# both directions. Measured on 00829, over the nine episodes the posterior
+# actually reached:
+#
+#     control (Y)  5/9        symmetric posterior (X2)  2/9
+#
+# Every loss ran to the 500-step cap, and one of them had the target in view 64
+# times against the control's 26 -- the agent kept being pulled out of the room
+# the object was in. The model named a room other than the agent's in seven of
+# those nine, so a CORRECT room went from x4 to x0.25: a 16x swing, on the scene
+# where the positional prior is the one that was already right.
+#
+# The same scene is where `search_room_saturation` was found to be load-bearing,
+# and `search_room_saturation_floor` answers it in words this borrows exactly:
+# a room that has disappointed becomes ordinary, not worse than one never
+# visited. A model's opinion about where an object is NOT deserves the same
+# restraint as the agent's own failure to find it there.
+#
+# So X3 keeps the promotion and drops the demotion. The room the model likes
+# still gets x4 -- the whole of the effect measured on 00848, where every
+# attributable flip went the right way, 4-0 -- while a room it dislikes falls
+# back to x1 instead of x0.25.
+#
+# Prediction, stated before the run: 00848 keeps most of its gain, 00829 returns
+# to the control. If instead 00848's gain disappears too, the effect there was
+# demotion rather than promotion, and this whole term is a wash.
+defaults:
+  - ycb_dynamic_room_block
+
+exploration:
+  room_posterior_floor: 1.0

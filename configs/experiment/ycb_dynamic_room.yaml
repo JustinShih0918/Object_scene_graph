@@ -1,0 +1,45 @@
+# @package _global_
+#
+# Condition X: Q plus an LLM room posterior, one flag apart.
+#
+# Q (`ycb_dynamic_cross`) drops the proximity anchor once the agent has been to
+# the last-known pose and found nothing. It is the only change that has ever
+# moved cross_anchor -- 0.458 -> 0.500, replicated at 0.542 -- and the reason is
+# that proximity is `exp(-d / 1.0)`, which at the cross_anchor median relocation
+# of 6.06 m scores the true surface 0.0023 against 0.487 at the in_anchor median
+# of 0.72 m. A 209x handicap on exactly the half that is failing.
+#
+# What Q does NOT do is put anything in its place. It removes a wrong prior and
+# leaves a vacuum, and what fills the vacuum by default is the other positional
+# term -- the flat x4 `search_same_room_bonus` for the room the agent happens to
+# be standing in, which in a cross_anchor episode is the room the object left.
+# That is the hypothesis this tests: Q creates the opening, and a semantic room
+# prior is what should fill it.
+#
+# Measured before the run, over the 90 episodes common to M2..W:
+#
+#     cross_anchor SR   0.44-0.53 across ELEVEN consecutive conditions
+#     in_anchor SR      0.733 -> 0.822 over the same conditions
+#     P(look)           0.71 cross vs 0.95 in
+#     P(success|look)   0.68 cross vs 0.85 in
+#     failures ending early                     0 of 40
+#     cross commits at the 0.5 m cost floor     47% (in_anchor: 20%)
+#
+# Every failure is the step budget running out, and half the cross_anchor
+# surface commits are to whatever is within half a metre. The agent is not lost
+# -- the static prior map gives it all 343 tracks of the house at step 0 -- it is
+# mis-ranking a set that already contains the answer.
+#
+# Expectation, stated before the run: in_anchor should not move. The multiplier
+# is geometric with the top room at x4, which is the same-room bonus exactly, so
+# an episode where the model agrees the agent is in the right room computes the
+# shipped posterior. Only a room the model actively deprioritises loses its
+# bonus -- and 00829, where the room bonus is load-bearing, is a scene where the
+# agent starts in the right room most of the time.
+#
+# Ceiling: P(look) is 0.73, so perfect room choice caps cross_anchor at ~0.68.
+defaults:
+  - ycb_dynamic_cross
+
+exploration:
+  room_posterior_llm: true

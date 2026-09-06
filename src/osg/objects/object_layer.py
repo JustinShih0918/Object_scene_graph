@@ -232,6 +232,8 @@ class ObjectLayer:
         min_bbox_px: float = 0.0,
         min_evidence: float = 0.0,
         min_presence: float = 0.0,
+        presence_bypass_score: float = 0.0,
+        presence_bypass_bbox_px: float = 0.0,
         max_identity_rejections: int = 0,
         target_bypasses_bbox: bool = False,
         rank_by_presence: bool = False,
@@ -287,8 +289,33 @@ class ObjectLayer:
             # approached, and it can only be approached by being proposed.
             if not target_bypasses_bbox and t.best_bbox_px < min_bbox_px:
                 continue
+            # Presence may veto a WEAK track, not a strong one.
+            #
+            # Measured on an X4 episode standing 0.67 m from the target: all
+            # three of its tin-can tracks were excluded -- two for presence
+            # (0.083 and 0.076) despite scores of 0.736 and 0.417 on boxes of
+            # 12,716 and 52,595 px, and the third for a score of 0.266 against
+            # the 0.30 gate. The agent could see the object and had no candidate
+            # to commit to.
+            #
+            # The blanket alternative was tried and is worse: dropping
+            # min_presence to 0.0 (condition ZZ) cost 9 episodes over 102 and
+            # took cross_anchor from 0.490 to 0.392, because it readmits exactly
+            # the stale and mislabelled tracks presence exists to filter. The
+            # difference here is that a big, confident, recent box is evidence
+            # presence cannot outvote: it is not a track the agent is guessing
+            # about.
+            #
+            # Both thresholds must be cleared, and 0.0/0 disables the bypass and
+            # reproduces the shipped gate exactly.
             if t.presence.p < min_presence:
-                continue
+                strong = (
+                    presence_bypass_score > 0.0
+                    and t.best_score >= presence_bypass_score
+                    and t.best_bbox_px >= presence_bypass_bbox_px
+                )
+                if not strong:
+                    continue
             if max_identity_rejections and t.identity_rejections >= max_identity_rejections:
                 continue
             if t.label.lower().replace(" ", "_") == target:

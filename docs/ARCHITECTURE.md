@@ -280,6 +280,190 @@ campaign. Mean of the two runs: in 0.708, cross 0.521, overall 0.615. It is also
 the only condition that has ever moved 00848, which reached 14/30 under Q2
 against 11/30 in K, L, M, M2, N, S and U.
 
+## What cross_anchor actually is: SR = P(get within 1.5 m)
+
+Six targeted arms (2026-09-04), chosen from a failure taxonomy of the Y
+control's 26 cross_anchor failures rather than from intuition, and run in
+parallel on the scene where each bucket actually lives.
+
+The taxonomy:
+
+| bucket | n | signature |
+|---|---|---|
+| A never in the frustum | 15 | 6 of 15 came within 3 m and never looked; 500 steps, 11 surfaces, 1 frontier |
+| B in frustum, detector never fired | 4 | 14 keyframes at 1.62 m, best bbox 0 px |
+| C detected, never closed within 1.5 m | 5 | 21 looks, stalls at 2.36 m, burns 3 attempts in 87-263 steps |
+| D closed but still failed | 2 | 1.11 m, 4105 px |
+
+| arm | change | mechanism engaged? | cross | verdict |
+|---|---|---|---|---|
+| F1 | `max_identity_rejections` 2 -> 5 | yes, up to 20 retries | 6/18 = Y | refuted |
+| F2 | `search_face_turns` 8 -> 12 | NO, 4.1 -> 4.5 turns | 3/15 = Y | **void** |
+| F3 | `max_steps` 500 -> 750 (diagnostic) | yes, +2136 steps | 3/15 = Y | refuted |
+| F4 | `approach_navigable_goal` | NO, identical to 2 d.p. | 6/18 = Y | **void** |
+| F5 | `search_scan_turns` 0 -> 12 (new knob) | yes, 0 -> 4.1 turns | 26/51 vs 25/51 | +1, noise |
+| F6 | `approach_false_arrival_m` 1.5 | yes, 34 refusals | 6/18 = Y | refuted |
+
+**The result that reframes everything.** Of the 51 cross_anchor episodes, 36 get
+the target into the frustum, 24 get within 1.5 m of it, and **21 of those 24
+succeed**. SR is 25/51 = 0.490 and P(within 1.5 m) is 24/51 = 0.470. Final
+distance-to-goal is bimodal with nothing in between -- successes finish at
+0.01-0.08 m, the three close-but-failed at 4.34, 4.68 and 12.76 m, having got
+close transiently and walked away.
+
+So detection, admission, candidacy, approach and the terminal are all doing
+their job at 87.5% once the agent is within a metre and a half.
+**Cross_anchor SR is the probability of getting within 1.5 m of the target, and
+nothing else.**
+
+**Coverage converts only from close.** Three arms moved coverage by the same
+amount and only one converted:
+
+| arm | never-framed | closest range | extra cross successes |
+|---|---|---|---|
+| F3 budget +50% | 10 -> 7 | 9.0 -> 5.0 m | 0 |
+| X4 LLM room posterior | P(look) 0.33 -> 0.60 | — | 0 |
+| F5 sweep at the surface | 10 -> 7 | 9.0 -> 5.0 m | +2 on 00848 |
+
+F3 spent 2,136 extra steps to find the target in three more episodes and
+converted none, because wandering buys sightings at 5 m. F5's two wins were both
+never framed under control and both closed to 0.67 m and 1.50 m, because
+sweeping happens at a surface the agent has already driven to. Judge a
+coverage-side proposal by the RANGE of the sightings it adds, not the count.
+
+**Cross_anchor is not short of time.** 50% more budget bought +0. "Every failure
+hits the 500-step cap" is what failure looks like, not why it happens, and every
+efficiency argument in this document that rests on it -- including the proximity
+length-scale rescale -- rests on nothing.
+
+**Two arms were void, and that is a methodological result.** F2 could not have
+worked: `face_surface` zeroes `search_face_turns` the moment heading error drops
+under 15 degrees, so it is a FACING budget and raising it moved the turns
+actually spent from 4.1 to 4.5. F4 could not have worked either:
+`approach.py:357` takes the `_use_navmesh` branch before ever reading
+`approach_navigable_goal`, so the flag is unreachable in every preset here. A
+null from an inert knob is indistinguishable from a refuted hypothesis and
+retires a real idea -- F2's hypothesis was correct, and testing it needed a new
+knob (`search_scan_turns`), which then produced the campaign's only cross_anchor
+movement. **Every arm must log a mechanism counter, and a null only refutes if
+that counter moved.**
+
+Also: `+run_tag` is reused across campaigns -- `P` names both a 2026-08-27
+condition and this campaign's proximity arm -- so any analysis that globs dated
+output directories must scope by date or it will silently merge two experiments.
+
+## The LLM room posterior: four arms, and why none of them moved cross_anchor
+
+A fresh 102-episode campaign (2026-09-03/04) on `outputs/substituted_layouts`,
+with a control run on the same episodes rather than borrowed from the table
+above — the recorded Q/Q2 numbers are the 96-episode set, before 00880 grew by
+six. Every arm is one flag from the previous one.
+
+| arm | change | in_anchor | cross_anchor | overall |
+|---|---|---|---|---|
+| **Y** | control, `+experiment=ycb_dynamic_cross` (Q) | 0.686 | 0.490 | 0.588 |
+| **X** | + LLM room posterior, asked asynchronously | **0.765** | 0.510 | **0.637** |
+| X2 | + waits 240 s for the first answer | 0.727¹ | 0.515¹ | 0.621¹ |
+| X4 | + asks where a person PUT IT DOWN, not where it belongs | 0.667¹ | 0.576¹ | 0.621¹ |
+| P | control + `search_proximity_len_m` 1.0 → 4.0 | 0.600² | 0.133² | 0.367² |
+
+¹ 00829 + 00848 only (66 episodes); Y and X on the same subset are 0.667/0.576
+and 0.758/0.606.  ² 00848 only (30 episodes); Y there is 0.467/0.200.
+
+**cross_anchor moved by at most one episode in any arm.** The campaign is a
+negative result and the reasons are worth more than the numbers.
+
+**The question the model was asked was the wrong one, and the offline check that
+said otherwise was scored against an assumption.** `scripts/author_semantic_layouts.py`
+defines a kitchen-biased `SEMANTIC_HOMES`, and reading it suggests the benchmark
+is semantic. It is not the generator in use. The evaluated layouts carry
+`"imported_by": "scripts/import_collector_layouts.py"` in their `authoring`
+block, and their cross_anchor destinations are 00848 {bed 12, nightstand 3},
+00829 {bed 5, sink 2, desk 2}, 00880 {desk 4, sink 2, bed 2}. 00848's tomato
+soup can is on a BED in all three cross_anchor layouts, and "where does a tin
+can belong" ranks first the single room with no bed in it — 6 targets out of 6.
+Check a layout's `authoring` block before believing any claim about where
+objects go.
+
+**The gain X did produce is not semantic.** Measured on 00848, what predicts SR
+is not whether the model named the right room but whether the agent LEFT the one
+it was in:
+
+| arm | top room ≠ agent's room | next surface commit changed room | 00848 SR |
+|---|---|---|---|
+| X (names the wrong room) | 56% | **10/16** | 14/30 |
+| X2 | 56% | **12/18** | 14/30 |
+| X4 (names the right room) | 60% | **3/15** | 11/30 |
+| Y | — | — | 10/30 |
+
+X4 ranks every bed-room highly, and four of 00848's five rooms have a bed —
+including the agent's — so its own room keeps a high multiplier, the nearest
+surface still wins on path cost, and it never leaves. "Leave a room that has
+failed you" is `search_room_saturation`, which needs no model, no 187 s of
+latency and no NIM dependency.
+
+**Asynchrony silently converted a slow model into no model at all.** On 00829, X
+requested 10 queries, was answered 8 times and applied the posterior ZERO times;
+treatment and control came out identical episode for episode. An answer costs a
+median 187 s on `nvidia/nemotron-3.5-lightning-30b-a3b` — the only text model
+the NIM account still serves, the config default having reached end of life on
+2026-08-26 — against an ~80 s episode, and the provider is rebuilt per NavAgent.
+The disk cache could not carry answers forward either: `sg.containers` is
+rebuilt per keyframe, so 10 requests produced 8 distinct room compositions. This
+is the same shape as the text frontier scorer this document already retired, one
+level up the hierarchy. Log applied-vs-answered, never calls-vs-errors: a 100%
+call success rate is compatible with zero effect.
+
+**Turning the reasoning off is not a way out.** With
+`chat_template_kwargs={"thinking": False}` the same model answers in 1.1 s and
+ranks the kitchen below two bedrooms 5 times out of 5. The latency is the answer.
+
+### Where cross_anchor actually loses, and the instrument that hid it
+
+Control Y, 51 cross_anchor episodes, stage by stage against in_anchor:
+
+| stage | cross | in |
+|---|---|---|
+| target entered the frustum | 71% | 94% |
+| …detected by YOLOE | 61% | 76% |
+| …admitted to the graph | 53% | 69% |
+| …succeeded | 49% | 69% |
+
+Every stage YIELD is comparable (86/81, 87/90, 93/100); the whole gap is frustum
+entry. But raising frustum entry does not convert: X4 took 00848's cross
+`P(look)` from 0.333 to 0.600 and its SR did not move, because the extra looks
+are glimpses. Among the 36 cross_anchor episodes that saw the target, what
+separates the 25 successes from the 11 failures is closing the last two metres —
+best detection 14,316 px against 2,353, closest range 0.93 m against 2.04 m, and
+**not one failure ever came within a metre.**
+
+Two corrections to the diagnosis, both of which were wrong before they were right:
+
+- `gt_kf_admitted` is **under-reported**. `eval/instruments.py:160` replicates
+  `ObjectLayer._admits`'s two gates but not its `target_bypasses_gates` branch,
+  which sits above them and is on in every current preset. The layer's own
+  `target_bypassed` counter fires 4–37 times in nearly every one of those 11
+  failures. Admission is not the bottleneck; the instrument said it was.
+- Nor is candidacy. Those failures carry HIGHER target-track evidence than the
+  successes (median 14.7 against 8.3) and more observations (28 against 15), and
+  all 11 clear `min_evidence`.
+
+What separates them is the target track's own **presence belief**:
+
+| | succeeded | failed |
+|---|---|---|
+| cross_anchor | p = 0.736 | **p = 0.255** |
+| in_anchor | p = 0.618 | **p = 0.183** |
+
+`verification.rank_candidates_by_presence` multiplies a candidate's score by
+exactly this number, so a target that is mapped, evidenced and admitted is
+demoted because its presence decayed — the decay `_last_known_target_xy` already
+warns about, "from ordinary missed expectations while the agent merely walks
+past". **This is a correlation and it has a real confound**: failures run 500
+steps against the successes' 202, which is itself more opportunity to decay. The
+experiment that separates cause from consequence is one flag,
+`verification.rank_candidates_by_presence=false`, and it has not been run.
+
 So there are two configurations worth keeping, and they differ by exactly one
 flag — a test pins that, because the one flag IS the trade:
 

@@ -1,0 +1,48 @@
+# @package _global_
+#
+# Condition P: the proximity length scale, which is the term the measurements
+# have pointed at all along and the one nothing has yet changed.
+#
+# `container_prior` weights a surface by `exp(-d / search_proximity_len_m)`,
+# measured from where the target was last believed to be, and L is 1.0 m. The
+# benchmark's two halves relocate a median 0.72 m (in_anchor) and 6.06 m
+# (cross_anchor), so at L = 1.0:
+#
+#     in_anchor    exp(-0.72) = 0.487
+#     cross_anchor exp(-6.06) = 0.0023      a 209x handicap on the true surface
+#
+# Against that, affinity spans 1.41x (0.707-1.0 after AFFINITY_POWER=0.5) and
+# the same-room bonus 4x. Half the benchmark is priced out before any of the
+# terms anyone has been tuning get a vote, which is why cross_anchor sat at
+# 0.44-0.53 across eleven conditions while in_anchor climbed to 0.822.
+#
+# Q (`search_drop_proximity_after_absence`, in this preset's parent) already
+# removes the term -- but only AFTER the agent has driven to the last-known pose
+# and found nothing, which costs the trip. L is what the ranking uses before
+# then, and it has never been moved.
+#
+# L = 4.0 leaves in_anchor nearly untouched and takes the handicap from 209x to
+# 3.8x:
+#
+#     L=1.0   in 0.487  cross 0.0023   209.0x
+#     L=2.0   in 0.698  cross 0.048     14.4x
+#     L=4.0   in 0.835  cross 0.220      3.8x
+#     L=6.0   in 0.887  cross 0.364      2.4x
+#
+# What this is NOT: a flat prior. `search_belief.py` records that flattening
+# proximity costs in_anchor badly -- "in_anchor prox 23/57 reaches the true
+# surface against flat 15/57" -- and that the halves want opposite models. This
+# does not flatten it; it rescales it to the displacement distribution the
+# benchmark actually has, which is a calibration nobody has done.
+#
+# Prediction, stated before the run: cross_anchor rises, in_anchor falls a
+# little, and the crossover is what says whether L should be 2, 4 or 6. If
+# cross_anchor does NOT rise, then proximity was not the binding term after all
+# and the remaining constraint is the step budget -- every failure in both arms
+# is the 500-step cap, and cross_anchor needs a median 199 steps to succeed
+# against in_anchor's 134.
+defaults:
+  - ycb_dynamic_cross
+
+exploration:
+  search_proximity_len_m: 4.0

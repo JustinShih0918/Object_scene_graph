@@ -745,3 +745,120 @@ def test_grounding_reads_the_track_set_not_the_rebuilt_containers():
         scene_graph=types.SimpleNamespace(containers={}),  # not yet rebuilt
     )
     assert s._ground(world) == {"counter", "table", "cabinet"}
+
+
+# ------------------------------------------------------- sweeping vs facing
+#
+# `search_face_turns` is a FACING budget: `face_surface` zeroes it the moment
+# the heading error falls under 15 degrees. Raising it 8 -> 12 moved the turns
+# actually spent from a mean 4.1 to 4.5 and changed nothing else, which cost an
+# experiment arm to discover. `search_scan_turns` is the separate knob that
+# keeps turning after the surface is faced.
+
+
+def _faced_world(scan_turns):
+    import types
+
+    import numpy as np
+
+    from osg.core.config import OSGConfig
+    from osg.exploration.strategy import ExplorationStrategy
+    from osg.graph.scene_graph import ContainerNode
+
+    cfg = OSGConfig()
+    cfg.exploration.search_scan_turns = scan_turns
+    s = ExplorationStrategy(cfg, planner=None, scorer=None, viewpoint_planner=None,
+                            affinity=None, stats={}, profiler=types.SimpleNamespace())
+    # Identity T_wc looks along +z (OpenCV), which is +z in the ground PLANE,
+    # so put the surface there: the agent starts already facing it, err = 0.
+    node = ContainerNode(id=7, label="bed", track_ids=[7],
+                         center=np.array([0.0, 0.5, 1.0]), top_h=0.5, area_m2=2.0)
+    sg = types.SimpleNamespace(containers={7: node})
+    # agent at the origin already pointing at the surface (+x): err = 0
+    frame = types.SimpleNamespace(T_wc=np.eye(4))
+    world = types.SimpleNamespace(scene_graph=sg, frame=frame, step=10,
+                                  agent_xy=np.zeros(2), goal_xy=np.zeros(2))
+    s.search_container = 7
+    s.surface_face_turns = int(cfg.exploration.search_face_turns)
+    s.scan_turns_left = scan_turns
+    return s, world
+
+
+def test_facing_the_surface_ends_the_look_when_scanning_is_off():
+    s, world = _faced_world(0)
+    assert s.face_surface(world) is None
+    assert s.surface_face_turns == 0
+
+
+def test_scan_turns_keep_turning_after_the_surface_is_faced():
+    """The relocation put the object on a NEIGHBOURING surface; facing the one
+    the posterior chose looks straight past it."""
+    s, world = _faced_world(12)
+    spent = 0
+    while s.face_surface(world) is not None:
+        spent += 1
+        assert spent <= 20, "scan did not terminate"
+    assert spent == 12
+    assert s.stats["surface_scan_turns"] == 12
+    assert s.surface_face_turns == 0
+
+
+# --------------------------------------- presence may veto weak, not strong
+#
+# Measured 0.67 m from a tin can: tracks scoring 0.736 and 0.417 on 12,716 and
+# 52,595 px boxes were both excluded at p = 0.08, leaving the agent with no
+# candidate to commit to. Removing the veto outright (condition ZZ,
+# min_presence 0.0) cost 9 of 102 episodes by readmitting stale/mislabelled
+# tracks, so the bypass is deliberately narrow.
+
+
+def _layer_with(score, bbox, p):
+    import math
+
+    import numpy as np
+
+    from osg.objects.association import ObjectTrack
+    from osg.objects.ellipsoid import Ellipsoid
+    from osg.objects.object_layer import ObjectLayer
+
+    layer = ObjectLayer()
+    t = ObjectTrack(id=1, label="tin_can",
+                    ellipsoid=Ellipsoid(center=np.array([1.0, 0.5, 1.0]),
+                                        axes=np.array([0.05, 0.05, 0.05]), R=np.eye(3)))
+    # n_obs is a read-only property over `observations`
+    t.observations.extend([None] * 5)
+    t.evidence, t.best_score, t.best_bbox_px = 2.3, score, bbox
+    t.presence.log_odds = math.log(p / (1 - p))
+    layer._tracks[1] = t
+    return layer
+
+
+def _cands(layer, **kw):
+    return layer.candidates("tin can", min_obs=1, min_score=0.3, min_bbox_px=800,
+                            min_evidence=0.2, min_presence=0.45, **kw)
+
+
+def test_presence_still_vetoes_by_default():
+    assert _cands(_layer_with(0.736, 12716, 0.083)) == []
+
+
+def test_a_strong_recent_detection_survives_a_decayed_presence():
+    got = _cands(_layer_with(0.736, 12716, 0.083),
+                 presence_bypass_score=0.5, presence_bypass_bbox_px=5000)
+    assert [t.id for t in got] == [1]
+
+
+def test_the_bypass_needs_BOTH_score_and_size():
+    """A confident label on a sliver, or a big box the detector is unsure of,
+    are both exactly what presence is there to filter."""
+    kw = dict(presence_bypass_score=0.5, presence_bypass_bbox_px=5000)
+    assert _cands(_layer_with(0.736, 1122, 0.083), **kw) == [], "small box must not pass"
+    assert _cands(_layer_with(0.417, 52595, 0.076), **kw) == [], "low score must not pass"
+
+
+def test_the_bypass_does_not_touch_the_other_gates():
+    """It lifts the presence veto only -- evidence, obs count and score keep
+    their say, or this becomes condition ZZ."""
+    layer = _layer_with(0.736, 12716, 0.083)
+    layer._tracks[1].evidence = 0.01
+    assert _cands(layer, presence_bypass_score=0.5, presence_bypass_bbox_px=5000) == []

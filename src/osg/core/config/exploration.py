@@ -168,6 +168,25 @@ class ExplorationConfig:
     # condition D the search reached the true surface five times and converted
     # one. A few turns are cheap against the ~50 steps an inspection costs.
     search_face_turns: int = 8
+    # Turns spent sweeping AFTER the agent has faced the surface it came to
+    # inspect. 0 is the shipped behaviour and reproduces every earlier
+    # condition; 12 at turn_deg=30 is one full revolution.
+    #
+    # `search_face_turns` cannot do this job, which cost a wasted arm to learn:
+    # `face_surface` zeroes it the moment the heading error drops below 15
+    # degrees, so raising it 8 -> 12 moved the turns actually spent from a mean
+    # 4.1 to 4.5 and changed nothing else. Facing is not scanning.
+    #
+    # The bucket this aims at: on 00848, ten of the fifteen cross_anchor
+    # failures never get the target into the frustum at all, and six of those
+    # come within 3 m of it. The object was RELOCATED, so it is usually on a
+    # surface next to the one the posterior chose, and facing the chosen one
+    # looks straight past it.
+    #
+    # The cost is real and is the thing to watch: every failure in this
+    # benchmark ends on the step cap, and this spends up to 12 extra steps at
+    # each of a median 8 surfaces.
+    search_scan_turns: int = 0
     search_max_steps: int = 60
     # Credit for a surface the agent set off towards but never reached: it has
     # barely been ruled out, and spending full belief on it would retire the
@@ -190,6 +209,90 @@ class ExplorationConfig:
     # ranking cannot change. Only 00848 is affected.
     affinity_grounded: bool = False
     affinity_cache: str = "outputs/affinity_cache.json"
+    # --- room posterior (LLM) -------------------------------------------
+    # Ask the model WHICH ROOM the target moved to, once a room has been
+    # searched and refused, and use the answer in place of the positional
+    # `search_same_room_bonus`.
+    #
+    # The bonus asserts "the object is in the room I am in". On the in_anchor
+    # half (median relocation 0.72 m) that is right; on cross_anchor (6.06 m)
+    # it is wrong, and it is wrong at the same time as proximity, which at
+    # exp(-6.06/1.0) = 0.0023 already hands the origin room a 209x advantage.
+    # Measured over M2..W: cross_anchor 0.44-0.53 for eleven conditions while
+    # in_anchor reached 0.822.
+    #
+    # This is the room level deliberately. `author_semantic_layouts.choose_
+    # surface` draws BOTH layout types from the same home categories, so the
+    # halves differ only by destination region -- the one level at which an
+    # answer can be selective for the half that is failing. The earlier
+    # frontier scorer asked per-frontier and got 0.3/0.35/0.4 for it.
+    room_posterior_llm: bool = False
+    # Fruitless ARRIVALS in a room before the question is asked. Arrivals, not
+    # the presence belief: `_last_known_target_xy` records a `presence.p`
+    # threshold firing on 56% of in_anchor episodes against 30% predicted,
+    # because presence also decays from ordinary missed expectations while the
+    # agent walks past. Presence is what the prompt READS; the trigger is an
+    # event. 2 keeps a room that merely disappointed once from being abandoned.
+    room_posterior_after: int = 2
+    # Top-to-bottom dynamic range of the multiplier, geometric and symmetric in
+    # log space: the first room gets `spread`, the last `1/spread`. 4.0 makes
+    # the top room exactly the x4 the same-room bonus asserts today, so when the
+    # model agrees with the agent's position the posterior IS the shipped one.
+    room_posterior_spread: float = 4.0
+    # Keep the positional bonus alongside the model's answer. False (default)
+    # REPLACES it -- two priors over the same variable, one positional and one
+    # semantic, must not both multiply in.
+    room_posterior_keep_bonus: bool = False
+    room_posterior_cache: str = "outputs/room_prior_cache.json"
+    # This call gets its own, much longer budget than `llm.timeout_s` (120 s).
+    # Measured on nvidia/nemotron-3.5-lightning-30b-a3b, the only text model this
+    # NIM account still serves: a room ordering costs a median ~7.8k completion
+    # tokens of reasoning and 60-300 s, against ~7 s for the affinity call it
+    # shares an endpoint with. It can afford that because it is asynchronous and
+    # its answer is long-lived -- room ids are stable for the episode, so a reply
+    # landing 150 steps late still re-ranks the rest of the search. Turning the
+    # reasoning OFF makes it 100x faster and, measured over five targets, ranks
+    # the kitchen below two bedrooms every time. The latency is the answer.
+    # 420, not 300: a measured end-to-end answer took 255 s and the endpoint's
+    # spread is wide (134-300+ s over six targets). At 300 the tail lands on the
+    # timeout, and a timeout is not a soft failure here -- it is three retries
+    # and no cache entry, so the NEXT episode pays the same cost again.
+    room_posterior_timeout_s: float = 420.0
+    # Wait this long for a COLD answer before carrying on. 0.0 is pure
+    # asynchrony, which was measured to deliver nothing: 36 episodes on 00829,
+    # 10 queries asked, 8 answered, 0 applied, and X identical to Y episode for
+    # episode. An answer costs ~180 s against an ~80 s episode and the provider
+    # is per-episode, so every reply outlived the run that wanted it -- the same
+    # shape as the frontier scorer that made 63 calls and changed no selection.
+    # A warm cache resolves synchronously and pays none of this.
+    room_posterior_block_s: float = 0.0
+    # Clamp on the BOTTOM of the multiplier. 0.0 is the symmetric term (top
+    # room x spread, bottom room x 1/spread); 1.0 makes it promote-only.
+    #
+    # Symmetric was measured to be dangerous exactly where the positional prior
+    # it replaces is correct. On 00829, across the nine episodes the posterior
+    # reached, the control scored 5/9 and the symmetric posterior 2/9 -- every
+    # loss ran to the 500-step cap and one had the target in view 64 times
+    # against the control's 26. The model named a room other than the agent's in
+    # seven of the nine, so a correct room fell from x4 to x0.25.
+    #
+    # `search_room_saturation_floor` is the same guard one level down and says
+    # why: a room that has disappointed becomes ordinary, not worse than one
+    # never visited. A model's opinion about where an object is NOT deserves the
+    # same restraint.
+    room_posterior_floor: float = 0.0
+    # Ask where a PERSON would have set the object down, rather than where the
+    # object belongs.
+    #
+    # The evaluated layouts are the collector's (`outputs/substituted_layouts`,
+    # whose `authoring` block reads "imported_by": import_collector_layouts.py),
+    # NOT the kitchen-biased ones author_semantic_layouts.py generates. They put
+    # relocated objects on beds, nightstands and desks regardless of class:
+    # 00848's tomato soup can is on a bed in all three cross_anchor layouts.
+    # Measured on 00848's five rooms, "where does it belong" ranks the one room
+    # with NO bed first for 6 targets of 6; "where would someone have put it
+    # down" ranks that same room last.
+    room_posterior_placement: bool = False
     # Information-gain weighting: boost frontiers that expose more unknown area
     # (estimated as the count of UNKNOWN costmap cells within info_gain_radius_m
     # of the frontier), so exploration commits to directions that open large

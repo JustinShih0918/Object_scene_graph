@@ -1,0 +1,40 @@
+# @package _global_
+#
+# F4: put the approach goal somewhere the agent can actually stand.
+#
+# Targets failure bucket C (5 of 26 cross_anchor failures) and probably D (2):
+# "detected the target, never closed within 1.5 m", median closest range 2.36 m
+# with the object in view a median 21 keyframes.
+#
+# `agent.approach_navigable_goal` has never been set in this campaign -- it
+# appears only in configs/experiment/single_floor_navgoal.yaml, a different
+# eval. Its own documentation describes bucket C exactly:
+#
+#   "snaps the goal to the nearest RAW-free cell to the object center (~0.05 m
+#    away), which often lands in a pocket walled by the object's OCCUPIED cells:
+#    the Voronoi medial axis keeps 0.25 m clearance so it has no node there, and
+#    A* cannot enter the enclosed pocket -> planner_no_path, agent strands
+#    ~1.9 m out (17/18 path_consumed = planner_no_path, 81% stall >1 m from a
+#    free, object-adjacent goal on a real viewpoint)"
+#
+# Bucket C's stop reasons are 3 path_consumed and 2 None, and its episodes end
+# a median 2.36 m from a target they have looked at 21 times. That is the
+# described stall.
+#
+# It matters more on cross_anchor than in_anchor for a physical reason: these
+# relocations put objects on BEDS (00848: 12 of 18 cross destinations). A bed is
+# a large occupied footprint, so the nearest free cell to the object centre is
+# especially likely to be inside it. Placing the goal at `approach_standoff_m`
+# (0.75 m) along the ray back toward the agent puts it on the side the object
+# was actually seen from -- open space, at about the range successes stop at
+# (median 0.93 m).
+#
+# Prediction, stated before the run: bucket C shrinks and closest-range drops
+# below 1.5 m on those episodes. If closest-range does not move, the stall is
+# not the goal placement and the remaining suspect is the follower reporting
+# None for unreachable (agent.approach_false_arrival_m, which conditions T and
+# U probed at 1.0 m and 2.5 m without settling).
+defaults:
+  - ycb_dynamic_cross
+agent:
+  approach_navigable_goal: true

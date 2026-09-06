@@ -63,6 +63,8 @@ class CandidatePolicy:
             min_bbox_px=self.nav.cfg.verification.min_bbox_px,
             min_evidence=self.nav.cfg.verification.min_evidence,
             min_presence=self.nav.cfg.scene_graph.presence.min_presence,
+            presence_bypass_score=self.nav.cfg.scene_graph.presence.presence_bypass_score,
+            presence_bypass_bbox_px=self.nav.cfg.scene_graph.presence.presence_bypass_bbox_px,
             max_identity_rejections=int(self.nav.cfg.scene_graph.presence.max_identity_rejections),
             target_bypasses_bbox=self.nav.cfg.verification.target_bypasses_bbox_gate,
             rank_by_presence=self.nav.cfg.verification.rank_candidates_by_presence,

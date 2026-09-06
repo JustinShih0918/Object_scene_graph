@@ -1,0 +1,44 @@
+# @package _global_
+#
+# Condition X2: X, delivered.
+#
+# X asked the question and never got to use the answer. Measured over the 36
+# episodes of 00829:
+#
+#     queries requested   10
+#     answers returned     8
+#     posterior applied    0
+#     X vs Y               identical, episode for episode, zero flips
+#
+# The cause is arithmetic, not semantics. The only text model this NIM account
+# still serves is a reasoning model that takes a median 187 s on this question
+# (134-300 s over six targets), an 00829 episode lasts ~80 s, and the provider
+# is rebuilt per NavAgent -- so every answer landed after the episode that asked
+# for it had already ended. The disk cache was supposed to carry them forward,
+# and mostly could not: `sg.containers` is rebuilt per keyframe, so the room
+# compositions drift between episodes and 10 requests produced 8 DISTINCT
+# questions. Almost nothing to reuse.
+#
+# That is precisely the shape of the failure docs/INVESTIGATION.md already
+# records for the text frontier scorer -- "63 NIM scoring calls that NEVER
+# changed a frontier selection (async scorer drops in-flight requests -> stale)"
+# -- reproduced one level up the hierarchy. Asynchrony is not free when the
+# answer is slower than the thing it is meant to steer.
+#
+# So X2 waits for the first answer of an episode, up to 240 s. A warm cache
+# resolves synchronously and pays nothing; only a genuinely new question stalls,
+# once per episode. This is a decision-latency cost, not a mapping-loop cost,
+# and `exploration/async_scorer.py` is explicit that decision latency is
+# reported separately rather than hidden.
+#
+# What this isolates: X2 vs Y is the room posterior's effect on behaviour.
+# X vs X2 is the cost of delivering it. Both are worth having, and reporting
+# only the second would hide a real negative result about the first.
+#
+# Run it AFTER X, whose cache it inherits -- that is what makes most of the
+# queries free.
+defaults:
+  - ycb_dynamic_room
+
+exploration:
+  room_posterior_block_s: 240.0

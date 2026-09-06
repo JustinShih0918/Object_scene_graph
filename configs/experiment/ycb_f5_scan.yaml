@@ -1,0 +1,29 @@
+# @package _global_
+#
+# F5: sweep the room after facing the surface. The arm F2 was supposed to be.
+#
+# F2 raised `search_face_turns` 8 -> 12 and was a null, because that is a FACING
+# budget: `face_surface` zeroes it the moment the heading error drops under 15
+# degrees. Measured, the turns actually spent moved from a mean 4.1 to 4.5. The
+# arm tested nothing, and the hypothesis it was meant to test is still open.
+#
+# The hypothesis: on 00848, ten of the fifteen cross_anchor failures never get
+# the target into the frustum at all, and six of those come within 3 m of it.
+# The agent stands beside the object and looks at the wrong furniture, because a
+# relocation puts the object on a surface NEXT to the one the search posterior
+# chose. Facing the chosen surface looks straight past it.
+#
+# `search_scan_turns: 12` is one full revolution at turn_deg 30, spent after the
+# surface is faced, and it is a new knob -- the shipped path had no way to
+# express it.
+#
+# Prediction, stated before the run: `never framed` falls on 00848 and
+# `surface_scan_turns` is non-zero (if it is zero the arm is void, like F2).
+# The cost to watch: every failure here ends on the step cap, and this spends up
+# to 12 extra steps at each of a median 8 surfaces -- about 96 of 500. If
+# never-framed falls but SR does not, the sweep works and the budget is what has
+# to give, which is exactly what F3 is measuring in parallel.
+defaults:
+  - ycb_dynamic_cross
+exploration:
+  search_scan_turns: 12

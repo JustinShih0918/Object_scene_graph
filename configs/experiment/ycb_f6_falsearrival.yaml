@@ -1,0 +1,38 @@
+# @package _global_
+#
+# F6: refuse an "arrival" 1.5 m from the goal.
+#
+# On the navmesh the follower returns None for BOTH arrived and unreachable, and
+# the approach treats both as an arrival: it stops. Three of the five 00880
+# cross_anchor stalls end that way with most of the budget unspent --
+#
+#     _02__51_   87 steps, 3 attempts, closest 2.04 m, path_consumed
+#     _01__51_  143 steps, 3 attempts, closest 2.27 m, path_consumed
+#     _02__30_  263 steps, 3 attempts, closest 4.65 m, path_consumed
+#
+# -- which is why F3 (budget 500 -> 750) could not touch them: they are
+# attempt-limited, not step-limited, and F3 bought +0 cross_anchor successes.
+#
+# `approach_false_arrival_m` is the right knob and, unlike F4's
+# `approach_navigable_goal`, it is LIVE on this code path: approach.py:195 sits
+# in the general arrival test, while F4's flag is unreachable because
+# approach.py:357 takes the `_use_navmesh` branch first.
+#
+# 1.5 m is the gap conditions T and U straddled without testing. T used 1.0 m
+# and fired 88 times over 96 episodes, aborting good approaches, because
+# successes stop at a MEDIAN 0.93 m from the goal -- 1.0 m sits inside the
+# success distribution. U used 2.5 m and was too lax to catch a 2.04 m stall.
+# At 1.5 m the successes' 0.93 m median is clear of the threshold and all five
+# stalls (2.04, 2.27, 2.36, 3.28, 4.65) are caught.
+#
+# Prediction, stated before the run: `approach_false_arrival` fires roughly 5-15
+# times over 36 episodes, not T's 88. If it fires like T did, 1.5 m is still
+# inside the success distribution and the whole idea needs the range measured
+# per episode rather than a global constant. If it fires the predicted handful
+# and SR does not move, then refusing the arrival does not help because the
+# agent cannot get closer anyway -- and the constraint is the navmesh, not the
+# policy.
+defaults:
+  - ycb_dynamic_cross
+agent:
+  approach_false_arrival_m: 1.5

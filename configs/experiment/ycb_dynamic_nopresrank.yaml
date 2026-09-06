@@ -1,0 +1,44 @@
+# @package _global_
+#
+# Condition Z: Y with candidates no longer ranked by presence.
+#
+# One flag from `ycb_dynamic_cross`, and it exists to settle a correlation.
+#
+# Of the 36 cross_anchor episodes in the Y control that got the target into the
+# frustum, 25 succeeded and 11 failed. The failures are not short of evidence --
+# their best target track carries MORE of it than the successes':
+#
+#     evidence  median 14.7 (failed)  vs   8.3 (succeeded)
+#     n_obs     median 28   (failed)  vs  15   (succeeded)
+#     and all 11 clear verification.min_evidence = 0.2
+#
+# What separates them is the track's presence belief:
+#
+#     cross_anchor   succeeded p = 0.736   failed p = 0.255
+#     in_anchor      succeeded p = 0.618   failed p = 0.183
+#
+# `rank_candidates_by_presence` multiplies a candidate's score by exactly that
+# number, so a target the map has already found, evidenced and admitted is
+# demoted for having decayed -- the decay `_last_known_target_xy` warns about,
+# "from ordinary missed expectations while the agent merely walks past".
+#
+# THE CONFOUND IS THE POINT. Failures run 500 steps against the successes' 202,
+# which is itself more opportunity for p to decay, so low presence may be the
+# CONSEQUENCE of failing rather than its cause. Nothing in the observational
+# data can separate those; only intervening can.
+#
+# Prediction, stated before the run: if presence-ranking is a CAUSE, cross_anchor
+# rises and the episodes that move are the 11 that saw the target and failed. If
+# it is a CONSEQUENCE, cross_anchor is unchanged and the diagnosis is spent --
+# what remains is that failures never close the last two metres (best detection
+# 2,353 px against 14,316; closest range 2.04 m against 0.93 m; not one failure
+# within a metre).
+#
+# Note what this does NOT turn off: the presence filter still runs, still
+# supplies its negative channel, and absence readings still update belief. Only
+# the candidate RANKING stops multiplying by p.
+defaults:
+  - ycb_dynamic_cross
+
+verification:
+  rank_candidates_by_presence: false

@@ -1,0 +1,23 @@
+# @package _global_
+#
+# F2: look all the way round at a searched surface.
+#
+# Targets failure bucket A (15 of the 26 cross_anchor failures, the largest).
+#
+# Six of those 15 got within 3 m of the target and never once had it in the
+# camera frustum. `search_face_turns` is 8 at `turn_deg` 30, so an inspection
+# sweeps 240 degrees and leaves a 120-degree blind arc -- and the object is
+# usually not on the surface being inspected but on a neighbouring one, because
+# the relocation moved it.
+#
+# 12 turns is exactly one revolution, the same budget `approach_scan_turns`
+# already spends at a candidate.
+#
+# The risk is explicit: every failure in this benchmark is budget exhaustion,
+# and this spends 4 more steps at each of a median 11 surfaces (~44 steps of
+# 500). If bucket A shrinks but the others grow, the scan is right and the
+# budget is what has to give.
+defaults:
+  - ycb_dynamic_cross
+exploration:
+  search_face_turns: 12

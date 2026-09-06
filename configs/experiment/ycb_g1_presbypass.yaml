@@ -1,0 +1,41 @@
+# @package _global_
+#
+# G1: presence may veto a weak track, not a strong one.
+#
+# Optimises the metric that actually predicts cross_anchor SR. Pooled over 452
+# cross_anchor episodes from every condition run in this campaign, the sharpest
+# threshold is 1.25 m:
+#
+#     P(success | within 1.25 m) = 0.895      P(success | beyond) = 0.121
+#     across 9 conditions with n >= 30, corr(P(close), SR) = 0.963
+#
+# So SR is P(get within 1.25 m), and the job is to stop losing episodes that
+# already got there.
+#
+# The measured loss this targets: an X4 episode standing 0.67 m from the tin can
+# with a 12,716 px detection at score 0.736 had ALL THREE of its target tracks
+# excluded from candidacy -- two on presence (p = 0.083, 0.076) and one on score
+# (0.266 against the 0.30 gate). It had the object in front of it and nothing to
+# commit to, and ended 8.61 m away.
+#
+# Presence decays from ordinary missed expectations while the agent walks past
+# (see strategy._last_known_target_xy), so it vetoes real targets. But removing
+# the veto is worse: condition ZZ set min_presence 0.0 and cost 9 of 102
+# episodes, cross_anchor 0.490 -> 0.392, by readmitting the stale and
+# mislabelled tracks presence exists to filter.
+#
+# Hence a narrow bypass rather than a lift. BOTH thresholds must be cleared, so
+# a confident label on a sliver and a big box the detector is unsure of are
+# still filtered -- on the measured episode only track 473 (0.736 / 12,716 px)
+# is readmitted, not 535 (0.417 / 52,595 px) nor 557 (0.266 / 1,122 px).
+#
+# Prediction, stated before the run: P(close) is unchanged -- this arm does not
+# help the agent get close -- and conversion-given-close rises. If SR moves
+# without P(close) moving, that is the mechanism working. If in_anchor falls,
+# the bypass is too wide and the score threshold should go up before the box one.
+defaults:
+  - ycb_dynamic_cross
+scene_graph:
+  presence:
+    presence_bypass_score: 0.5
+    presence_bypass_bbox_px: 5000

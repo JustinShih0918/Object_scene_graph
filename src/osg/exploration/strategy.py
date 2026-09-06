@@ -37,6 +37,7 @@ from ..mapping.frontier import Frontier, FrontierExtractor
 from ..planning.controller import TURN_LEFT, TURN_RIGHT, _wrap, agent_heading
 from .search_belief import InspectionLog, build_container_candidates, select_candidate
 from ..core.labels import normalize_label, same_label
+from ..llm.room_prior import rank_multipliers
 from .selector import frontier_goal_xy, select_frontier
 
 # WaypointController.act's default arrival tolerance. Named here because
@@ -82,13 +83,17 @@ class ExplorationChoice:
 
 class ExplorationStrategy:
     def __init__(self, cfg, planner, scorer, viewpoint_planner, affinity,
-                 stats: dict, profiler) -> None:
+                 stats: dict, profiler, room_prior=None) -> None:
         # `cfg` is the exploration group alone: nothing here reads any other.
         self.cfg = cfg.exploration
         self.planner = planner
         self.scorer = scorer
         self.viewpoint_planner = viewpoint_planner
         self.affinity = affinity
+        # Which ROOM did it go to (llm/room_prior.py). None unless
+        # `room_posterior_llm`, in which case its answer REPLACES the positional
+        # same-room bonus rather than multiplying with it.
+        self.room_prior = room_prior
         self.stats = stats
         self.profiler = profiler
         self.frontier_extractor = FrontierExtractor(
@@ -145,12 +150,21 @@ class ExplorationStrategy:
         # `search_room_saturation`).
         self.search_room_id: Optional[int] = None
         self._room_fruitless: Dict[int, int] = {}
+        # Rooms already asked about, so one refused room asks once rather than
+        # once per arrival, and the room posterior last received.
+        self._room_asked: set = set()
+        self._room_mult: Dict[int, float] = {}
+        if self.room_prior is not None:
+            self.room_prior.reset()
         # The container categories this map holds, fixed once per episode so a
         # set that grows mid-episode cannot change the prior under the agent
         # (and cannot multiply the affinity cache keys).
         self._present: Optional[set] = None
         self.search_started_step = 0
         self.surface_face_turns = 0
+        # Turns still owed to the sweep AFTER the agent has faced its surface.
+        # 0 reproduces the shipped behaviour exactly.
+        self.scan_turns_left = 0
         self.search_log_events: List[dict] = []
         self.frontier_select_log: list = []
         self.giveup_log: list = []
@@ -230,7 +244,7 @@ class ExplorationStrategy:
         with self.profiler.timeit("frontier_select"):
             best = select_frontier(
                 frontiers,
-                self.scorer.latest(),
+                self._frontier_scores(world, frontiers),
                 self.planner,
                 world.costmap,
                 agent_xy,
@@ -258,6 +272,7 @@ class ExplorationStrategy:
             self.search_room_id = int(node.room_id) if node is not None else None
             self.search_started_step = world.step
             self.surface_face_turns = int(self.cfg.search_face_turns)
+            self.scan_turns_left = int(self.cfg.search_scan_turns)
             self.current_frontier = None
             self.stats["search_surface"] = self.stats.get("search_surface", 0) + 1
             self.search_log_events.append(
@@ -311,7 +326,8 @@ class ExplorationStrategy:
                 }
             if len(relaxed_blocked) < len(frontiers):
                 best = select_frontier(
-                    frontiers, self.scorer.latest(), self.planner, world.costmap,
+                    frontiers, self._frontier_scores(world, frontiers),
+                    self.planner, world.costmap,
                     agent_xy, unscored_prior=self.cfg.unscored_prior,
                     min_path_cost_m=self.cfg.min_path_cost_m,
                     top_n=self.cfg.top_n_frontiers, blocked=relaxed_blocked,
@@ -454,13 +470,28 @@ class ExplorationStrategy:
         # because crossing the house repeatedly is what the global index does
         # once the nearby surfaces are retired.
         room_bonus = float(self.cfg.search_same_room_bonus)
-        if room_bonus > 1.0 and world.scene_graph.rooms:
-            here = world.scene_graph.room_of_point(agent_xy)
-            if here is not None:
-                for c in cands:
-                    node = world.scene_graph.containers.get(c.ref_id)
-                    if node is not None and node.room_id == here.id:
-                        c.prior *= self._room_bonus(room_bonus, node.room_id)
+        here = world.scene_graph.room_of_point(agent_xy) if world.scene_graph.rooms else None
+        # Ask which room it went to, once this one has been searched and refused.
+        self._maybe_ask_rooms(world, None if here is None else int(here.id))
+        # The model's answer REPLACES the positional bonus rather than
+        # multiplying with it: both are priors over the same variable -- which
+        # room holds the target -- and stacking a semantic one on a positional
+        # one is how the surface arm ended up 209x proximity against 1.41x
+        # affinity. Empty (no answer yet, or refused) falls through to the
+        # shipped behaviour, so the query can only ever cost latency.
+        mult = self._room_multipliers(world)
+        # Positional bonus unless the model's answer has replaced it.
+        use_bonus = room_bonus > 1.0 and here is not None and (
+            not mult or bool(self.cfg.room_posterior_keep_bonus)
+        )
+        for c in cands:
+            node = world.scene_graph.containers.get(c.ref_id)
+            if node is None:
+                continue
+            if mult:
+                c.prior *= mult.get(int(node.room_id), 1.0)
+            if use_bonus and node.room_id == here.id:
+                c.prior *= self._room_bonus(room_bonus, node.room_id)
         surface = select_candidate(
             cands, self.planner, world.costmap, agent_xy,
             top_n=int(self.cfg.top_n_frontiers),
@@ -576,6 +607,24 @@ class ExplorationStrategy:
         err = _wrap(float(np.arctan2(to_surface[1], to_surface[0]))
                     - agent_heading(frame.T_wc))
         if abs(err) <= np.radians(15.0):
+            # Facing it. Optionally keep turning, to sweep the rest of the room
+            # rather than only the surface that was chosen.
+            #
+            # `search_face_turns` is a FACING budget, not a scan: this line
+            # zeroed it on alignment, so raising it from 8 to 12 changed the
+            # mean turns actually spent from 4.1 to 4.5 and nothing else.
+            # Measured on 00848, ten of the fifteen cross_anchor failures never
+            # get the target into the frustum at all, and six of those get
+            # within 3 m of it -- the agent stands beside the object and looks
+            # at the wrong piece of furniture, because a relocation puts the
+            # object on a NEIGHBOURING surface, not the one the posterior
+            # picked. Facing the chosen surface cannot find it; sweeping can.
+            if self.scan_turns_left > 0:
+                self.scan_turns_left -= 1
+                self.stats["surface_scan_turns"] = (
+                    self.stats.get("surface_scan_turns", 0) + 1
+                )
+                return TURN_RIGHT
             self.surface_face_turns = 0  # facing it; this frame is the evidence
             return None
         self.surface_face_turns -= 1
@@ -610,6 +659,151 @@ class ExplorationStrategy:
                 self.affinity.ground(self._present)
             self.stats["affinity_present_categories"] = len(self._present)
         return self._present
+
+    # ------------------------------------------------------- room posterior
+
+    def _frontier_scores(self, world: WorldView, frontiers) -> Dict[int, float]:
+        """The frontier arm's `scores`, with the room posterior folded in.
+
+        `select_frontier` already takes a per-frontier score and divides it by
+        path cost; this fills that slot with the room's number instead of a
+        per-frontier one. That is the same slot LLMTextScorer used, and the
+        reason it was abandoned: a frontier's 3 m subgraph reads the same
+        anywhere in a house, so the model returned 0.3/0.35/0.4 and the geometry
+        decided regardless. The room a frontier leads INTO is a question with an
+        answer.
+
+        Falls back to whatever the configured scorer produced (nothing, under
+        NullScorer) whenever there is no posterior, so this is inert until the
+        first answer lands.
+        """
+        scores = dict(self.scorer.latest())
+        # Recomputed rather than read off `_room_mult`: the frontier arm runs
+        # BEFORE `_select_surface` in a round, so reading the cached copy would
+        # spend one round on a posterior that has already landed.
+        mult = self._room_multipliers(world)
+        if not mult:
+            return scores
+        base = float(self.cfg.unscored_prior)
+        top = max(mult.values())
+        for f in frontiers:
+            room = world.scene_graph.room_of_point(f.centroid_xy)
+            if room is None:
+                continue
+            # Normalised so the best room leaves `unscored_prior` unchanged and
+            # the others are pulled DOWN. Raising it instead would re-price the
+            # frontier arm against the surface arm, which is a different
+            # experiment (condition R) and was a null.
+            scores[f.id] = base * float(mult.get(int(room.id), 1.0)) / top
+        return scores
+
+    def _room_payload(self, world: WorldView):
+        """What the model is shown: one line per room, and the anchor sentence.
+
+        Surfaces come from the scene graph; "looked at" comes from
+        `InspectionLog.survived`, which holds an entry for every surface the
+        agent has glanced at or inspected and none for one it has not. Presence
+        is attached to the ANCHOR only -- the pose the target was mapped at --
+        because that is the one place where "expected and absent" is a statement
+        about the target rather than about the furniture.
+        """
+        sg = world.scene_graph
+        rooms = []
+        for room in sg.rooms.values():
+            nodes = sg.containers_in_room(room.id)
+            if not nodes:
+                continue
+            rooms.append({
+                "id": int(room.id),
+                "label": room.label,
+                "surfaces": sorted({str(n.label) for n in nodes}),
+                "n_surfaces": len(nodes),
+                "n_looked": sum(1 for n in nodes if int(n.id) in self.search_log.survived),
+            })
+        anchor = None
+        n_disbelieved = 0
+        try:
+            tracks = world.object_layer.tracks(include_blacklisted=True)
+        except Exception:
+            tracks = []
+        best = None
+        for t in tracks:
+            pres = getattr(t, "presence", None)
+            if pres is not None and pres.p < 0.5 and pres.n_expected > 0:
+                n_disbelieved += 1
+            if not same_label(getattr(t, "label", ""), world.target):
+                continue
+            if best is None or t.presence.n_expected > best.presence.n_expected:
+                best = t
+        if best is not None:
+            # A track's pose lives on its ellipsoid; ContainerNode keeps a plain
+            # `center` because it is a view over a linked component's mean.
+            best_xy = np.asarray(best.ellipsoid.center)[list(PLANE)]
+            room = sg.room_of_point(best_xy)
+            node = min(
+                sg.containers.values(),
+                key=lambda n: float(np.linalg.norm(
+                    np.asarray(n.center)[list(PLANE)] - best_xy)),
+                default=None,
+            )
+            anchor = {
+                "room": int(room.id) if room is not None else -1,
+                "label": str(node.label) if node is not None else None,
+                "p": float(best.presence.p),
+                "n_expected": int(best.presence.n_expected),
+                "n_missed": int(best.presence.n_missed),
+            }
+        return rooms, anchor, n_disbelieved
+
+    def _maybe_ask_rooms(self, world: WorldView, here_id: Optional[int]) -> None:
+        """Ask once per room that has been searched and refused.
+
+        The trigger is fruitless ARRIVALS, not the presence belief. Presence is
+        what the prompt reads; using it as the trigger was measured to fire on
+        56% of in_anchor episodes against the 30% predicted, because it also
+        decays from ordinary missed expectations while the agent walks past --
+        see `_last_known_target_xy`. An arrival is an event and cannot drift.
+        """
+        if self.room_prior is None or here_id is None:
+            return
+        if int(here_id) in self._room_asked:
+            return
+        if self._room_fruitless.get(int(here_id), 0) < int(self.cfg.room_posterior_after):
+            return
+        rooms, anchor, n_disbelieved = self._room_payload(world)
+        if len(rooms) < 2:
+            return
+        self._room_asked.add(int(here_id))
+        if self.room_prior.request(world.target, rooms, anchor, n_disbelieved,
+                                   block_s=float(self.cfg.room_posterior_block_s)):
+            self.stats["room_prior_requests"] = self.stats.get("room_prior_requests", 0) + 1
+
+    def _room_multipliers(self, world: WorldView) -> Dict[int, float]:
+        """The posterior as a per-room factor, or {} while there is no answer.
+
+        Empty means "keep the behaviour you already had": the caller falls back
+        to the positional `search_same_room_bonus`, so a refused or unanswered
+        query costs nothing rather than randomising the ranking.
+        """
+        if self.room_prior is None:
+            return {}
+        ranked = self.room_prior.ranking()
+        if not ranked:
+            return {}
+        ids = [int(r.id) for r in world.scene_graph.rooms.values()]
+        mult = rank_multipliers(ranked, ids, float(self.cfg.room_posterior_spread),
+                                floor=float(self.cfg.room_posterior_floor))
+        if mult != self._room_mult:
+            self._room_mult = mult
+            self.stats["room_prior_top"] = int(ranked[0])
+            self.stats["room_prior_applied"] = self.stats.get("room_prior_applied", 0) + 1
+            # Into the episode record, so "which room did the model send it to,
+            # and when" is answerable per episode rather than only in aggregate.
+            self.search_log_events.append(
+                {"step": int(world.step), "room_ranking": [int(r) for r in ranked],
+                 "room_mult": {int(k): round(float(v), 3) for k, v in mult.items()}}
+            )
+        return mult
 
     def _room_bonus(self, bonus: float, room_id: int) -> float:
         """The same-room bonus, discounted by what the room has already failed
@@ -666,6 +860,10 @@ class ExplorationStrategy:
             }
         )
         self.search_container = None
+
+    def shutdown(self) -> None:
+        if self.room_prior is not None:
+            self.room_prior.shutdown()
 
     def survival_report(self) -> dict:
         """How much of the search space is still believed in.

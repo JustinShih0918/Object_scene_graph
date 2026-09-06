@@ -43,7 +43,11 @@ from ..mapping.costmap import PLANE, Costmap2D
 from ..objects.object_layer import ObjectLayer
 from ..perception.detector import Detector
 from ..perception.vocabulary import target_vocabulary
-from ..pipeline.beliefs import build_affinity_prior, build_presence_filter
+from ..pipeline.beliefs import (
+    build_affinity_prior,
+    build_presence_filter,
+    build_room_prior,
+)
 from ..perception.keyframe import KeyframeSelector, KeyframeStore
 from ..planning.controller import WaypointController
 from ..planning.planner import PlanResult
@@ -154,6 +158,7 @@ class NavAgent:
         self.exploration = ExplorationStrategy(
             cfg, self.planner, scorer, self.viewpoint_planner,
             build_affinity_prior(cfg), self.stats, self.profiler,
+            room_prior=build_room_prior(cfg),
         )
 
         self.reset(target_category)

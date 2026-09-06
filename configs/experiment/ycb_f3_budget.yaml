@@ -1,0 +1,19 @@
+# @package _global_
+#
+# F3: a DIAGNOSTIC, not a proposed improvement. It changes the protocol.
+#
+# 16 of the 26 cross_anchor failures hit the 500-step cap and 13 burn all three
+# attempts; mean steps 397 against the successes' 198. A cross_anchor episode
+# needs a median 199 steps to succeed where in_anchor needs 134.
+#
+# So: is cross_anchor short of TIME, or short of capability? Raising the cap to
+# 750 answers it and nothing else. If SR rises a lot, the search is merely
+# inefficient and the remaining work is to make it cheaper. If it barely moves,
+# the agent is not failing for want of steps and every efficiency argument made
+# tonight is wrong.
+#
+# Never promote this. It is not comparable to any other condition.
+defaults:
+  - ycb_dynamic_cross
+agent:
+  max_steps: 750

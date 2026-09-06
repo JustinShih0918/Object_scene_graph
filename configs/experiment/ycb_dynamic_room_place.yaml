@@ -1,0 +1,43 @@
+# @package _global_
+#
+# Condition X4: the room posterior, asked the question this benchmark answers.
+#
+# X/X2/X3 ask where the target BELONGS. The model answers that well -- for six
+# YCB targets it put the room holding the refrigerator first, 6 times out of 6 --
+# and it is the wrong question. The layouts under evaluation are the collector's:
+# `outputs/substituted_layouts/*/dynamic_scene_config/*/layout_*.json` carry
+# "imported_by": "scripts/import_collector_layouts.py" and "substituted_from":
+# "outputs/collector_layouts/...". They are NOT what author_semantic_layouts.py
+# generates, and its kitchen-biased SEMANTIC_HOMES does not describe them.
+#
+# Where cross_anchor relocations actually land, over all three scenes:
+#
+#     00848   bed 12, nightstand 3, ...
+#     00829   bed  5, sink 2, desk 2, ...
+#     00880   desk  4, sink 2, bed 2, ...
+#
+# In 00848 the tomato soup can is on a BED in all three cross_anchor layouts,
+# and "where does a tin can belong" ranks first the single room with no bed in
+# it. That is anti-correlated with the truth, which is why X's four attributable
+# wins on 00848 cannot have come from naming the right room -- they came from
+# pushing the agent out of the room it was stuck in, which needs no model.
+#
+# So ask what happened instead of what is tidy: someone carried it and put it
+# down on whatever surface was to hand. Measured on the same five rooms, the two
+# framings invert each other -- "belongs" ranks the bed-less room FIRST 6/6,
+# "placement" ranks it LAST.
+#
+# Symmetric, not floored: the floor exists to stop a WRONG ranking from burying
+# a correct room (00829, control 5/9 against the symmetric posterior's 2/9). A
+# ranking that matches the destinations should be allowed to demote as well as
+# promote, and demotion is half the signal -- "not the kitchen" is exactly what
+# breaks 00848's absorbing kitchen loop.
+#
+# Prediction, stated before the run: this is the arm that should move
+# cross_anchor. If it does not, the room level is not where cross_anchor's
+# problem lives, and what remains is the 209x proximity term and the step budget.
+defaults:
+  - ycb_dynamic_room_block
+
+exploration:
+  room_posterior_placement: true

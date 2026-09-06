@@ -62,6 +62,21 @@ class PresenceConfig:
     # decisive on its own. That asymmetry is the whole point of having two
     # sensors with different error rates.
     min_presence: float = 0.45
+
+    # A track whose best detection clears BOTH of these bypasses the
+    # `min_presence` veto. 0.0 disables the bypass and reproduces the
+    # shipped gate exactly.
+    #
+    # Presence decays from ordinary missed expectations while the agent
+    # walks past, so it vetoes real targets: measured 0.67 m from a tin
+    # can, tracks scoring 0.736 and 0.417 on 12,716 and 52,595 px boxes
+    # were both excluded at p = 0.08. Removing the veto outright is worse
+    # -- condition ZZ (min_presence 0.0) cost 9 of 102 episodes and took
+    # cross_anchor 0.490 -> 0.392 by readmitting stale and mislabelled
+    # tracks. A large, confident box is the one thing presence should not
+    # be able to outvote.
+    presence_bypass_score: float = 0.0
+    presence_bypass_bbox_px: float = 0.0
     # Retire a candidate the agent has walked to and found was not the target
     # this many times (0 disables). This is the IDENTITY channel, and it exists
     # because presence cannot answer the question: a false positive is an object

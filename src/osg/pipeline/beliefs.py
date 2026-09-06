@@ -53,6 +53,34 @@ def build_affinity_prior(cfg):
     )
 
 
+def build_room_prior(cfg):
+    """Which room did it go to? None unless asked for.
+
+    Shares the text endpoint with the affinity prior -- same NIM account, same
+    model -- because they are the same kind of question asked at two levels of
+    the hierarchy: affinity ranks SURFACE categories, this ranks ROOMS. Only the
+    second can be selective for the cross_anchor half, since both layout types
+    draw from the same home categories and differ only by destination region.
+    """
+    ec = cfg.exploration
+    if ec is None or not ec.room_posterior_llm:
+        return None
+    from ..llm.client import ChatClient
+    from ..llm.room_prior import RoomPriorProvider
+
+    client = None
+    if cfg.llm.api_key:
+        client = ChatClient(
+            cfg.llm.base_url, cfg.llm.text_model, cfg.llm.api_key,
+            float(ec.room_posterior_timeout_s), cfg.llm.max_image_px,
+            cfg.llm.send_response_format,
+        )
+    return RoomPriorProvider(
+        client, cache_path=str(ec.room_posterior_cache or "") or None,
+        placement=bool(ec.room_posterior_placement),
+    )
+
+
 def build_presence_filter(cfg):
     """None unless scene_graph.presence.enabled -- the filter must be an opt-in
     A/B, not a silent default (docs/DYNAMIC_SCENES.md, Phase 1)."""
