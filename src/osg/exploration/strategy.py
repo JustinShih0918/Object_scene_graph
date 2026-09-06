@@ -145,6 +145,18 @@ class ExplorationStrategy:
         # `search_room_saturation`).
         self.search_room_id: Optional[int] = None
         self._room_fruitless: Dict[int, int] = {}
+        # Mechanism counters for the observation-novelty weight. A null result
+        # from a knob that never fired refutes nothing (three earlier arms
+        # returned confident nulls while testing nothing), so the weight records
+        # what it actually did to the ranking, not merely that it was enabled.
+        self._novelty_applied = 0
+        self._novelty_min = 1.0
+        self._novelty_reordered = 0
+        # n_obs per track as of the first round that saw it, so the weight can
+        # read observations THIS EPISODE added rather than the absolute count.
+        # See `_room_novelty` for why the absolute count is unusable here.
+        self._obs_baseline: Dict[int, int] = {}
+        self._novelty_n_max = 0.0
         # The container categories this map holds, fixed once per episode so a
         # set that grows mid-episode cannot change the prior under the agent
         # (and cannot multiply the affinity cache keys).
@@ -453,6 +465,27 @@ class ExplorationStrategy:
         # inspections and 33 m against 45 and 40 m for a plain global argmax,
         # because crossing the house repeatedly is what the global index does
         # once the nearby surfaces are retired.
+        # Observation novelty (TextNav Eq. 3). Applied BEFORE the same-room
+        # bonus and to every room, so a room the agent has stared at loses
+        # ground to one it has not -- including the room it is standing in,
+        # which is the case `search_room_saturation` cannot reach.
+        novelty = self._room_novelty(world)
+        if novelty:
+            order_before = [c.ref_id for c in sorted(cands, key=lambda c: -c.prior)]
+            for c in cands:
+                node = world.scene_graph.containers.get(c.ref_id)
+                if node is None or not node.room_id:
+                    continue
+                w = novelty.get(int(node.room_id))
+                if w is None or w >= 1.0:
+                    continue
+                c.prior *= w
+                self._novelty_applied += 1
+                self._novelty_min = min(self._novelty_min, w)
+            order_after = [c.ref_id for c in sorted(cands, key=lambda c: -c.prior)]
+            if order_before != order_after:
+                self._novelty_reordered += 1
+
         room_bonus = float(self.cfg.search_same_room_bonus)
         if room_bonus > 1.0 and world.scene_graph.rooms:
             here = world.scene_graph.room_of_point(agent_xy)
@@ -635,6 +668,53 @@ class ExplorationStrategy:
         floor = float(self.cfg.search_room_saturation_floor)
         return max(floor, bonus * (1.0 - rate) ** n)
 
+    def _room_novelty(self, world: WorldView) -> Dict[int, float]:
+        """Per-room observation-novelty weight, w_r = exp(-(n_r - free)/sigma).
+
+        `n_r` is the mean, over the object nodes the scene graph places in room
+        r, of the observations THIS EPISODE has added to each node -- the
+        paper's "average detection count of the nodes in subgraph j", corrected
+        for the fact that we do not start from an empty graph and they do.
+
+        The absolute count is unusable for us. Measured over the three prior
+        maps in `outputs/maps_v5`, the per-region mean n_obs at episode START is
+        already 5.0 in 00848, 12.4 in 00829 and 13.3 in 00880 (3 m regions, >=5
+        tracks). A weight on the absolute count would therefore discount rooms
+        the agent has not searched at all this episode, and would discount
+        00880's rooms 2.7x harder than 00848's for no reason but how long the
+        map-building pass happened to dwell there -- and that pass gets roughly
+        six times a scored episode's budget. What the weight is FOR is "this
+        search has already chewed on this region", which is the delta.
+
+        Baselining is lazy and per track, so a track discovered mid-episode
+        enters at zero and accumulates honestly from there.
+
+        `_novelty_n_max` is recorded even when the weight is disabled, so a
+        control run reports the scale that sigma has to be chosen against.
+        """
+        per_room: Dict[int, list] = {}
+        for o in world.scene_graph.objects:
+            tid = int(o.track_id)
+            n = int(o.n_obs)
+            base = self._obs_baseline.setdefault(tid, n)
+            if not o.room_id:
+                continue  # 0 = unassigned; an unplaced node belongs to no room
+            per_room.setdefault(int(o.room_id), []).append(max(0, n - base))
+        if not per_room:
+            return {}
+        means = {rid: sum(v) / len(v) for rid, v in per_room.items()}
+        self._novelty_n_max = max(self._novelty_n_max, max(means.values()))
+
+        sigma = float(self.cfg.search_obs_novelty_sigma)
+        if sigma <= 0.0:
+            return {}
+        floor = float(self.cfg.search_obs_novelty_floor)
+        free = float(self.cfg.search_obs_novelty_free)
+        return {
+            rid: max(floor, float(np.exp(-max(0.0, n - free) / sigma)))
+            for rid, n in means.items()
+        }
+
     def mark_searched(self, step: int, arrived: bool = True) -> None:
         """Arriving at a surface without the target is a look that did not find
         it -- worth (1 - d), not worth zero and not worth nothing.
@@ -678,6 +758,16 @@ class ExplorationStrategy:
         return {
             "glance_containers": len(self._glanced),
             "surfaces_touched": len(factors),
+            # Did the novelty weight actually move the ranking, or was the arm
+            # void? `reordered` is the one that matters: a weight that fires on
+            # every candidate equally changes no decision.
+            "novelty_applied": int(self._novelty_applied),
+            "novelty_reordered": int(self._novelty_reordered),
+            "novelty_min": round(float(self._novelty_min), 4),
+            # Recorded even when sigma = 0: the largest per-room mean of
+            # episode-added observations is the scale sigma must be set against,
+            # and a control run is what measures it.
+            "novelty_n_max": round(float(self._novelty_n_max), 2),
             "surfaces_retired": sum(1 for f in factors if f < 0.1),
             "surface_factor_min": round(min(factors), 5) if factors else None,
             "surface_factor_median": round(sorted(factors)[len(factors) // 2], 4) if factors else None,

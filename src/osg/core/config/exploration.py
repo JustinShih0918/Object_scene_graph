@@ -161,6 +161,38 @@ class ExplorationConfig:
     # ordinary, not worse than one never visited. Below 1.0 actively pushes the
     # agent out of a room it has been failing in.
     search_room_saturation_floor: float = 1.0
+    # ------------------------------------------------------- observation novelty
+    # WACV'27 #1308 (TextNav) Eq. 3 carries an observation-frequency weight
+    # w_j = exp(-n_j / sigma) over scene-graph subgraphs, with n_j the mean
+    # detection count of the nodes in subgraph j. Their ablation puts it at 2.7
+    # SR points on HM3D, independent of their room prior (which is worth 3.2).
+    #
+    # Ported here to ROOMS and to the SURFACE queue rather than to frontiers,
+    # because that is where our version of the pathology lives. Scene 00848's
+    # kitchen holds 68 containers, and `search_room_saturation` already tries to
+    # break out of it -- but it counts fruitless ARRIVALS, of which an episode
+    # affords about a dozen, and it only ever discounts a bonus the agent's
+    # CURRENT room enjoys. The observation count is the quantity that actually
+    # runs away in an absorbing room: the agent re-observes the same 68
+    # containers every keyframe while arriving at almost none of them. This
+    # weight reads that directly, applies to every room including the ones the
+    # agent is not standing in, and multiplies the whole candidate prior rather
+    # than a bonus term -- so a well-chewed room can fall BELOW a fresh one
+    # instead of merely tying with it.
+    #
+    # sigma is the mean-observation count at which a room's surfaces are worth
+    # 1/e of a never-seen room's. 0.0 disables it and reproduces every earlier
+    # condition exactly.
+    search_obs_novelty_sigma: float = 0.0
+    # Mean observations a room gets for free before any decay. The same lesson
+    # as `search_room_saturation_free`: decaying from the first look weakens the
+    # prior inside the window where successes actually happen (no success under
+    # condition N ever needed more than 7 inspections; median 0).
+    search_obs_novelty_free: float = 0.0
+    # How far the weight may fall. Floored so an over-observed room becomes
+    # unattractive rather than unreachable -- if the target IS there, the search
+    # must still be able to come back to it.
+    search_obs_novelty_floor: float = 0.25
     search_arrival_m: float = 1.2
     # Turns spent looking AT a surface on arrival, before its belief is scored.
     # `_mark_surface_searched` multiplies belief by (1 - search_detect_prob) on

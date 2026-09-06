@@ -464,6 +464,10 @@ def test_survival_report_counts_what_the_search_has_written_off():
     strategy = ExplorationStrategy.__new__(ExplorationStrategy)
     strategy.search_log = InspectionLog()
     strategy._glanced = {1, 2}
+    strategy._novelty_applied = 0
+    strategy._novelty_reordered = 0
+    strategy._novelty_min = 1.0
+    strategy._novelty_n_max = 0.0
     for _ in range(20):
         strategy.search_log.searched(1, 0.35)
     strategy.search_log.searched(2, 0.35)

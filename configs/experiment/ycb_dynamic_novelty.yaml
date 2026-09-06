@@ -1,0 +1,39 @@
+# @package _global_
+#
+# Condition NV: condition N plus the observation-frequency novelty weight from
+# WACV'27 #1308 (TextNav) Eq. 3, w_j = exp(-n_j / sigma).
+#
+# What the paper does and what this does differently:
+#
+#   paper                            here
+#   ---------------------------------------------------------------------
+#   subgraphs from DBSCAN over       rooms from VoronoiRoomSegmenter -- ours
+#   VLM-voted room labels (Eq. 2)    come from the costmap and are already
+#                                    spatially coherent, so Eq. 2 is redundant
+#   weights FRONTIER scores          weights the SURFACE queue, which is where
+#                                    our version of the pathology lives
+#   n_j = absolute detection count   n_j = observations THIS EPISODE added; we
+#                                    load a prior map and they do not
+#   also carries a room-type prior   omitted deliberately: measured on
+#   from the goal text (+3.2 SR)     `outputs/substituted_layouts`, a semantic
+#                                    room prior is ANTI-correlated with where
+#                                    this benchmark puts objects (00848 cross:
+#                                    bed 12, nightstand 3)
+#
+# The target is 00848, where condition N inspects 11 surfaces, selects ZERO
+# frontiers in 286 steps and never sees the target. 00829 is the guard: room
+# saturation (condition V) already broke there, costing 6 of 90 episodes.
+#
+#   python scripts/run_eval.py +experiment=ycb_dynamic_novelty \
+#     'ycb.scenes=[00848-ziup5kvtCCR]' \
+#     ycb.map_in=outputs/maps_v5/00848-ziup5kvtCCR +run_tag=NV
+#
+# sigma is NOT guessed: run the control first and read `novelty_n_max` from
+# agent_stats, which is recorded even when the weight is disabled.
+defaults:
+  - ycb_dynamic_best
+
+exploration:
+  search_obs_novelty_sigma: 8.0
+  search_obs_novelty_free: 2.0
+  search_obs_novelty_floor: 0.25
