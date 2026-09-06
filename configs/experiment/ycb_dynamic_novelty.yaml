@@ -33,7 +33,24 @@
 defaults:
   - ycb_dynamic_best
 
+# Calibrated against run NV0 (condition N with the weight disabled), 60
+# episodes over 00848 and 00829. `novelty_n_max`, the largest per-room mean of
+# episode-added observations, separates the two outcomes with no overlap:
+#
+#                  n    med    q3   p90    max
+#     SUCCESS     38    0.0   0.5   1.7    2.5
+#     FAILURE     22    4.2   5.8   9.1   14.0
+#
+# free = 3.0 is therefore above EVERY success ever observed, so the weight
+# cannot act inside the window where episodes actually succeed -- the lesson
+# `search_room_saturation_free` records, with a sharper boundary than it had.
+#
+# sigma = 3.0 is set by what it takes to matter, not by a median. The same-room
+# bonus is x4, so a mild discount changes no argmax: only at the 0.25 floor does
+# a stale room reach parity with a fresh one (4 x 0.25 = 1.0, "disappointing
+# becomes ordinary, not worse"). sigma = 3 puts the floor at n = 7.2, which
+# 00848's stuck episodes clear (q3 5.8, p90 12.1) and no success approaches.
 exploration:
-  search_obs_novelty_sigma: 8.0
-  search_obs_novelty_free: 2.0
+  search_obs_novelty_sigma: 3.0
+  search_obs_novelty_free: 3.0
   search_obs_novelty_floor: 0.25
