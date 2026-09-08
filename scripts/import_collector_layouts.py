@@ -33,9 +33,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-# Keep command-line defaults aligned with the runtime resolver.  The collector
-# image mounts these at /app, while docker/compose mounts the same trees at
-# /datasets; callers can still override every root explicitly.
+# Keep command-line defaults aligned with the runtime resolver.  These are the
+# roots mounted by this container; callers can still override every root
+# explicitly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from osg.core.paths import collector_data_root  # noqa: E402
 
@@ -43,14 +43,10 @@ from osg.core.paths import collector_data_root  # noqa: E402
 # (/home/eku/..., which rebase_collector_path cannot map because it has no
 # `data` component). This is the form the nav image mounts.
 SCENE_BLOCK = {
-    "scene_path": (
-        "/app/data/versioned_data/hm3d-0.2/hm3d/val/"
-        "{scene}/{stem}.basis.glb"
-    ),
-    "scene_dataset_config": (
-        "/app/data/versioned_data/hm3d-0.2/hm3d/"
-        "hm3d_annotated_basis.scene_dataset_config.json"
-    ),
+    "scene_path": "{data_root}/versioned_data/hm3d-0.2/hm3d/val/"
+    "{scene}/{stem}.basis.glb",
+    "scene_dataset_config": "{data_root}/versioned_data/hm3d-0.2/hm3d/"
+    "hm3d_annotated_basis.scene_dataset_config.json",
 }
 
 # Where in_anchor stops and cross_anchor starts, for the cross-check only.
@@ -65,7 +61,10 @@ def anchor_id(handle: str) -> str:
 
 def scene_block(scene: str) -> Dict[str, str]:
     stem = scene.split("-", 1)[1] if "-" in scene else scene
-    return {k: v.format(scene=scene, stem=stem) for k, v in SCENE_BLOCK.items()}
+    return {
+        k: v.format(scene=scene, stem=stem, data_root=collector_data_root())
+        for k, v in SCENE_BLOCK.items()
+    }
 
 
 def dedupe_instances(objects: List[dict], mapping: Dict[str, str],

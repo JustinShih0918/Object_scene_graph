@@ -3,8 +3,8 @@
 HM3D is downloaded beside the collector checkout in two versioned trees.  The
 ``scene_datasets/hm3d`` link is convenient for Habitat, but it is mutable and
 has historically pointed at the wrong release.  Runtime code therefore uses
-the v0.2 tree directly; the environment variables below are only escape hatches
-for a different mount layout (for example the collector's ``/app`` image).
+the v0.2 tree directly.  ``OSG_DATA_ROOT`` and the other environment variables
+are explicit overrides for this container's mounted layout.
 """
 from __future__ import annotations
 
@@ -16,11 +16,9 @@ from typing import Iterable
 HM3D_VERSION = "0.2"
 _DEFAULT_DATA_ROOTS = (
     Path("/datasets/habitat-data-collector/data"),
-    Path("/app/data"),
 )
 _DEFAULT_AUTHORING_ROOTS = (
     Path("/datasets/habitat-data-collector/outputs/dualmap_authoring"),
-    Path("/app/outputs/dualmap_authoring"),
 )
 
 
@@ -69,4 +67,3 @@ def ycb_authoring_root() -> Path:
         if candidate.is_dir():
             return candidate
     return _DEFAULT_AUTHORING_ROOTS[0]
-

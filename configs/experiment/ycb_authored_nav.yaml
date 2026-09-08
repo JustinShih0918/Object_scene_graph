@@ -184,12 +184,12 @@ eval:
   mode: ycb_authored
 
 ycb:
-  # The dataclass defaults select the mounted collector data tree for the
-  # current image (/datasets/... or /app/data) and the canonical HM3D v0.2
-  # scene root below it.
+  # The dataclass defaults select the mounted collector data tree under
+  # /datasets/habitat-data-collector/data and the canonical HM3D v0.2 scene
+  # root below it.
   # The authored layouts are independent of DualMap's released
   # data/dualmap/HM3D_collect tree.  The dataclass default selects the mounted
-  # /datasets path (or /app/outputs/dualmap_authoring in the collector image).
+  # /datasets/habitat-data-collector/outputs/dualmap_authoring root.
   scenes: ["*"]
   layout_types: [static]
   layout_indices: [1, 2, 3]

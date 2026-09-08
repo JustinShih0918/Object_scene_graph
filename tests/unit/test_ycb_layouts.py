@@ -50,11 +50,11 @@ def _layout_value(
     return {
         "scene": {
             "scene_path": (
-                f"/app/data/scene_datasets/hm3d/val/00001-{scene_hash}/"
+                f"/legacy/data/scene_datasets/hm3d/val/00001-{scene_hash}/"
                 f"{scene_hash}.basis.glb"
             ),
             "scene_dataset_config": (
-                "/app/data/scene_datasets/hm3d/hm3d.scene_dataset_config.json"
+                "/legacy/data/scene_datasets/hm3d/hm3d.scene_dataset_config.json"
             ),
         },
         "id_handle_mapping": {str(semantic_id): handle},
@@ -152,10 +152,10 @@ def _benchmark_cfg(data_root: Path, layout_root: Path, cache_root: Path):
 def test_rebase_collector_paths_and_canonical_labels(tmp_path):
     root = tmp_path / "mounted-data"
     assert rebase_collector_path(
-        "/app/data/scene_datasets/hm3d/scene.glb", root
+        "/legacy/data/scene_datasets/hm3d/scene.glb", root
     ) == root / "scene_datasets/hm3d/scene.glb"
     assert rebase_collector_path(
-        "/app/data/scene_datasets/hm3d/scene.glb",
+        "/legacy/data/scene_datasets/hm3d/scene.glb",
         root,
         hm3d_root=root / "versioned_data/hm3d-0.2/hm3d",
     ) == root / "versioned_data/hm3d-0.2/hm3d/scene.glb"

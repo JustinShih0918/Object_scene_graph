@@ -14,8 +14,10 @@ habitat = pytest.importorskip("habitat")
 
 
 def _data_present() -> bool:
+    from osg.core.paths import hm3d_scene_root
+
     return (
-        Path("data/scene_datasets/hm3d").exists()
+        hm3d_scene_root().is_dir()
         and any(Path("data/datasets/objectnav/hm3d").rglob("*.json.gz"))
     )
 

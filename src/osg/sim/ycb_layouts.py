@@ -83,7 +83,7 @@ def rebase_collector_path(
     *,
     hm3d_root: Path | None = None,
 ) -> Path:
-    """Map a serialized collector path (usually `/app/data/...`) to a mount.
+    """Map a serialized collector path to this container's mounted tree.
 
     Authoring files intentionally retain the path used by the collector. The
     nav image uses a different mount point, so retain only the suffix below the
