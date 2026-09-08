@@ -77,7 +77,12 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def rebase_collector_path(serialized: str, data_root: Path) -> Path:
+def rebase_collector_path(
+    serialized: str,
+    data_root: Path,
+    *,
+    hm3d_root: Path | None = None,
+) -> Path:
     """Map a serialized collector path (usually `/app/data/...`) to a mount.
 
     Authoring files intentionally retain the path used by the collector. The
@@ -94,8 +99,19 @@ def rebase_collector_path(serialized: str, data_root: Path) -> Path:
         index = max(i for i, part in enumerate(parts) if part == "data")
         suffix = parts[index + 1 :]
         if suffix:
+            # Layouts authored before the versioned mount was introduced use
+            # ``data/scene_datasets/hm3d``.  Resolve that legacy spelling to
+            # the explicit v0.2 tree when the runtime supplies ``hm3d_root``;
+            # this keeps old JSON readable without following a mutable link.
+            if hm3d_root is not None and suffix[:2] == (
+                "scene_datasets",
+                "hm3d",
+            ):
+                return Path(hm3d_root).joinpath(*suffix[2:])
             return data_root.joinpath(*suffix)
     if not path.is_absolute():
+        if hm3d_root is not None and parts[:1] == ("hm3d",):
+            return Path(hm3d_root).joinpath(*parts[1:])
         return data_root / path
     raise YCBLayoutError(
         f"cannot rebase asset path outside a collector data tree: {serialized}"
@@ -152,6 +168,7 @@ def load_authored_layout(
     data_root: Path,
     target_labels: Mapping[str, str],
     static_layout: AuthoredLayout | None = None,
+    hm3d_root: Path | None = None,
 ) -> AuthoredLayout:
     data = _load_json(path)
     # Dynamic paths are <scene>/dynamic_scene_config/<type>/<file>.
@@ -166,8 +183,10 @@ def load_authored_layout(
         raise YCBLayoutError(f"{path}: missing scene object")
     mesh_raw = scene.get("scene_path")
     dataset_raw = scene.get("scene_dataset_config") or scene.get("scene_config_path")
-    scene_mesh = rebase_collector_path(mesh_raw, data_root)
-    dataset_config = rebase_collector_path(dataset_raw, data_root)
+    scene_mesh = rebase_collector_path(mesh_raw, data_root, hm3d_root=hm3d_root)
+    dataset_config = rebase_collector_path(
+        dataset_raw, data_root, hm3d_root=hm3d_root
+    )
     objects_dir = data_root / "objects" / "ycb" / "configs"
     required_paths = (
         (scene_mesh, "HM3D scene mesh"),
@@ -449,6 +468,7 @@ def discover_authored_layouts(
     layout_indices: Sequence[int],
     target_labels: Mapping[str, str],
     allow_incomplete: bool = False,
+    hm3d_root: Path | None = None,
 ) -> LayoutDiscovery:
     if not layout_root.is_dir():
         raise YCBLayoutError(f"layout root does not exist: {layout_root}")
@@ -479,6 +499,7 @@ def discover_authored_layouts(
                 layout_root=layout_root,
                 data_root=data_root,
                 target_labels=target_labels,
+                hm3d_root=hm3d_root,
             )
         except YCBLayoutError as exc:
             if wildcard or allow_incomplete:
@@ -510,6 +531,7 @@ def discover_authored_layouts(
                         data_root=data_root,
                         target_labels=target_labels,
                         static_layout=static_layout,
+                        hm3d_root=hm3d_root,
                     )
                 )
     if not layouts:

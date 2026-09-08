@@ -38,6 +38,12 @@ services:
       - HOME=/tmp
       - YOLO_CONFIG_DIR=/tmp/Ultralytics
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      # Keep navigation independent of the mutable scene_datasets/hm3d link.
+      # The code still accepts these as environment overrides for alternate
+      # collector mounts, but the default image always uses HM3D v0.2.
+      - OSG_DATA_ROOT=/datasets/habitat-data-collector/data
+      - OSG_HM3D_SCENES_DIR=/datasets/habitat-data-collector/data/versioned_data/hm3d-0.2
+      - OSG_YCB_AUTHORING_ROOT=/datasets/habitat-data-collector/outputs/dualmap_authoring
     volumes:
       - ..:/workspace
       - weights-cache:/workspace/data/weights

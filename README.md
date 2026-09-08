@@ -67,6 +67,13 @@ manifests and experiment artifacts still default to this repository's ignored
 `outputs/` directory. The entrypoint repairs ownership only for `outputs/` and
 the named detector-weight volume; it does not recursively chown collector data.
 
+The navigation code resolves HM3D scene assets directly from
+`/datasets/habitat-data-collector/data/versioned_data/hm3d-0.2/hm3d` (the
+v0.1 tree is retained for comparison but is not used). Authored YCB layouts are
+read from `/datasets/habitat-data-collector/outputs/dualmap_authoring`, while
+DualMap's released recordings remain under
+`/datasets/habitat-data-collector/data/dualmap/HM3D_collect`.
+
 ### Smoke tests
 
 ```bash
@@ -107,11 +114,11 @@ python scripts/run_eval.py +experiment=full_v1_navmesh eval.debug_frames=true   
 
 ### Authored YCB benchmark
 
-`+experiment=ycb_authored_nav` discovers authored layouts at runtime, creates
-and caches target-visible ObjectNav episodes, injects all authored rigid objects
-after every Habitat reset, and uses YOLOE-11l. The current `00829` scene is a
-fixture, not a hard-coded preset: adding another complete authored scene makes
-it available immediately.
+`+experiment=ycb_authored_nav` discovers the 15 authored scene directories at
+runtime, creates and caches target-visible ObjectNav episodes, injects all
+authored rigid objects after every Habitat reset, and uses YOLOE-11l. The scene
+set is data-driven rather than hard-coded: adding another complete authored
+scene makes it available immediately.
 
 ```bash
 # Download both explicit detector profiles once (inside docker-nav-1).

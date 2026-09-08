@@ -551,7 +551,7 @@ def generate_manifest(
 
 
 def prepare_ycb_benchmark(cfg, *, force: bool = False) -> PreparedYCB:
-    discovery = discover_authored_layouts(
+    discovery_kwargs = dict(
         layout_root=Path(str(cfg.ycb.layout_root)),
         data_root=Path(str(cfg.ycb.data_root)),
         scenes=[str(value) for value in cfg.ycb.scenes],
@@ -560,6 +560,13 @@ def prepare_ycb_benchmark(cfg, *, force: bool = False) -> PreparedYCB:
         target_labels={str(key): str(value) for key, value in cfg.ycb.target_labels.items()},
         allow_incomplete=bool(getattr(cfg.ycb, "skip_incomplete_layouts", False)),
     )
+    # ``hm3d_root`` was added after the original YCB helper.  Keep lightweight
+    # test/integration callers that provide only the old fields working, while
+    # every registered Hydra config resolves legacy scene paths to v0.2.
+    configured_hm3d_root = getattr(cfg.ycb, "hm3d_root", None)
+    if configured_hm3d_root:
+        discovery_kwargs["hm3d_root"] = Path(str(configured_hm3d_root))
+    discovery = discover_authored_layouts(**discovery_kwargs)
     manifests: List[Dict[str, Any]] = []
     cache_files: List[Path] = []
     static_by_scene = {

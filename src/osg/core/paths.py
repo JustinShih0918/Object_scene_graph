@@ -1,0 +1,72 @@
+"""Canonical data roots used by the navigation and authoring pipelines.
+
+HM3D is downloaded beside the collector checkout in two versioned trees.  The
+``scene_datasets/hm3d`` link is convenient for Habitat, but it is mutable and
+has historically pointed at the wrong release.  Runtime code therefore uses
+the v0.2 tree directly; the environment variables below are only escape hatches
+for a different mount layout (for example the collector's ``/app`` image).
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Iterable
+
+
+HM3D_VERSION = "0.2"
+_DEFAULT_DATA_ROOTS = (
+    Path("/datasets/habitat-data-collector/data"),
+    Path("/app/data"),
+)
+_DEFAULT_AUTHORING_ROOTS = (
+    Path("/datasets/habitat-data-collector/outputs/dualmap_authoring"),
+    Path("/app/outputs/dualmap_authoring"),
+)
+
+
+def _configured_path(names: Iterable[str]) -> Path | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return Path(value).expanduser()
+    return None
+
+
+def collector_data_root() -> Path:
+    """Return the mounted collector ``data`` directory."""
+    configured = _configured_path(("OSG_DATA_ROOT", "HABITAT_DATA_ROOT"))
+    if configured is not None:
+        return configured
+    for candidate in _DEFAULT_DATA_ROOTS:
+        if candidate.is_dir():
+            return candidate
+    return _DEFAULT_DATA_ROOTS[0]
+
+
+def hm3d_scenes_dir() -> Path:
+    """Return the parent consumed by Habitat's ``scenes_dir`` setting.
+
+    Scene IDs begin with ``hm3d/val/...``; consequently this function returns
+    ``.../versioned_data/hm3d-0.2`` rather than the child ``.../hm3d``.
+    """
+    configured = _configured_path(("OSG_HM3D_SCENES_DIR", "HM3D_SCENES_DIR"))
+    if configured is not None:
+        return configured
+    return collector_data_root() / "versioned_data" / f"hm3d-{HM3D_VERSION}"
+
+
+def hm3d_scene_root() -> Path:
+    """Return the canonical HM3D v0.2 ``hm3d`` tree."""
+    return hm3d_scenes_dir() / "hm3d"
+
+
+def ycb_authoring_root() -> Path:
+    """Return the authored-layout mount, independent of released DualMap data."""
+    configured = _configured_path(("OSG_YCB_AUTHORING_ROOT", "YCB_AUTHORING_ROOT"))
+    if configured is not None:
+        return configured
+    for candidate in _DEFAULT_AUTHORING_ROOTS:
+        if candidate.is_dir():
+            return candidate
+    return _DEFAULT_AUTHORING_ROOTS[0]
+

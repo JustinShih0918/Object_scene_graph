@@ -135,10 +135,12 @@ def main() -> None:
     static_layout = load_authored_layout(
         static_path, layout_root=args.layout_root, data_root=args.data_root,
         target_labels=YCB_TARGET_LABELS,
+        hm3d_root=args.data_root / "versioned_data/hm3d-0.2/hm3d",
     )
     dynamic = load_authored_layout(
         out, layout_root=args.layout_root, data_root=args.data_root,
         target_labels=YCB_TARGET_LABELS, static_layout=static_layout,
+        hm3d_root=args.data_root / "versioned_data/hm3d-0.2/hm3d",
     )
     print(f"wrote {out}")
     by_id = {o.semantic_id: o for o in static_layout.objects}

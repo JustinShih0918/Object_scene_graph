@@ -29,6 +29,10 @@ def _config():
             config_name="config",
             overrides=[
                 "+experiment=ycb_authored_nav",
+                # The mounted authoring set now contains 15 complete scenes;
+                # keep this six-episode smoke test focused on its original
+                # deterministic scene.
+                "ycb.scenes=[00829-QaLdnwvtxbs]",
                 "eval.save_viz=false",
                 "eval.debug_frames=false",
             ],
@@ -48,11 +52,26 @@ def test_current_wildcard_discovery_selects_complete_scene():
         layout_types=["static"],
         layout_indices=[1, 2, 3],
         target_labels=YCB_TARGET_LABELS,
+        hm3d_root=DATA_ROOT / "versioned_data/hm3d-0.2/hm3d",
     )
-    assert [(layout.scene_name, len(layout.objects)) for layout in found.layouts] == [
-        ("00829-QaLdnwvtxbs", 6)
-    ]
-    assert any(item["scene"] == "00800-TEEsavR23oF" for item in found.skipped)
+    assert len(found.layouts) == 15
+    assert {layout.scene_name for layout in found.layouts} == {
+        "00808-y9hTuugGdiq",
+        "00810-CrMo8WxCyVb",
+        "00813-svBbv1Pavdk",
+        "00820-mL8ThkuaVTM",
+        "00821-eF36g7L6Z9M",
+        "00823-7MXmsvcQjpJ",
+        "00824-Dd4bFSTQ8gi",
+        "00839-zt1RVoi7PcG",
+        "00844-q5QZSEeHe5g",
+        "00848-ziup5kvtCCR",
+        "00853-5cdEh9F2hJL",
+        "00871-VBzV5z6i1WS",
+        "00876-mv2HUxq3B53",
+        "00880-Nfvxx8J5NCo",
+        "00891-cvZr5TUy5C5",
+    }
 
 
 @pytest.mark.timeout(600)

@@ -8,8 +8,10 @@ against.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
+
+from ..paths import hm3d_scenes_dir
 
 
 @dataclass
@@ -26,7 +28,10 @@ class EvalConfig:
     split: str = "val"
     dataset_version: str = "v2"  # HM3D-semantics v0.2, 6 categories
     episodes_path: str = "data/datasets/objectnav/hm3d/v2/{split}/{split}.json.gz"
-    scenes_dir: str = "data/scene_datasets/"
+    # Explicit HM3D v0.2 parent.  Do not use the mutable
+    # ``data/scene_datasets/hm3d`` symlink: v1/v2 episode IDs are resolved
+    # against ``<scenes_dir>/hm3d/...`` by Habitat.
+    scenes_dir: str = field(default_factory=lambda: str(hm3d_scenes_dir()))
     num_episodes: int = -1  # -1 = all
     # >0 forces habitat to move to a new scene after this many episodes, so a
     # fixed-size subset spans the split instead of draining one scene first.
@@ -59,4 +64,3 @@ class EvalConfig:
     hfov_deg: float = 79.0
     depth_min_m: float = 0.5
     depth_max_m: float = 5.0
-

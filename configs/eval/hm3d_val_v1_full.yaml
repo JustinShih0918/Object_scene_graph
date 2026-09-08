@@ -9,8 +9,8 @@ defaults:
 # episode runs anyway, so forcing scene rotation only changes the order. The
 # 50-episode dev splits (dev50 / dev50_mf) are the ones that need spreading.
 #
-# Episode/scene layout is identical to hm3d_val_v1 (v1 episodes paired with
-# v0.2 scenes via the data/scene_datasets/hm3d symlink -- see that file).
+# Episode/scene layout is identical to hm3d_val_v1: v1 episodes are paired with
+# the explicit versioned_data/hm3d-0.2 scene tree (no mutable symlink).
 split: val
 dataset_version: v1
 episodes_path: data/datasets/objectnav/hm3d/v1/{split}/{split}.json.gz

@@ -435,6 +435,7 @@ def main(cfg: DictConfig) -> None:
         layout_types=layout_types,
         layout_indices=[int(v) for v in cfg.ycb.layout_indices],
         target_labels={str(k): str(v) for k, v in cfg.ycb.target_labels.items()},
+        hm3d_root=Path(str(cfg.ycb.hm3d_root)),
     )
     if not discovery.layouts:
         raise SystemExit(f"no layout discovered for types {layout_types}")

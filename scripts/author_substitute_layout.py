@@ -105,8 +105,15 @@ def main() -> None:
     from osg.sim.ycb_layouts import rebase_collector_path
 
     data_root = Path(args.data_root)
-    scene_mesh = rebase_collector_path(static["scene"]["scene_path"], data_root)
-    dataset_config = rebase_collector_path(static["scene"]["scene_dataset_config"], data_root)
+    hm3d_root = data_root / "versioned_data/hm3d-0.2/hm3d"
+    scene_mesh = rebase_collector_path(
+        static["scene"]["scene_path"], data_root, hm3d_root=hm3d_root
+    )
+    dataset_config = rebase_collector_path(
+        static["scene"]["scene_dataset_config"],
+        data_root,
+        hm3d_root=hm3d_root,
+    )
 
     sim_cfg = habitat_sim.SimulatorConfiguration()
     sim_cfg.scene_id = str(scene_mesh)

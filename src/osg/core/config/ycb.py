@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from ..paths import collector_data_root, hm3d_scene_root, ycb_authoring_root
+
 
 # Handle -> the class name the detector is asked for. Not always the object's
 # common name: YOLOE's text head scores "pitcher" at 0.00 on this asset at every
@@ -38,8 +40,12 @@ YCB_TARGET_LABELS: Dict[str, str] = {
 class YCBAuthoredConfig:
     """Runtime discovery and deterministic episode generation for authored YCB layouts."""
 
-    data_root: str = "/datasets/habitat-data-collector/data"
-    layout_root: str = "/datasets/habitat-data-collector/outputs/dualmap_authoring"
+    data_root: str = field(default_factory=lambda: str(collector_data_root()))
+    layout_root: str = field(default_factory=lambda: str(ycb_authoring_root()))
+    # Full canonical HM3D v0.2 scene tree.  Authored JSON may still contain
+    # the collector's historical ``scene_datasets/hm3d`` path; the loader
+    # rebases that spelling here rather than following the mutable symlink.
+    hm3d_root: str = field(default_factory=lambda: str(hm3d_scene_root()))
     scenes: List[str] = field(default_factory=lambda: ["*"])
     layout_types: List[str] = field(default_factory=lambda: ["static"])
     layout_indices: List[int] = field(default_factory=lambda: [1, 2, 3])

@@ -154,6 +154,11 @@ def test_rebase_collector_paths_and_canonical_labels(tmp_path):
     assert rebase_collector_path(
         "/app/data/scene_datasets/hm3d/scene.glb", root
     ) == root / "scene_datasets/hm3d/scene.glb"
+    assert rebase_collector_path(
+        "/app/data/scene_datasets/hm3d/scene.glb",
+        root,
+        hm3d_root=root / "versioned_data/hm3d-0.2/hm3d",
+    ) == root / "versioned_data/hm3d-0.2/hm3d/scene.glb"
     assert rebase_collector_path("objects/ycb/configs", root) == root / "objects/ycb/configs"
     # The label is the class the DETECTOR is asked for, which is not always the
     # object's common name: YOLOE scores "pitcher" at 0.00 on this asset at every

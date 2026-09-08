@@ -135,7 +135,7 @@
   "eval.rgb_width": 640,
   "eval.save_costmap": false,
   "eval.save_viz": true,
-  "eval.scenes_dir": "data/scene_datasets/",
+  "eval.scenes_dir": "/datasets/habitat-data-collector/data/versioned_data/hm3d-0.2",
   "eval.shuffle_episodes": false,
   "eval.split": "val",
   "exploration.affinity_cache": "outputs/affinity_cache.json",
@@ -371,6 +371,7 @@
   "verification.vlm_recall": 0.9,
   "ycb.cross_floor_relocations_only": false,
   "ycb.data_root": "/datasets/habitat-data-collector/data",
+  "ycb.hm3d_root": "/datasets/habitat-data-collector/data/versioned_data/hm3d-0.2/hm3d",
   "ycb.layout_indices": [
     1,
     2,

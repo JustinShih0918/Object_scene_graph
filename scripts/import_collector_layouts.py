@@ -36,9 +36,13 @@ from typing import Dict, List, Tuple
 # (/home/eku/..., which rebase_collector_path cannot map because it has no
 # `data` component). This is the form the nav image mounts.
 SCENE_BLOCK = {
-    "scene_path": "/app/data/scene_datasets/hm3d/val/{scene}/{stem}.basis.glb",
+    "scene_path": (
+        "/app/data/versioned_data/hm3d-0.2/hm3d/val/"
+        "{scene}/{stem}.basis.glb"
+    ),
     "scene_dataset_config": (
-        "/app/data/scene_datasets/hm3d/hm3d_annotated_basis.scene_dataset_config.json"
+        "/app/data/versioned_data/hm3d-0.2/hm3d/"
+        "hm3d_annotated_basis.scene_dataset_config.json"
     ),
 }
 
@@ -248,11 +252,13 @@ def main() -> None:
     static_layout = load_authored_layout(
         static_out, layout_root=args.out_root, data_root=args.data_root,
         target_labels=YCB_TARGET_LABELS,
+        hm3d_root=args.data_root / "versioned_data/hm3d-0.2/hm3d",
     )
     for out in written:
         load_authored_layout(
             out, layout_root=args.out_root, data_root=args.data_root,
             target_labels=YCB_TARGET_LABELS, static_layout=static_layout,
+            hm3d_root=args.data_root / "versioned_data/hm3d-0.2/hm3d",
         )
     print(f"validated {len(written) + 1} layouts against the authoring schema")
 

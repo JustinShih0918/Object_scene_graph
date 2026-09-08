@@ -41,7 +41,8 @@ def test_scene_path_is_rewritten_to_the_mounted_form():
     cannot map it and discovery would reject the layout outright."""
     out = mod.convert_static(STATIC, "00829-QaLdnwvtxbs")
     assert out["scene"]["scene_path"] == (
-        "/app/data/scene_datasets/hm3d/val/00829-QaLdnwvtxbs/QaLdnwvtxbs.basis.glb"
+        "/app/data/versioned_data/hm3d-0.2/hm3d/val/"
+        "00829-QaLdnwvtxbs/QaLdnwvtxbs.basis.glb"
     )
     assert "hm3d_annotated_basis" in out["scene"]["scene_dataset_config"]
 

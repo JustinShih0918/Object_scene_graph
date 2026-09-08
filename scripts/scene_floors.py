@@ -37,6 +37,7 @@ from osg.eval.floors import (  # noqa: E402
     classify_episode,
     navmesh_floor_heights,
 )
+from osg.core.paths import hm3d_scenes_dir  # noqa: E402
 
 
 def navmesh_floors(scene, scenes_dir):
@@ -147,9 +148,12 @@ def main():
                     help="episode dataset root")
     ap.add_argument("--scene-spread", type=float, default=SAME_FLOOR_M,
                     help="max height gap within one floor (m)")
-    ap.add_argument("--scenes-dir", default=None,
-                    help="scene_datasets/hm3d_v0.2 root; enables the independent "
-                         "navmesh floor count (needs habitat_sim + scene meshes)")
+    ap.add_argument(
+        "--scenes-dir",
+        default=str(hm3d_scenes_dir()),
+        help="HM3D v0.2 parent containing hm3d/; enables the independent "
+             "navmesh floor count (needs habitat_sim + scene meshes)",
+    )
     ap.add_argument("--out", default=None,
                     help="write the full per-episode classification to this JSON")
     args = ap.parse_args()
