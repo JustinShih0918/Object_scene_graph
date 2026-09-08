@@ -10,8 +10,10 @@ pytestmark = pytest.mark.sim
 
 pytest.importorskip("habitat")
 
-DATA_ROOT = Path("/datasets/habitat-data-collector/data")
-LAYOUT_ROOT = Path("/datasets/habitat-data-collector/outputs/dualmap_authoring")
+from osg.core.paths import collector_data_root, ycb_authoring_root
+
+DATA_ROOT = collector_data_root()
+LAYOUT_ROOT = ycb_authoring_root()
 
 
 def _mounted() -> bool:

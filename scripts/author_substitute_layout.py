@@ -28,10 +28,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from osg.core.paths import collector_data_root  # noqa: E402
 
 
 def parse_replacements(values: List[str]) -> Dict[str, str]:
@@ -80,7 +84,7 @@ def main() -> None:
     ap.add_argument("--scene", required=True)
     ap.add_argument("--replace", action="append", default=[],
                     help="OLD_HANDLE=NEW_HANDLE, repeatable")
-    ap.add_argument("--data-root", default="/datasets/habitat-data-collector/data")
+    ap.add_argument("--data-root", default=str(collector_data_root()))
     args = ap.parse_args()
 
     replacements = parse_replacements(args.replace)

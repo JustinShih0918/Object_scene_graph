@@ -29,8 +29,15 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+# Keep command-line defaults aligned with the runtime resolver.  The collector
+# image mounts these at /app, while docker/compose mounts the same trees at
+# /datasets; callers can still override every root explicitly.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from osg.core.paths import collector_data_root  # noqa: E402
 
 # The collector's own scene paths point at machines that no longer exist
 # (/home/eku/..., which rebase_collector_path cannot map because it has no
@@ -203,9 +210,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--collector-root", type=Path,
-                    default=Path("/datasets/habitat-data-collector/data/dualmap/HM3D_collect"))
+                    default=collector_data_root() / "dualmap/HM3D_collect")
     ap.add_argument("--data-root", type=Path,
-                    default=Path("/datasets/habitat-data-collector/data"))
+                    default=collector_data_root())
     ap.add_argument("--out-root", type=Path, default=Path("outputs/collector_layouts"))
     ap.add_argument("--scene", required=True)
     args = ap.parse_args()
@@ -244,8 +251,6 @@ def main() -> None:
             written.append(out)
 
     # Validate everything through the real loader, exactly as discovery will.
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from osg.core.config import YCB_TARGET_LABELS
     from osg.sim.ycb_layouts import load_authored_layout
 
