@@ -81,3 +81,28 @@ cost this pipeline cannot pay) or substituting detectable objects in the
 released layouts, which requires rerunning DualMap on the substituted layouts
 (~10 h of their harness for three seeds). Neither is taken tonight; the night
 goes to the 83 trials the detector can see.
+
+### 19:40 — Stale-anchor arm, first run: twin retirement alone (the stop was defective)
+
+`outputs/osg_anchor/flat_anchor`, full 107, paired against `look_flat`
+(`outputs/osg_anchor/TWINS_AB.md`). In this run the stale-anchor stop was
+granted 29 times and taken zero: the close look's silent path re-approached
+the ring and the once-only grant was spent before the arrival (fixed in
+`ddacbca`). So this run measures the twin retirement, which fired in 58 of
+107 trials.
+
+| | look_flat | + twin retirement |
+|---|---:|---:|
+| in-anchor SR | 24/54 | 24/54 (+1 / -1) |
+| cross-anchor SR | 18/53 | **20/53** (+4 / -2, p = 0.69) |
+| cross-anchor: target ever named | 27 | 31 |
+| cross-anchor: seen, never named | 16 | 13 |
+| cross-anchor: episodes that selected a far surface | 40 | 44 |
+| median steps | 371 | 500 |
+| trials at budget | 48 | 54 |
+
+Retiring the ghosts converts walking into searching: more surfaces selected,
+more targets named, two more cross-anchor successes -- and every freed step is
+spent, so the median episode now runs to the budget. The budget is the
+binding constraint again, one level down. In-anchor is untouched, as expected
+without the stop.
