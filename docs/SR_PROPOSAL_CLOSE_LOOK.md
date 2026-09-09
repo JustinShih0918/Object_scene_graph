@@ -151,3 +151,35 @@ belong to the paused appearance re-identification plan.
 and the tight-ring arm proved it again. The result of this work is the counters
 moving and the funnel emptying from the right buckets. If they do, SR follows,
 and if they do not, SR is not to be read.
+
+## Implementation (2026-09-09)
+
+`src/osg/agent/close_look.py`, `CloseLookPolicy`, a state of its own
+(`State.CLOSE_LOOK`) with the two entry points above behind
+`agent.close_look_before_absence` and `agent.close_look_opportunistic`, both
+off by default. The hooks are one line each: `ApproachPolicy.step` calls
+`before_absence` ahead of `_absence_at_arrival` on the `deadline` and
+`path_consumed` endings, and `NavAgent._act_inner` calls
+`maybe_opportunistic` on each keyframe after the glance. A commit that
+pre-empts a look is recorded as the look succeeding. The look drives with the
+approach's own `follow_to`, plans its pose with `ViewpointPlanner`'s new
+per-call `radii`, and hands a silent look to `ExplorationStrategy.close_looked`,
+which retires the surface as an arrival would and marks it inspected so the
+opportunistic trigger never spends a second detour on it.
+
+Telemetry, per episode: `close_look_log` (one entry per look: why, where,
+how many steps, whether the detector answered), the `close_look_*` counters in
+`agent_stats`, and `glance_ranges`, the closest range each container was ever
+glanced from, which is what lets a passing glance at 3.5 m be told apart from
+one at 1.2 m offline. `scripts/analyze_headline_anatomy.py` reads both into
+the own-surface table; `scripts/compare_close_look.py` is the four-arm report.
+
+**Measured cost on the three-trial smoke of the first cut**: a look was 15-49
+steps, and eight of them took 218 of a 481-step cross-anchor episode. The
+shipped defaults bound a look at about 15 steps (25 driving, six facing turns,
+a two-step hold) and an episode at six looks. The in-anchor smoke trial did
+what the design says: silent arrival, look, detection at 1.55 m, re-aim.
+
+Presets: `dualmap_protocol_osg_look_inanchor`, `_look_opportunistic`,
+`_look_both`, all on top of `dualmap_protocol_osg_tightring`; the batch is
+`scripts/run_close_look_ab.sh`.

@@ -55,6 +55,7 @@ from ..verification.absence import AbsenceSensor
 from ..verification.viewpoint import ViewpointPlanner
 from .approach import ApproachPolicy
 from .candidate import CandidatePolicy
+from .close_look import CloseLookPolicy
 from .floor_policy import FloorPolicy
 from ..core.labels import normalize_label
 from ..graph.containers import CONTAINER_CATEGORIES
@@ -238,6 +239,7 @@ class NavAgent:
         # the single owner of FSM state.
         self.approach = ApproachPolicy(self)
         self.candidates = CandidatePolicy(self)
+        self.close_look = CloseLookPolicy(self)
         # Where to go next -- frontiers and mapped surfaces under one index.
         # It owns everything an exploration round remembers; see
         # exploration/strategy.py.
@@ -350,6 +352,14 @@ class NavAgent:
     def candidate_reject_log(self) -> list:
         return self.candidates.reject_log
 
+    @property
+    def close_look_log(self) -> list:
+        return self.close_look.log
+
+    @property
+    def glance_ranges(self) -> dict:
+        return {str(k): round(float(v), 3) for k, v in self.exploration.glance_ranges.items()}
+
     # ------------------------------------------------------------------ reset
 
     def reset(self, target_category: str) -> None:
@@ -387,6 +397,7 @@ class NavAgent:
         self.state_log = []
         self.approach.reset()
         self.candidates.reset()
+        self.close_look.reset()
         self.kf_selector.reset()
         self.controller.reset()
         self.exploration.reset()
@@ -447,6 +458,7 @@ class NavAgent:
         self.approach.scan_turns_left = 0
         self.approach.scan_expected = 0
         self.approach.stop_reason = None
+        self.close_look.abort()
         self.state = State.EXPLORE
         self._goto_deadline = self.step_count + int(max_steps)
         self.stats["attempts"] = self.stats.get("attempts", 1) + 1
@@ -534,14 +546,21 @@ class NavAgent:
             self._on_keyframe(frame)
             if self.cfg.exploration.search_posterior:
                 self.exploration.glance(self._world(frame))
+            self.close_look.maybe_opportunistic(frame)
 
         down_look = self._down_look(frame, self.floor_layer, off_map)
         if down_look is not None:
             return down_look
 
         # Candidate target check happens in every state except terminal ones
-        if self.state in (State.INIT, State.EXPLORE, State.GOTO_FRONTIER):
+        if self.state in (State.INIT, State.EXPLORE, State.GOTO_FRONTIER) or (
+            self.state is State.CLOSE_LOOK and self.close_look.resume == "explore"
+        ):
             self.candidates.check(frame.camera_position[list(PLANE)])
+        if self.close_look.active and self.state is not State.CLOSE_LOOK:
+            self.close_look.interrupted()  # a commit pre-empted the look
+        if self.state == State.CLOSE_LOOK:
+            return self.close_look.step(frame)
 
         if self.state == State.INIT:
             if self._scan_steps_left > 0:

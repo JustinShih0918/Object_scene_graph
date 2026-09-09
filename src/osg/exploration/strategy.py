@@ -45,6 +45,27 @@ from .selector import frontier_goal_xy, select_frontier
 FRONTIER_ARRIVAL_TOL_M = 0.2
 
 
+def container_in_view(frame: FrameData, node, max_range_m: float,
+                      min_range_m: float = 0.3) -> Optional[float]:
+    """Range to a container's centre if it is inside this frame and unoccluded,
+    else None. One definition of "in view", shared by the passing glance and
+    the close look, so the two cannot drift apart."""
+    K, T_cw = frame.intrinsics.K(), frame.T_cw
+    h, w = frame.depth.shape
+    p_cam = T_cw[:3, :3] @ np.asarray(node.center, dtype=float) + T_cw[:3, 3]
+    z = float(p_cam[2])
+    if not (min_range_m <= z <= max_range_m):
+        return None
+    uv = K @ p_cam
+    u, v = float(uv[0] / z), float(uv[1] / z)
+    if not (0 <= u < w and 0 <= v < h):
+        return None
+    measured = float(frame.depth[int(v), int(u)])
+    if measured > 1e-3 and measured < z - 0.5:
+        return None  # something solid between us and the surface
+    return z
+
+
 @dataclass
 class WorldView:
     """What one exploration round is allowed to see.
@@ -161,6 +182,10 @@ class ExplorationStrategy:
         self.progress_ref_step = 0
         self.progress_ref_xy = np.zeros(2)
         self._glanced: set = set()
+        self._glance_min_range: Dict[int, float] = {}
+        # Surfaces that have had a real inspection -- an arrival or a close
+        # look -- so the opportunistic look does not spend a detour on them.
+        self._inspected: set = set()
         # A surface posterior may select another storey.  Only candidates on
         # the active floor are ever converted to viewpoints or sent to the 2D
         # planner; this field hands the other-floor decision to FloorPolicy.
@@ -421,24 +446,21 @@ class ExplorationStrategy:
         d = float(self.cfg.search_glance_detect_prob)
         rng = float(self.cfg.search_glance_range_m)
         frame = world.frame
-        K, T_cw = frame.intrinsics.K(), frame.T_cw
-        h, w = frame.depth.shape
         for cid, node in containers.items():
             if int(getattr(node, "floor_id", getattr(node, "floor", 0))) != int(
                 world.floor_id
             ):
                 continue
-            p_cam = T_cw[:3, :3] @ node.center + T_cw[:3, 3]
-            z = float(p_cam[2])
-            if not (0.3 <= z <= rng):
+            z = container_in_view(frame, node, rng)
+            if z is None:
                 continue
-            uv = K @ p_cam
-            u, v = float(uv[0] / z), float(uv[1] / z)
-            if not (0 <= u < w and 0 <= v < h):
-                continue
-            measured = float(frame.depth[int(v), int(u)])
-            if measured > 1e-3 and measured < z - 0.5:
-                continue  # something solid between us and the surface
+            # The closest range this surface was ever glanced from. A glance
+            # from 3.5 m and one from 1.2 m are the same event to the belief
+            # arithmetic and very different events to the detector; the record
+            # keeps them apart (`glance_ranges`).
+            prev = self._glance_min_range.get(int(cid))
+            if prev is None or z < prev:
+                self._glance_min_range[int(cid)] = float(z)
             self.search_log.searched(cid, d, floor=float(self.cfg.search_glance_floor))
             # Instrumentation only. A glance is applied per KEYFRAME, so a
             # surface the agent lingers near is multiplied many times over; how
@@ -726,6 +748,8 @@ class ExplorationStrategy:
         if not arrived:
             d *= float(self.cfg.search_unreached_credit)
         remaining = self.search_log.searched(self.search_container, d)
+        if arrived:
+            self._inspected.add(int(self.search_container))
         # Only an arrival is evidence about the ROOM. A surface the agent gave
         # up on says nothing about its neighbours, and charging the room for it
         # would push the agent out of rooms it never actually searched.
@@ -743,6 +767,32 @@ class ExplorationStrategy:
             }
         )
         self.search_container = None
+
+    @property
+    def inspected(self) -> set:
+        return self._inspected
+
+    @property
+    def glance_ranges(self) -> Dict[int, float]:
+        return dict(self._glance_min_range)
+
+    def close_looked(self, cid: int, step: int, detected: bool) -> None:
+        """A close look ended (agent/close_look.py). Silence from a facing pose
+        on the 1.5 m ring is worth what an arrival is worth; a look that found
+        the target retires nothing, the candidate path takes it from here."""
+        factor = None
+        if not detected:
+            factor = self.search_log.searched(int(cid), float(self.cfg.search_detect_prob))
+        self._inspected.add(int(cid))
+        self.search_log_events.append(
+            {
+                "step": int(step),
+                "container_id": int(cid),
+                "close_look": True,
+                "detected": bool(detected),
+                "belief_factor": None if factor is None else round(float(factor), 4),
+            }
+        )
 
     def survival_report(self) -> dict:
         """How much of the search space is still believed in.

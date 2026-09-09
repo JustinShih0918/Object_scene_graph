@@ -31,5 +31,6 @@ class State(Enum):
     GOTO_VERIFY_VIEW = "goto_verify_view"
     VERIFYING = "verifying"
     APPROACH = "approach"
+    CLOSE_LOOK = "close_look"
     CLIMB = "climb"
     DONE = "done"

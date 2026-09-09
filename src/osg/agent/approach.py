@@ -188,6 +188,9 @@ class ApproachPolicy:
             return STOP_ACTION
 
         if self.nav.step_count > self.nav._goto_deadline or self.steps_left <= 0:
+            look = self.nav.close_look.before_absence(frame, "deadline")
+            if look is not None:
+                return look
             abandon = self.nav._absence_at_arrival(frame, "deadline")
             if abandon is not None:
                 return abandon
@@ -238,6 +241,12 @@ class ApproachPolicy:
                     self.nav._target_obj_xy = None
                     self.nav.state = State.EXPLORE
                     return TURN_ACTION
+            # Before concluding absence from a frame the tight ring cannot
+            # fit the moved object into, look from the 1.5 m ring
+            # (agent/close_look.py). Off unless `close_look_before_absence`.
+            look = self.nav.close_look.before_absence(frame, "path_consumed")
+            if look is not None:
+                return look
             abandon = self.nav._absence_at_arrival(frame, "path_consumed")
             if abandon is not None:
                 return abandon

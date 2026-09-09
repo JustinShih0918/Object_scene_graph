@@ -407,7 +407,7 @@ def section_own_surface(current: List[Trial], maps_root: Path) -> List[str]:
                                if t.get("label") in CONTAINER_CATEGORIES}
         return maps[scene]
 
-    kinds = collections.OrderedDict((k, [0, 0, 0, 0, collections.Counter()])
+    kinds = collections.OrderedDict((k, [0, 0, 0, 0, collections.Counter(), 0, 0])
                                     for k in ("never_in_view", "exposure", "detector wall"))
     for t in by_condition(current, "cross_anchor"):
         if t.within(1.0) or t.detected > 0:
@@ -421,23 +421,30 @@ def section_own_surface(current: List[Trial], maps_root: Path) -> List[str]:
                     f"Prior map not found under `{maps_root}`; table skipped."]
         dist, near = min((horizontal(tr["center"], t.new_pos), tr) for tr in tracks.values())
         events = t.record.get("search_log_events") or []
-        selected = any(e.get("container_id") == near["id"] and "utility" in e for e in events)
-        arrived = any(e.get("container_id") == near["id"] and e.get("arrived") for e in events)
+        cid = int(near["id"])
+        selected = any(e.get("container_id") == cid and "utility" in e for e in events)
+        arrived = any(e.get("container_id") == cid and e.get("arrived") for e in events)
+        looked = any(int(e.get("container_id", -10**9)) == cid for e in (t.record.get("close_look_log") or []))
+        glance = (t.record.get("glance_ranges") or {}).get(str(cid))
         row = kinds[kind]
         row[0] += 1
         row[1] += int(dist <= 1.5)
         row[2] += int(selected)
         row[3] += int(arrived)
         row[4][str(near["label"])] += 1
-    rows = [[k, str(v[0]), str(v[1]), str(v[2]), str(v[3]),
+        row[5] += int(looked)
+        row[6] += int(glance is not None and float(glance) <= 2.5)
+    rows = [[k, str(v[0]), str(v[1]), str(v[2]), str(v[3]), str(v[5]), str(v[6]),
              ", ".join(f"{lab} x{n}" for lab, n in v[4].most_common())]
             for k, v in kinds.items()]
     return table(
         "Cross-anchor failures without a detection: the object's own surface",
         ["failure kind", "episodes", "a mapped container within 1.5 m of the object",
-         "that container ever selected by the search", "ever arrived at", "what it was"],
+         "that container ever selected by the search", "ever arrived at", "close-looked",
+         "glanced from <= 2.5 m", "what it was"],
         rows,
-        "Read from the prior map's container tracks and the episode's `search_log_events`. "
+        "Read from the prior map's container tracks and the episode's `search_log_events`, "
+        "`close_look_log` and `glance_ranges` (the last two are empty on runs that predate them). "
         "The search made 4-21 surface selections per episode and never chose this one.",
     )
 

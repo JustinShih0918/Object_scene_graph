@@ -213,6 +213,36 @@ class AgentConfig:
     terminal_stall_steps: int = 3
     terminal_percentile: float = 5.0
 
+    # A close look at a surface (agent/close_look.py, docs/SR_PROPOSAL_CLOSE_LOOK.md):
+    # drive to a facing pose on `close_look_ring_m`, turn until the surface is
+    # inside 15 degrees, hold `close_look_hold_steps` with the detector on, and
+    # only then conclude anything. 1.5 m is where in-situ recall peaks (0.58,
+    # against 0.50 inside 1.5 m and 0.28 beyond 2.5 m) and where a 79-degree
+    # frame is 2.4 m wide, so an object that moved 0.7 m along its surface is
+    # still in it. Both uses are off by default; each is its own A/B arm.
+    #
+    # `opportunistic`: on a keyframe in EXPLORE / GOTO_FRONTIER, detour to an
+    # affording container within `close_look_trigger_range_m` that has not had
+    # its look, then resume the pursuit. Measured before this existed: in all
+    # 32 cross-anchor failures without a detection, the object's own surface
+    # was never a search goal, and 12 had it in frame only at 2-4 m in passing.
+    # `before_absence`: the approach is about to conclude absence at a track it
+    # never saw live; look from the ring first, and re-aim if the target shows.
+    close_look_opportunistic: bool = False
+    close_look_before_absence: bool = False
+    close_look_ring_m: float = 1.5
+    close_look_trigger_range_m: float = 2.5
+    # Cost, measured on the three-trial smoke of the first cut: a look was 15-49
+    # steps (drive + up to six facing turns + a four-step hold), and eight of
+    # them took 218 of a 481-step episode. The budget is the thing cross-anchor
+    # is already short of, so the defaults below bound a look at ~15 steps and
+    # an episode at ~90: 25 steps of driving, then look from wherever that got
+    # to; a two-step hold (left, right) that ends on the start heading.
+    close_look_max_per_episode: int = 6
+    close_look_max_steps: int = 25   # drive budget per look, then look from here
+    close_look_face_turns: int = 6
+    close_look_hold_steps: int = 2   # an even count returns to the start heading
+
     # Stair sensing and traversal.  RedNet is loaded only when explicitly
     # enabled by an imported or combined multi-floor preset.
     ascent_min_obstacle_h: float = 0.61

@@ -202,6 +202,11 @@ def build_episode_record(
         "attempt_log": outcome.attempt_log,
         "presence_events": getattr(agent, "presence_events", []),
         "search_log_events": getattr(agent, "search_log_events", []),
+        # The close-look ledger and the closest range each surface was ever
+        # glanced from (agent/close_look.py): what the search looked at, from
+        # where, and whether the detector answered.
+        "close_look_log": getattr(agent, "close_look_log", []),
+        "glance_ranges": getattr(agent, "glance_ranges", {}),
         "goal_commit_log": getattr(agent, "goal_commit_log", []),
         "target_tracks": [
             {

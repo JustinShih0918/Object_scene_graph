@@ -1,0 +1,23 @@
+# @package _global_
+#
+# Both close looks (docs/SR_PROPOSAL_CLOSE_LOOK.md, arm 4): the opportunistic
+# detour during exploration and the look before absence at a silent arrival.
+# The union of `dualmap_protocol_osg_look_inanchor` and
+# `dualmap_protocol_osg_look_opportunistic`, and nothing else.
+#
+#   python scripts/run_eval.py +experiment=dualmap_protocol_osg_look_both \
+#     'dualmap.scenes=[00829-QaLdnwvtxbs]' \
+#     ycb.map_in=outputs/maps_v5/00829-QaLdnwvtxbs \
+#     output_dir=outputs/osg_closelook/both/00829-QaLdnwvtxbs
+defaults:
+  - dualmap_protocol_osg_tightring
+
+agent:
+  close_look_opportunistic: true
+  close_look_before_absence: true
+
+exploration:
+  search_glance_range_m: 2.5
+
+eval:
+  gt_dump_dir: ""
