@@ -297,3 +297,56 @@ once by chance is in, one that scored once by chance is out -- and a gain on
 it is a gain on trials chosen for having failed. And a capped budget changes
 what "failed" means. Both are for deciding which arm deserves the full 107,
 which remains the number reported.
+
+## Search order (2026-09-09): where the search goes, tried three ways
+
+Three arms on top of the look before absence, each one change, 107 dynamic
+trials, paired; `scripts/compare_close_look.py` writes
+`outputs/osg_searchorder/SEARCH_ORDER_AB.md`. `drop` is condition Q's flag,
+`search_drop_proximity_after_absence`: the anchor on the stale position is
+dropped once the agent has been there and found nothing. `len4` softens the
+proximity term to `exp(-d / 4.0)`. `flat` sets it to `exp(-d / 100)`, so
+surfaces are ordered by affinity, room bonus and travel cost from the first
+step.
+
+The gate first, over all 53 cross-anchor trials ("own surface" is any logged
+container within 1.5 m of where the object landed):
+
+| arm | episodes that ever selected a surface > 3 m from the stale position | median such selections | own surface selected | own surface arrived | target ever named | never in view |
+|---|---:|---:|---:|---:|---:|---:|
+| look (base) | 15 | 0 | 8 | 7 | 23 | 13 |
+| look + drop | 32 | 2 | 9 | 8 | 27 | 10 |
+| look + len4 | 36 | 1 | 13 | 9 | 26 | 11 |
+| look + flat | **40** | **4** | **15** | **13** | **27** | **9** |
+
+Every arm moved the knob; `flat` moved it most, nearly doubling the episodes
+in which the search reaches the object's own surface. Then SR:
+
+| split | tight ring | look | look + drop | look + len4 | look + flat |
+|---|---:|---:|---:|---:|---:|
+| in-anchor | 24/54 | 25/54 | 24/54 | 25/54 | 24/54 |
+| cross-anchor | 15/53 | 16/53 | 18/53 | 16/53 | 18/53 |
+| 00848 cross-anchor | 2/18 | 2/18 | 4/18 | 3/18 | **5/18** |
+
+`look + flat` against the tight-ring baseline is +5 / -2 on cross-anchor and
++1 / -1 on in-anchor (sign test p = 0.45 and 1.0); against the look-only base,
++5 / -3. Not significant, and reported as such. Two things are unambiguous.
+The in-anchor cost the offline ranking predicted for a flat prior (23/57
+versus 15/57 reaching the true surface) did not appear online: in-anchor's
+first commit is a candidate *track*, and the look before absence has already
+handled it before the surface search's order matters. And scene 00848, whose
+cross-anchor score sat at 2/18 in every run since the released benchmark was
+first run, moved for the first time -- to 5/18 -- under the arm that stops
+scoring its 68 kitchen containers by distance to the stale pitcher.
+
+Cost: median steps 366 (look) against 371 (flat) and 427 (drop); trials at
+budget 46 / 48 / 48; distance travelled 41.1 / 38.8 / 42.6 m.
+
+**Where this leaves it.** The working configuration for the released benchmark
+is the tight ring, the look before absence, and the flat proximity:
+`dualmap_protocol_osg_look_flat`, 42/107 against the tight ring's 39/107 and
+DualMap's measured 41/107 (33 + 16 on the same seed). Cross-anchor at 34.0%
+passes DualMap's measured 30.2%. The next experiments, on the hard subset
+first: a repeat of `flat` to size run-to-run noise on the gate, and a look that
+spends its budget by surface belief rather than by order of encounter, now
+that the search order reaches the surfaces worth looking at.
