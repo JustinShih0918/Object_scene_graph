@@ -107,6 +107,9 @@ shards=1; [ -n "$TRIAL_SET" ] && shards="$SHARDS_PER_SCENE"
 for arm in $ARMS; do
   for scene in $SCENES; do
     for ((shard = 0; shard < shards; shard++)); do
+      # SHARD_ONLY=k runs just that shard index, for hand-scheduling a shard
+      # onto a GPU slot that another batch will free later.
+      [ -n "${SHARD_ONLY:-}" ] && [ "$shard" != "$SHARD_ONLY" ] && continue
       while [ "$(jobs_running)" -ge "$MAX_PARALLEL" ]; do sleep 20; done
       run_one "$arm" "$scene" "$shard" &
       [ -n "$DRY_RUN" ] || sleep 45  # stagger the scene loads
