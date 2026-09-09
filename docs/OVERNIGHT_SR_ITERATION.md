@@ -243,3 +243,14 @@ ids: **5/22 against 0/22** (the second cut alone gave 3/22); never-in-view
 On cross-anchor the nearest-free answer does fire where the in-anchor one
 did not -- the objects sit on beds and benches whose free cell is reachable
 -- so the mitigation buys two trials the island fix should buy outright.
+
+### 23:24 — Island snapping on the 21 in-anchor failures: 6 converted, none lost
+
+`outputs/osg_next/flat_anchor_v2_island` against the second cut on the same
+ids: **6/21 against 2/21** (+4 / -0, p = 0.125 on 21). Unreachable strikes
+333 -> **0**; never-in-view 2 -> 0; admitted-never-committed 9 -> 5; trials at
+budget 18 -> 11. The remaining failures now mostly *stop*, at 1.0-1.9 m: the
+stale stop lands on the nearest navigable cell to the track, 0.5-1 m from
+the centre on a bed or a desk, and the object moved 0.7 m the other way. That
+is the next in-anchor lever, and it is geometry, not search. `v2_island` goes
+to the full 107 now.
