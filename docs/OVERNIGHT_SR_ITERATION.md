@@ -215,3 +215,22 @@ named in 5 (was 0). Retiring a refuted place frees the budget the search
 needed. The second cut is a gain on both halves (in-anchor +2 of 21,
 cross-anchor +3 of 22 on the failure subsets) and becomes the base for the
 full-107 confirmation once the reachability arm reports.
+
+### 23:00 — Nearest-free reachability: null, and why -- the navmesh has islands on the furniture
+
+`outputs/osg_next/flat_anchor_v2_nf` on the 21 in-anchor failures: 2/21,
+the nearest-free answer fired 3 times against 333 "unreachable" verdicts.
+So the point was not the problem; the function was. Checked offline on the
+00880 plate with habitat-sim's own pathfinder: the scene's navmesh has four
+islands -- the floor (63 m2) and three furniture tops of about 2 m2 -- and
+`snap_point` of a point beside the desk, queried at the agent's height,
+returns a point ON the desk top (island 1), because it is nearer in 3D than
+the floor 0.6 m to the side. From the desk top no path exists to the agent.
+The same query constrained to the agent's island (`snap_point(...,
+island_index)`) returns the floor beside the desk, 11.6 m of geodesic away,
+reachable.
+
+This is not only the reachability check: the navmesh follower's goal is
+snapped the same way, which is where "the follower reports None while the
+agent is still 6.4 m away" came from. `agent.navmesh_snap_on_agent_island`
+constrains both. Arm `v2_island`, running on both failure subsets.
