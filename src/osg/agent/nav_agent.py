@@ -939,8 +939,26 @@ class NavAgent:
             # own path re-approaches the tight ring and the STOP is taken on
             # that arrival instead (`_stale_stop_pending`).
             self._stale_stop_used = True
-            self._stale_stop_pending = bool(from_look)
             self.stats["stale_anchor_stop"] = self.stats.get("stale_anchor_stop", 0) + 1
+            if bool(self.cfg.verification.stale_stop_at_nearest_free):
+                # Not here: as close to the old position as the furniture allows.
+                from ..mapping.costmap import nearest_free_xy
+
+                centre = np.asarray(self.object_layer.center_of(track), dtype=float)[list(PLANE)]
+                goal = np.asarray(nearest_free_xy(self.costmap, centre), dtype=float)
+                here = frame.camera_position[list(PLANE)]
+                if float(np.linalg.norm(goal - here)) > 0.2:
+                    self._goal_xy = goal
+                    self._current_path = None
+                    self.approach.path_goal = None
+                    self.approach.at_viewpoint = False
+                    self.approach.steps_left = max(int(self.approach.steps_left), 60)
+                    self._goto_deadline = max(int(self._goto_deadline), self.step_count + 60)
+                    self._stale_stop_pending = True
+                    self.stats["stale_stop_reaimed"] = self.stats.get("stale_stop_reaimed", 0) + 1
+                    self.state = State.APPROACH
+                    return TURN_ACTION
+            self._stale_stop_pending = bool(from_look)
             return None
         verdict = self.absence.observe(
             track, self.target, frame, self.object_layer.presence_filter,

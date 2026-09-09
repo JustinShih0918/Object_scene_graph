@@ -374,6 +374,7 @@
   "verification.choice_mode": true,
   "verification.detector_absence_recall": 0.8,
   "verification.enabled": true,
+  "verification.failed_attempt_disables_place": false,
   "verification.min_bbox_px": 3000,
   "verification.min_evidence": 1.0,
   "verification.min_obs": 3,
@@ -388,6 +389,7 @@
     2.0
   ],
   "verification.ring_radius_extent_aware": false,
+  "verification.stale_stop_at_nearest_free": false,
   "verification.stop_at_stale_anchor_once": false,
   "verification.target_bypasses_bbox_gate": false,
   "verification.terminal": false,

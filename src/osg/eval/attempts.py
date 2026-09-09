@@ -19,6 +19,8 @@ import math
 
 import numpy as np
 
+from ..mapping.costmap import PLANE
+
 
 def attempt_succeeded(env, frame, cfg) -> bool:
     """Would STOPping here score? Asked without ending the episode.
@@ -112,6 +114,28 @@ def rearm_after_failed_attempt(agent, cfg) -> None:
         # lower there is nothing else that stops the next attempt repeating this
         # candidate, so the blacklist stays as the fallback.
         agent.object_layer.blacklist(track.id)
+    if track is not None and bool(getattr(cfg.verification, "failed_attempt_disables_place", False)):
+        # The place was wrong, whichever fragment of it the commit named: every
+        # track of the label within the layer's false-positive radius of the
+        # stop's centre is retired, and new detections there are refused.
+        try:
+            layer = agent.object_layer
+            centre = np.asarray(layer.center_of(track), dtype=float)[list(PLANE)]
+            radius = float(getattr(layer, "fp_disable_radius_m", 0.5))
+            n = 0
+            for other in list(layer.tracks(include_blacklisted=True)):
+                if other.label.lower().replace(" ", "_") != agent.target.lower().replace(" ", "_"):
+                    continue
+                d = float(np.linalg.norm(
+                    np.asarray(layer.center_of(other), dtype=float)[list(PLANE)] - centre))
+                if d <= radius and layer.disable_target(other.id):
+                    n += 1
+            layer.disable_place(centre, agent.target)
+            agent.stats["failed_attempt_place_disabled"] = (
+                agent.stats.get("failed_attempt_place_disabled", 0) + n
+            )
+        except Exception:
+            pass
     if track is not None:
         # An attempt that ended without scoring is also evidence about IDENTITY,
         # and that is the half the belief cannot hold: a false positive is an

@@ -106,3 +106,39 @@ more targets named, two more cross-anchor successes -- and every freed step is
 spent, so the median episode now runs to the budget. The budget is the
 binding constraint again, one level down. In-anchor is untouched, as expected
 without the stop.
+
+### 20:45 — Stale-anchor policy, fixed stop: cross-anchor 20, in-anchor still 24
+
+`outputs/osg_anchor2` (`ANCHOR_AB.md`), full 107 against `look_flat`:
+in-anchor 24/54 (+1 / -1), cross-anchor **20/53** (+4 / -2). `absence_abandon`
+fell 52 to 5: the stops replaced the abandons. Then why no in-anchor gain?
+Tracing all 54 in-anchor trials:
+
+* The stale stop was taken in **9** trials, at a median **1.47 m** from the
+  object: one inside the metre, four at 1.0-1.5 m, four beyond. The stop is
+  taken on the approach's ring, 0.65-0.8 m from the track centre, and the
+  object moved a median 0.7 m the other way. Right idea, wrong spot.
+* In 00848 the pitcher (3 trials) and plate commit first to a **ghost** 8 m
+  from the object -- a prior-map false positive that the detector keeps
+  re-detecting live, in three fragment tracks 0.2 m apart -- and spend all
+  three attempts stopping on it: the twin rule cannot touch a track that is
+  seen live, and a failed attempt strikes one fragment while the next commit
+  takes the next.
+* Three 00848 cracker-box trials end the budget 0.4-1.8 m from the object
+  without a stop: the true track's belief was driven to the negative clamp by
+  missed expectations on the way and one live sighting cannot lift it over
+  the bar.
+
+Two fixes, both behind flags (`stale_stop_at_nearest_free`,
+`failed_attempt_disables_place`): the stop walks to the nearest navigable
+point to the track centre first, and a failed attempt disables every track
+of the label within `fp_disable_radius_m` of the stop's centre. The third
+item is the presence clamp and is left for later.
+
+### 20:45 — Proximity until refuted, on the subset: rejected
+
+`outputs/osg_next/flat_anchor_drop` on look_flat's 32 failures, against the
+fixed stale-anchor arm on the same ids: in-anchor 2/8 against 1/8,
+cross-anchor **2/24 against 4/24** (1 gained, 3 lost). Anchoring the search
+on the stale spot until it is refuted costs cross-anchor what it was meant
+to give in-anchor. Not carried forward.

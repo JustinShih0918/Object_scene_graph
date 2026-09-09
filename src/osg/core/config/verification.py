@@ -96,6 +96,21 @@ class VerificationConfig:
     # are no longer candidates, so the search runs instead of the ghost tour.
     stop_at_stale_anchor_once: bool = False
     retire_stale_twins_after_absence: bool = False
+    # Where the stale stop stands. Measured on the first run of the policy: the
+    # stop was taken on the approach's own ring, 0.65-0.8 m from the track
+    # centre, and the object had moved a median 0.7 m the other way -- nine
+    # stops at a median 1.47 m from the object, one inside the metre. With this
+    # on, a granted stop first walks to the nearest navigable point to the
+    # track centre and stops there, which is as close to the old position as
+    # the furniture allows.
+    stale_stop_at_nearest_free: bool = False
+    # A failed attempt refutes the PLACE, not just the track. On 00848 the
+    # pitcher's ghost is three fragment tracks 0.2 m apart; each failed stop
+    # struck one of them and the next commit took the next, three attempts on
+    # one wrong spot. With this on, eval/attempts.rearm_after_failed_attempt
+    # also disables every track of the target label within
+    # scene_graph.fp_disable_radius_m of the stop's committed centre.
+    failed_attempt_disables_place: bool = False
     # Is "I cannot reach that" a permanent verdict?
     #
     # True is the shipped behaviour and it blacklists, which is absorbing --

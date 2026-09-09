@@ -151,3 +151,36 @@ def test_the_stop_granted_inside_the_look_is_taken_on_the_next_ring_arrival():
     action = agent.approach.step(_frame([0.0, 0.0], frame_id=20))
     assert action == "stop" and agent.state is State.DONE
     assert agent._stale_stop_pending is False
+
+
+def test_the_nearest_free_stop_walks_to_the_track_first():
+    from osg.agent.nav_agent import State
+    track = _track(1, [3.0, 0.5, 0.0], prior=True, live=False)
+    agent = _silent_arrival(track, stop_at_stale_anchor_once=True, stale_stop_at_nearest_free=True)
+    action = agent.approach.step(_frame([0.0, 0.0]))
+    assert action != "stop" and agent.state is State.APPROACH
+    assert agent.stats["stale_stop_reaimed"] == 1 and agent._stale_stop_pending is True
+    assert np.linalg.norm(agent._goal_xy - np.array([3.0, 0.0])) < 0.6  # at the track, not on a ring
+    agent.approach.steps_left = 0                     # arrive there
+    action = agent.approach.step(_frame([2.9, 0.0], frame_id=5))
+    assert action == "stop" and agent.state is State.DONE
+
+
+def test_a_failed_attempt_disables_every_fragment_at_the_place():
+    from types import SimpleNamespace
+    from osg.eval.attempts import rearm_after_failed_attempt
+    cfg = make_cfg()
+    cfg.verification.failed_attempt_disables_place = True
+    agent = make_agent(cfg, target="chair")
+    ghost = [_track(1, [3.0, 0.5, 0.0], prior=True, live=True),
+             _track(2, [3.15, 0.5, 0.1], prior=False, live=True),
+             _track(3, [3.3, 0.5, 0.0], prior=False, live=True)]
+    far = _track(4, [8.0, 0.5, 0.0], prior=True, live=False)
+    for t in ghost + [far]:
+        agent.object_layer._tracks[t.id] = t
+    agent._candidate_id = 1
+    rearm_after_failed_attempt(agent, cfg)
+    assert all(t.blacklisted and t.disabled for t in ghost)
+    assert not far.blacklisted
+    assert agent.stats["failed_attempt_place_disabled"] == 3
+    assert ghost[0].failed_attempts == 1
