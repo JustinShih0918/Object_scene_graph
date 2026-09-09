@@ -171,3 +171,19 @@ after an abandon has almost nothing left to act on. Not carried forward.
 funnel identical to the second cut, 2/21. The true track's belief is not
 what keeps it from being committed; the block is elsewhere in the candidate
 gates, and the next step is to read those gates on the ten trials directly.
+
+### 22:00 — Found it: "unreachable", twice from the same pose, retires the true track
+
+Reading the candidate gates on the in-anchor failures where the target was
+admitted and never committed: the true object HAS a live track in most of
+them -- 00848 pitcher: 0.00 m, belief 0.95, 19 observations; 00880 plate:
+0.05 m, 0.95, 10 observations; 00880 cracker box: 0.03 m, 0.95 -- and it
+was never a goal. `candidate_reject_log` says why, 37 times on the in-anchor
+failures and 16 on the cross-anchor ones, every entry the same word:
+**unreachable**. The viewpoint planner finds no standable ring pose at that
+moment (a plate on a desk against a wall, a pitcher on a bed), the
+reachability check strikes the track, the next step asks the same question
+from the same pose and strikes it again, and `max_identity_rejections = 2`
+retires it for the episode. The restrike guard (`unreachable_restrike_m`)
+was written for exactly this and has been shipping at 0.0, off. Arm: 1.0 m,
+so retiring a track takes two strikes from places more than a metre apart.

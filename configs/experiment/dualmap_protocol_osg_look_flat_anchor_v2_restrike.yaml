@@ -1,0 +1,15 @@
+# @package _global_
+#
+# On top of the second-cut stale-anchor policy: an unreachable verdict is
+# one verdict, not two. Read on the in-anchor failures of the fixed arm: 37
+# candidate rejections, every one "unreachable", and the true live track --
+# 0.05 m from the object, belief 0.82 -- struck on two consecutive steps from
+# the same pose (240, 241) and retired by max_identity_rejections = 2. The
+# restrike guard exists for exactly this and shipped at 0.0 (off); at 1.0 m a
+# second strike from within a metre of the first does not count, so retiring
+# a track takes two different places that cannot reach it.
+defaults:
+  - dualmap_protocol_osg_look_flat_anchor_v2
+
+agent:
+  unreachable_restrike_m: 1.0
