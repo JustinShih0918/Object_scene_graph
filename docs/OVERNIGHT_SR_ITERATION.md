@@ -254,3 +254,12 @@ stale stop lands on the nearest navigable cell to the track, 0.5-1 m from
 the centre on a bed or a desk, and the object moved 0.7 m the other way. That
 is the next in-anchor lever, and it is geometry, not search. `v2_island` goes
 to the full 107 now.
+
+### 23:53 — Island snapping on the 22 cross-anchor failures: 5 converted, none lost
+
+`outputs/osg_next_cross/flat_anchor_v2_island` against the fixed arm on the
+same ids: **5/22 against 0/22**; never-in-view 9 -> 2; on the 11
+no-detection failures the object's own surface was selected in 2 and the
+target named in **6** (was 0). The island fix does on cross-anchor what the
+reachability mitigations did, and does it by fixing the cause. The
+confirmation run of `v2_island` on the full 107 is in flight (six shards).
