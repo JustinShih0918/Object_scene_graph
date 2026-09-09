@@ -1,0 +1,20 @@
+# @package _global_
+#
+# Search order, arm 1: condition Q's anchor drop, on top of the look before
+# absence. The close-look A/B (docs/SR_PROPOSAL_CLOSE_LOOK.md, "Result") found
+# that in 28 of 32 cross-anchor failures without a detection the agent never
+# came within 4 m of the object's own surface: `container_prior`'s proximity
+# term from the stale position keeps it out of the search order all episode.
+# Q drops that anchor once the agent has BEEN to the stale pose and found
+# nothing, which turns the search into a nearest-first sweep. With the look
+# before absence, "found nothing" is now a verdict taken from the 1.5 m ring.
+#
+#   python scripts/run_eval.py +experiment=dualmap_protocol_osg_look_drop \
+#     'dualmap.scenes=[00829-QaLdnwvtxbs]' 'dualmap.conditions=[in_anchor,cross_anchor]' \
+#     ycb.map_in=outputs/maps_v5/00829-QaLdnwvtxbs \
+#     output_dir=outputs/osg_searchorder/drop/00829-QaLdnwvtxbs
+defaults:
+  - dualmap_protocol_osg_look_inanchor
+
+exploration:
+  search_drop_proximity_after_absence: true

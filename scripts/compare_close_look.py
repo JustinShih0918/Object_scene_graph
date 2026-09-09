@@ -183,6 +183,39 @@ def main() -> None:
                    rows, f"The {len(target_set)} trials are fixed by the baseline, so an arm is read on the same "
                          "population. This is the table the proposal says must move before SR is read.")
 
+    # 2b. Search order: when does the search first leave the stale neighbourhood,
+    # and does it ever reach the object's own surface, over ALL cross-anchor trials.
+    cross_ids = [t for t in sorted(common)
+                 if base[t]["authored_layout"]["dualmap"]["condition"] == "cross_anchor"]
+    rows = []
+    for name, recs in arms.items():
+        first_far, n_far, n_sel, own_sel, own_arr, own_look = [], [], [], 0, 0, 0
+        for t in cross_ids:
+            r = recs[t]
+            al = r["authored_layout"]
+            olds = release.static_target_positions(al["scene"], al["dualmap"]["query"])
+            stale = min(olds, key=lambda o: horizontal(o[0], al["target_position"]))[0]
+            sels = [e for e in (r.get("search_log_events") or []) if "utility" in e]
+            far = [e for e in sels if e.get("container_id") is not None
+                   and (lambda c: c is not None and horizontal(c["center"], stale) > 3.0)(
+                       maps.containers(str(r["scene"])).get(int(e["container_id"])))]
+            n_sel.append(len(sels)); n_far.append(len(far))
+            if far:
+                first_far.append(far[0]["step"])
+            fate = own_surface(r, maps)
+            if fate is not None:
+                own_sel += fate["selected"]; own_arr += fate["arrived"]; own_look += fate["close_looked"]
+        rows.append([name, str(len(cross_ids)), med(n_sel), med(n_far),
+                     str(len(first_far)), med(first_far), str(own_sel), str(own_arr), str(own_look),
+                     str(sum(int(recs[t].get("gt_kf_in_view") or 0) > 0 for t in cross_ids)),
+                     str(sum(int(recs[t].get("gt_kf_detected") or 0) > 0 for t in cross_ids))])
+    lines += table("2b. Search order, all cross-anchor trials",
+                   ["arm", "trials", "median surface selections", "median selections > 3 m from the stale position",
+                    "episodes that ever selected one", "median step of the first", "own surface selected",
+                    "own surface arrived", "own surface close-looked", "target ever in view", "target ever named"],
+                   rows, "A cross-anchor object moved a median 5.6 m. A search that never selects a surface "
+                         "more than 3 m from where the object used to be cannot reach it by design.")
+
     # 3. In-anchor arrive-and-leave, on the baseline's first-commit-correct in-anchor episodes
     inanchor = [t for t in sorted(common)
                 if base[t]["authored_layout"]["dualmap"]["condition"] == "in_anchor"
