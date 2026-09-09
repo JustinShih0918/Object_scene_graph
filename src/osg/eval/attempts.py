@@ -37,9 +37,13 @@ def attempt_succeeded(env, frame, cfg) -> bool:
     scored = getattr(env, "attempt_scored", None)
     if callable(scored):
         try:
-            return bool(scored(frame, cfg))
+            verdict = scored(frame, cfg)
         except Exception:  # never let scoring bookkeeping end a run
             return False
+        # None means "this env has the hook but its rule is switched off":
+        # the decision falls through to habitat's, below.
+        if verdict is not None:
+            return bool(verdict)
     try:
         episode = env.current_episode
         sim = env.env.sim

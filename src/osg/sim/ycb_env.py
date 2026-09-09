@@ -762,6 +762,81 @@ class _RelocationPolicy:
         return True
 
 
+class ObjectDistanceRule:
+    """A STOP within `threshold_m` horizontal of the object, within
+    `max_attempts` attempts: the released DualMap benchmark's rule, applied to
+    an authored episode. Pure bookkeeping, so it is testable without habitat.
+
+    Distance is to the object's position (zero extent), which is what the
+    released harness uses for its YCB targets too."""
+
+    def __init__(self, enabled: bool, threshold_m: float = 1.0, max_attempts: int = 3) -> None:
+        self.enabled = bool(enabled)
+        self.threshold_m = float(threshold_m)
+        self.max_attempts = int(max_attempts)
+        self.reset()
+
+    def reset(self) -> None:
+        self.attempts: List[Dict[str, Any]] = []
+        self._travelled = 0.0
+        self._previous: Optional[np.ndarray] = None
+        self.shortest_m: Optional[float] = None
+
+    def travelled(self, position: np.ndarray) -> None:
+        if self._previous is not None:
+            self._travelled += float(np.linalg.norm((position - self._previous)[[0, 2]]))
+        self._previous = np.asarray(position, dtype=float)
+
+    @staticmethod
+    def distances(position: np.ndarray, target: np.ndarray) -> Tuple[float, float]:
+        delta = np.asarray(position, dtype=float) - np.asarray(target, dtype=float)
+        return float(np.hypot(delta[0], delta[2])), float(np.linalg.norm(delta))
+
+    def record_stop(self, step: int, position: np.ndarray, target: np.ndarray) -> bool:
+        horizontal, spatial = self.distances(position, target)
+        success = bool(horizontal <= self.threshold_m)
+        if self.attempts and self.attempts[-1]["step"] == int(step):
+            # The episode loop asks before stepping and habitat's terminal STOP
+            # follows at the same pose: one stop, not two.
+            return bool(self.attempts[-1]["success"])
+        self.attempts.append({
+            "attempt": len(self.attempts) + 1,
+            "step": int(step),
+            "position": [float(x) for x in position],
+            "distance_horizontal_m": horizontal,
+            "distance_3d_m": spatial,
+            "success": success,
+        })
+        return success
+
+    def summary(self, position: np.ndarray, target: Optional[np.ndarray]) -> Dict[str, Any]:
+        shortest_m = self.shortest_m
+        attempts = list(self.attempts)
+        # Success is earned at a STOP and nowhere else: an episode that runs
+        # out of steps beside the object has not answered the query.
+        success = any(bool(a["success"]) for a in attempts[: self.max_attempts])
+        horizontal = spatial = None
+        if target is not None:
+            horizontal, spatial = self.distances(position, target)
+        spl = 0.0
+        if success and shortest_m is not None and math.isfinite(shortest_m) and shortest_m > 0:
+            spl = shortest_m / max(shortest_m, self._travelled, 1e-12)
+        return {
+            "success": int(success),
+            "spl": float(spl),
+            "travelled_m": float(self._travelled),
+            "attempts": attempts,
+            "attempt_count": len(attempts),
+            "final_distance_horizontal_m": horizontal,
+            "final_distance_3d_m": spatial,
+            "shortest_path_to_object_m": shortest_m,
+            "success_definition": (
+                f"horizontal distance to the object <= {self.threshold_m} m, "
+                f"within {self.max_attempts} attempts"
+            ),
+        }
+
+
 class YCBAuthoredNavEnv(HabitatObjectNavEnv):
     """ObjectNav-compatible environment backed by authored rigid-object layouts."""
 
@@ -790,10 +865,17 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
         self._action_name = {value: key for key, value in self.ACTIONS.items()}
         self._navmesh_goal_radius = float(cfg.agent.navmesh_goal_radius)
         self._active_objects: List[Any] = []
+        # The released rule, when asked for: a STOP within
+        # `object_success_distance_m` of the object, within three attempts.
+        self._object_rule = ObjectDistanceRule(
+            enabled=bool(getattr(cfg.ycb, "score_by_object_distance", False)),
+            threshold_m=float(getattr(cfg.ycb, "object_success_distance_m", 1.0)),
+        )
 
     def reset(self):
         self.nav_reasons.clear()
         self.env.reset()
+        self._object_rule.reset()
         info = (getattr(self.current_episode, "info", None) or {}).get("ycb", {})
         key = (str(info.get("scene")), str(info.get("layout_id")))
         layout = self._layout_by_key.get(key)
@@ -823,12 +905,65 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
         if observations is None:
             raise RuntimeError("failed to refresh observations after YCB object injection")
         self._frame_id = 0
+        if self._object_rule.enabled:
+            self._object_rule.shortest_m = self._shortest_to_object()
+            self._object_rule.travelled(
+                np.asarray(self.env.sim.get_agent_state().position, dtype=float)
+            )
         return self._to_frame(observations)
 
+    def _shortest_to_object(self) -> Optional[float]:
+        """Geodesic from the start to the navigable point nearest the object,
+        for SPL under the object-distance rule."""
+        target = self._target_position()
+        if target is None:
+            return None
+        try:
+            pathfinder = self.env.sim.pathfinder
+            start = np.asarray(self.env.sim.get_agent_state().position, dtype=float)
+            snapped = pathfinder.snap_point(np.asarray(target, dtype=np.float32))
+            distance = float(pathfinder.geodesic_distance(start, snapped))
+        except Exception:
+            return None
+        return distance if math.isfinite(distance) else None
+
     def step(self, action: str):
+        # Habitat ends the episode on the terminal STOP without routing it
+        # through `attempt_scored`, so the rule has to see it here, before the
+        # pose is gone (as sim/dualmap_env.py does).
+        if action == "stop" and self._object_rule.enabled:
+            self._record_stop()
         frame = super().step(action)
         self._maybe_relocate(frame)
+        self._object_rule.travelled(
+            np.asarray(self.env.sim.get_agent_state().position, dtype=float)
+        )
         return frame
+
+    # ---------------------------------------------------- object-distance rule
+
+    def _target_position(self) -> Optional[np.ndarray]:
+        info = (getattr(self.current_episode, "info", None) or {}).get("ycb", {})
+        position = info.get("target_position")
+        return None if position is None else np.asarray(position, dtype=float)
+
+    def _record_stop(self) -> bool:
+        target = self._target_position()
+        if target is None:
+            return False
+        position = np.asarray(self.env.sim.get_agent_state().position, dtype=float)
+        return self._object_rule.record_stop(int(self._frame_id), position, target)
+
+    def attempt_scored(self, frame, cfg) -> Optional[bool]:
+        """The released rule for spending an attempt, when it is switched on.
+
+        Returning None hands the decision back to `eval/attempts.py`, whose
+        fallback is habitat's viewpoint rule; that keeps every run without the
+        flag exactly as it was.
+        """
+        if not self._object_rule.enabled:
+            return None
+        return self._record_stop()
 
     # ------------------------------------------------------------ relocation
 
@@ -908,11 +1043,35 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
                 "origin_position": origin,
                 "destination_position": destination,
             }
+        if self._object_rule.enabled:
+            target = self._target_position()
+            position = np.asarray(self.env.sim.get_agent_state().position, dtype=float)
+            meta["object_distance"] = self._object_rule.summary(position, target)
         return meta
+
+    def metrics(self) -> dict:
+        """The object-distance rule's numbers, when it is on, with habitat's
+        kept beside them under their own names (as sim/dualmap_env.py does)."""
+        base = dict(self.env.get_metrics())
+        if not self._object_rule.enabled:
+            return base
+        block = self.episode_metadata()["object_distance"]
+        base["habitat_success"] = float(base.get("success", 0.0))
+        base["habitat_spl"] = float(base.get("spl", 0.0))
+        base["habitat_distance_to_goal"] = float(base.get("distance_to_goal", -1.0))
+        base["success"] = float(block["success"])
+        base["spl"] = float(block["spl"])
+        base["distance_to_goal"] = float(block["final_distance_horizontal_m"])
+        return base
 
     def benchmark_metadata(self) -> Dict[str, Any]:
         return {
             "mode": "ycb_authored",
+            "success_rule": (
+                f"horizontal distance to the object <= {self._object_rule.threshold_m} m, "
+                f"within {self._object_rule.max_attempts} attempts"
+                if self._object_rule.enabled else "habitat viewpoint"
+            ),
             "selected_layouts": [
                 {
                     "scene": layout.scene_name,

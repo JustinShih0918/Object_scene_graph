@@ -92,6 +92,13 @@ class YCBAuthoredConfig:
     # rebuilds from scratch is never wrong about anything and measures nothing.
     map_out: str = ""
     map_in: str = ""
+    # Score a STOP by horizontal distance to the OBJECT, the released DualMap
+    # benchmark's rule, instead of habitat's geodesic distance to an authored
+    # viewpoint (whose rings at 0.8-2.0 m make the effective tolerance about
+    # 2 m; DUALMAP_OFFICIAL_RERUN.md). Attempts are spent by the same rule.
+    # Habitat's own numbers are kept under habitat_success / habitat_spl.
+    score_by_object_distance: bool = False
+    object_success_distance_m: float = 1.0
     target_labels: Dict[str, str] = field(
         default_factory=lambda: dict(YCB_TARGET_LABELS)
     )

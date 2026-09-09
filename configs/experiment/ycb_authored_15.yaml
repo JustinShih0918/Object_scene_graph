@@ -1,0 +1,32 @@
+# @package _global_
+#
+# Our pipeline on our own authored benchmark, scored by the released rule.
+#
+# The algorithm is the working configuration from the released-benchmark
+# campaign (docs/SR_PROPOSAL_CLOSE_LOOK.md): ycb_dynamic_best, the terminal
+# rings measured from the object's surface, the close look before absence, and
+# the flat proximity prior. The benchmark is the 15-scene authoring root
+# (111 objects, layout index 1 only, in_anchor + cross_anchor), and success is
+# what DualMap's benchmark means by it -- a STOP within 1 m horizontal of the
+# object, within three attempts -- not the authored-viewpoint rule whose
+# effective tolerance is about 2 m (DUALMAP_OFFICIAL_RERUN.md, "The historical
+# 0.812 / 0.458"). Habitat's own numbers are kept under habitat_* beside it.
+#
+#   scripts/run_authored_15.sh        # two passes per scene, see the script
+defaults:
+  - ycb_dynamic_best
+
+ycb:
+  layout_indices: [1]
+  score_by_object_distance: true
+  object_success_distance_m: 1.0
+
+verification:
+  ring_radii_m: [0.35, 0.5, 0.65, 0.8, 1.2, 1.5, 2.0]
+  ring_radius_extent_aware: true
+
+agent:
+  close_look_before_absence: true
+
+exploration:
+  search_proximity_len_m: 100.0

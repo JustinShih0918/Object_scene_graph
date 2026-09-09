@@ -75,6 +75,10 @@ def load_prior_map(
     from ..graph.map_store import apply_map, load_map
 
     path = _map_path(root, scene)
+    if not path.exists() and str(cfg.ycb.map_out or "") == root:
+        # Pass 1 accumulating into its own output: the first episode of a
+        # scene has nothing to start from yet, and that is not an error.
+        return None
     blob = load_map(path)
     n = apply_map(
         agent, blob,

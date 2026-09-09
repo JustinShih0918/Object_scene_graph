@@ -23,6 +23,10 @@ import types
 EXPECTED_KEYS = {
     "agent_stats", "approach_bbox_log", "approach_diag",
     "approach_retarget_log", "approach_stop_reason", "candidate_reject_log",
+    # The close look's ledger, the closest range each surface was glanced
+    # from, and the container table that resolves their ids
+    # (agent/close_look.py; scripts/compare_close_look.py reads all three).
+    "close_look_log", "glance_ranges", "containers",
     "attempt_log", "attempts_used", "authored_layout", "cand_best_cam_xy",
     "cand_best_score", "cand_n_obs", "control_fps", "detector",
     "distance_to_goal", "episode_id", "final_xy", "final_y", "floor_changes",

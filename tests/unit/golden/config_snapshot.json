@@ -408,6 +408,7 @@
   "ycb.manifest_cache_dir": "outputs/ycb_manifests",
   "ycb.map_in": "",
   "ycb.map_out": "",
+  "ycb.object_success_distance_m": 1.0,
   "ycb.relocate_at_step": -1,
   "ycb.relocate_deadline_steps": 120,
   "ycb.relocate_when": "any",
@@ -419,6 +420,7 @@
   "ycb.scenes": [
     "*"
   ],
+  "ycb.score_by_object_distance": false,
   "ycb.seed": 42,
   "ycb.skip_incomplete_layouts": false,
   "ycb.start_min_geodesic_m": 3.0,
