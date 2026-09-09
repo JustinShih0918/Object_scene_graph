@@ -1,0 +1,14 @@
+# @package _global_
+#
+# On top of look_flat_anchor: proximity to the stale position UNTIL it is
+# refuted, then flat (condition Q's flag on a 1 m proximity length). The flat
+# prior was chosen for cross-anchor; in-anchor's second attempt, after a failed
+# stale stop, should search the stale surface's neighbourhood first, since the
+# object moved a median 0.7 m. Q measured 18/53 cross-anchor alone; this asks
+# whether it composes with the stale-anchor policy.
+defaults:
+  - dualmap_protocol_osg_look_flat_anchor
+
+exploration:
+  search_proximity_len_m: 1.0
+  search_drop_proximity_after_absence: true

@@ -1,0 +1,13 @@
+# @package _global_
+#
+# On top of look_flat_anchor: a second stop where absence is ambiguous.
+# `abandon_below_p` 1.0 abandons on every silent arrival; at 0.3 a silent
+# arrival whose belief survives the reading (the VLM said present, or only a
+# detector-strength miss was applied) STOPs and spends an attempt instead of
+# walking away. Attempts are the protocol's cheapest currency: cross-anchor
+# uses a median two of three.
+defaults:
+  - dualmap_protocol_osg_look_flat_anchor
+
+verification:
+  abandon_below_p: 0.3
