@@ -223,9 +223,10 @@ class AgentConfig:
     #
     # `opportunistic`: on a keyframe in EXPLORE / GOTO_FRONTIER, detour to an
     # affording container within `close_look_trigger_range_m` that has not had
-    # its look, then resume the pursuit. Measured before this existed: in all
-    # 32 cross-anchor failures without a detection, the object's own surface
-    # was never a search goal, and 12 had it in frame only at 2-4 m in passing.
+    # its look, then resume the pursuit. Measured before this existed: across
+    # the 32 cross-anchor failures without a detection the search reached the
+    # object's own surface in 6 (five of them detector walls), and 12 had the
+    # object in frame only at 2-4 m in passing.
     # `before_absence`: the approach is about to conclude absence at a track it
     # never saw live; look from the ring first, and re-aim if the target shows.
     close_look_opportunistic: bool = False
@@ -242,6 +243,17 @@ class AgentConfig:
     close_look_max_steps: int = 25   # drive budget per look, then look from here
     close_look_face_turns: int = 6
     close_look_hold_steps: int = 2   # an even count returns to the start heading
+    # Spend looks by belief, not by order of encounter. Measured (A/B, arm
+    # "opportunistic"): the nearest-first look hit its six-look cap by step ~155
+    # in 66 of 107 episodes on the surfaces around the stale position, and in
+    # 17 of the 32 cross-anchor failures the object's own surface came inside
+    # trigger range only after the budget was gone. With this on, a surface in
+    # view earns a look only when its search belief -- the same prior and
+    # survived factor the selection round uses, relative to the best surface on
+    # the floor -- is at least `close_look_min_belief`, and the highest belief
+    # in view wins over the nearest.
+    close_look_by_belief: bool = False
+    close_look_min_belief: float = 0.5
 
     # Stair sensing and traversal.  RedNet is loaded only when explicitly
     # enabled by an imported or combined multi-floor preset.

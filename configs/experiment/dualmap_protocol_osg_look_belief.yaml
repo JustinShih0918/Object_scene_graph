@@ -1,0 +1,24 @@
+# @package _global_
+#
+# The look that spends its budget by belief, on top of `look_flat` (tight
+# ring, look before absence, flat proximity). The nearest-first opportunistic
+# look was a null with a cost: six looks gone by step ~155 to the surfaces
+# around the start, while in 17 of 32 cross-anchor failures the object's own
+# surface came into range only afterwards. With the flat prior the search now
+# reaches those surfaces (own-surface arrivals 7 -> 13 of 53); this arm asks
+# whether a look spent only on a surface the search still believes in
+# (`close_look_min_belief` of the floor's best) converts what the search order
+# now brings into view. Glances beyond 2.5 m stop retiring belief, as in the
+# opportunistic arm, so a surface passed at range stays worth a look.
+#
+#   TRIAL_SET=data/splits/dualmap_hard.json SHARDS_PER_SCENE=2 MAX_PARALLEL=6 \
+#     ARMS=belief OUT_ROOT=outputs/osg_hard scripts/run_close_look_ab.sh
+defaults:
+  - dualmap_protocol_osg_look_flat
+
+agent:
+  close_look_opportunistic: true
+  close_look_by_belief: true
+
+exploration:
+  search_glance_range_m: 2.5

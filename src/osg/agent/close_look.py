@@ -7,9 +7,10 @@ detector says nothing at the goal. Measured on the released benchmark
 (`docs/DUALMAP_OFFICIAL_RERUN.md`, "What the old headline was made of"), both
 frames are usually the wrong ones:
 
-* In all 32 cross-anchor failures without a detection, the mapped container
-  the object sat on was never a search goal at all; 12 of them had the object
-  in frame at 2-4 m during `goto_frontier`, where in-situ recall is 0.28.
+* Across the 32 cross-anchor failures without a detection, the search reached
+  a container within 1.5 m of the object in 6, five of them detector walls;
+  among the 24 it could have converted, once. Twelve had the object in frame
+  at 2-4 m during `goto_frontier`, where in-situ recall is 0.28.
 * In-anchor, the first commit is already within 1 m of the moved object in
   23 of 44 episodes, and the ones that fail arrive at the tight ring, 0.35 to
   0.65 m out, where a 79-degree camera frames 0.3-0.5 m of table -- and the
@@ -120,6 +121,9 @@ class CloseLookPolicy:
         rng = float(self.cfg.close_look_trigger_range_m)
         skip = getattr(nav.exploration, "search_container", None)
         inspected = getattr(nav.exploration, "inspected", set())
+        by_belief = bool(self.cfg.close_look_by_belief)
+        beliefs = nav.exploration.surface_beliefs(nav._world(frame)) if by_belief else {}
+        min_belief = float(self.cfg.close_look_min_belief)
         best = None
         for cid, node in containers.items():
             cid = int(cid)
@@ -134,14 +138,23 @@ class CloseLookPolicy:
             z = container_in_view(frame, node, rng)
             if z is None:
                 continue
-            if best is None or z < best[0]:
-                best = (z, cid, node)
+            belief = beliefs.get(cid, 0.0)
+            if by_belief and belief < min_belief:
+                nav.stats["close_look_below_belief"] = (
+                    nav.stats.get("close_look_below_belief", 0) + 1
+                )
+                continue
+            # Nearest first, or the most believed first: the key decides.
+            key = (-belief, z) if by_belief else (z,)
+            if best is None or key < best[0]:
+                best = (key, z, cid, node, belief)
         if best is None:
             return False
-        z, cid, node = best
+        _, z, cid, node, belief = best
         centre_xy = np.asarray(node.center, dtype=float)[list(PLANE)]
         self.start(cid, centre_xy, _container_radius_m(nav, node), "explore",
-                   label=str(node.label), trigger_range_m=z)
+                   label=str(node.label), trigger_range_m=z,
+                   belief=belief if by_belief else None)
         return True
 
     def before_absence(self, frame: FrameData, reason: str) -> Optional[str]:
@@ -174,7 +187,8 @@ class CloseLookPolicy:
 
     def start(self, cid: int, centre_xy: np.ndarray, radius_m: float, resume: str,
               reason: Optional[str] = None, label: Optional[str] = None,
-              trigger_range_m: Optional[float] = None) -> None:
+              trigger_range_m: Optional[float] = None,
+              belief: Optional[float] = None) -> None:
         nav = self.nav
         ring = [float(self.cfg.close_look_ring_m)]
         view = nav.viewpoint_planner.approach_viewpoint(
@@ -223,6 +237,7 @@ class CloseLookPolicy:
             "goal_xy": [float(v) for v in self.goal_xy],
             "centre_xy": [float(v) for v in self.centre_xy],
             "trigger_range_m": None if trigger_range_m is None else round(float(trigger_range_m), 3),
+            "belief": None if belief is None else round(float(belief), 3),
         })
 
     def abort(self) -> None:

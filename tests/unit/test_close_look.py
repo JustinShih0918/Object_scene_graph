@@ -221,3 +221,38 @@ def test_rearm_aborts_a_look_in_progress():
     assert agent.close_look.active is False
     assert agent.close_look.log[-1]["aborted"] is True
     assert agent.state is State.EXPLORE
+
+
+# ------------------------------------------------------------ by belief
+
+def test_by_belief_prefers_the_believed_surface_over_the_nearest():
+    agent = _explore_agent_with_surface(close_look_by_belief=True, close_look_min_belief=0.5)
+    agent.scene_graph.containers = {
+        40: _container(40, centre=(1.5, 0.6, 0.0)),   # nearer, barely believed
+        41: _container(41, centre=(2.2, 0.6, 0.3)),   # farther, the best surface on the floor
+    }
+    agent.exploration.surface_beliefs = lambda world: {40: 0.2, 41: 1.0}
+    assert agent.close_look.maybe_opportunistic(_frame([0.0, 0.0])) is True
+    entry = agent.close_look.log[-1]
+    assert entry["container_id"] == 41 and entry["belief"] == 1.0
+    assert agent.stats["close_look_below_belief"] == 1
+
+
+def test_by_belief_spends_nothing_on_a_surface_below_the_bar():
+    agent = _explore_agent_with_surface(close_look_by_belief=True, close_look_min_belief=0.5)
+    agent.exploration.surface_beliefs = lambda world: {40: 0.3}
+    assert agent.close_look.maybe_opportunistic(_frame([0.0, 0.0])) is False
+    assert agent.close_look.log == []
+    assert agent.stats["close_look_below_belief"] == 1
+
+
+def test_nearest_first_is_unchanged_when_by_belief_is_off():
+    agent = _explore_agent_with_surface()
+    agent.scene_graph.containers = {
+        40: _container(40, centre=(1.5, 0.6, 0.0)),
+        41: _container(41, centre=(2.2, 0.6, 0.3)),
+    }
+    agent.exploration.surface_beliefs = lambda world: {40: 0.2, 41: 1.0}
+    assert agent.close_look.maybe_opportunistic(_frame([0.0, 0.0])) is True
+    assert agent.close_look.log[-1]["container_id"] == 40
+    assert agent.close_look.log[-1]["belief"] is None

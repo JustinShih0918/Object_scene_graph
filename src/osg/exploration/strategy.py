@@ -470,6 +470,35 @@ class ExplorationStrategy:
             self.stats["glance_updates"] = self.stats.get("glance_updates", 0) + 1
             self._glanced.add(int(cid))
 
+    def surface_beliefs(self, world: WorldView) -> Dict[int, float]:
+        """How much the search still believes in each container on this floor,
+        relative to the best of them (1.0), for a decision that is not a
+        selection round -- the close look asking which surface in view is worth
+        its budget. Same prior, same survived factor as `_select_surface`, so
+        the two cannot disagree about what a surface is worth."""
+        if not self.cfg.search_posterior or not world.scene_graph.containers:
+            return {}
+        cands = build_container_candidates(
+            world.scene_graph,
+            world.target,
+            self.search_log,
+            detect_prob=float(self.cfg.search_detect_prob),
+            last_known_xy=self._last_known_target_xy(world),
+            proximity_len_m=float(self.cfg.search_proximity_len_m),
+            proximity_floor=float(self.cfg.search_proximity_floor),
+            surface_mass=float(self.cfg.search_surface_mass),
+            plane=PLANE,
+            affinity_source=self.affinity,
+            present=self._ground(world),
+        )
+        cands = [c for c in cands if int(c.floor_key) == int(world.floor_id)]
+        if not cands:
+            return {}
+        peak = max(float(c.prior) for c in cands)
+        if peak <= 0.0:
+            return {}
+        return {int(c.ref_id): float(c.prior) / peak for c in cands}
+
     def _select_surface(self, world: WorldView, best_frontier):
         """The best mapped surface, if it beats the best frontier on b*d/c.
 
