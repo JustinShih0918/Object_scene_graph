@@ -156,3 +156,11 @@ driven there by missed expectations on the way, and a single sighting is not
 enough to lift it over the bar. Two arms next, both one knob:
 `presence.l_clamp` 6 -> 2 (a sighting can bring a track back) and
 `rank_candidates_by_presence` off (confidence counts again).
+
+### 21:25 — Second stop on ambiguous absence: null
+
+`outputs/osg_next/flat_anchor_stop2` on look_flat's 32 failures, against the
+fixed stale-anchor arm on the same ids: every funnel row identical, 5/32
+both. `absence_abandon` was already 4 on these trials after the stale stop
+took over the silent arrivals, so a knob that only changes what happens
+after an abandon has almost nothing left to act on. Not carried forward.
