@@ -116,6 +116,19 @@
     "basket"
   ],
   "detector.weights": "data/weights/yoloe-11s-seg.pt",
+  "dualmap.conditions": [
+    "static",
+    "in_anchor",
+    "cross_anchor"
+  ],
+  "dualmap.max_trials": -1,
+  "dualmap.queries": [],
+  "dualmap.reference_run": "",
+  "dualmap.scenes": [
+    "*"
+  ],
+  "dualmap.start_yaw_seed": 12,
+  "dualmap.trial_ids": [],
   "eval.allow_sliding": false,
   "eval.attempts": 1,
   "eval.content_scenes": null,
@@ -363,6 +376,7 @@
     1.5,
     2.0
   ],
+  "verification.ring_radius_extent_aware": false,
   "verification.target_bypasses_bbox_gate": false,
   "verification.terminal": false,
   "verification.unreachable_is_absorbing": true,

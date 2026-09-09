@@ -19,6 +19,7 @@ from hydra.core.config_store import ConfigStore
 
 from .agent import AgentConfig
 from .detector import DEFAULT_VOCABULARY, DetectorConfig
+from .dualmap import DualMapProtocolConfig
 from .eval import EvalConfig
 from .exploration import ExplorationConfig
 from .floor import FloorConfig
@@ -29,7 +30,8 @@ from .verification import VerificationConfig
 from .ycb import YCB_TARGET_LABELS, YCBAuthoredConfig
 
 __all__ = [
-    "AgentConfig", "DetectorConfig", "EvalConfig", "ExplorationConfig",
+    "AgentConfig", "DetectorConfig", "DualMapProtocolConfig", "EvalConfig",
+    "ExplorationConfig",
     "FloorConfig", "LLMConfig", "MappingConfig", "OSGConfig", "PresenceConfig",
     "SceneGraphConfig", "VerificationConfig", "YCBAuthoredConfig",
     "DEFAULT_VOCABULARY", "YCB_TARGET_LABELS", "NAVIGATION_MODES",
@@ -84,6 +86,7 @@ class OSGConfig:
     floor: FloorConfig = field(default_factory=FloorConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
     ycb: YCBAuthoredConfig = field(default_factory=YCBAuthoredConfig)
+    dualmap: DualMapProtocolConfig = field(default_factory=DualMapProtocolConfig)
     seed: int = 42
     output_dir: str = "outputs/${now:%Y%m%d_%H%M%S}"
 
@@ -101,3 +104,4 @@ def register_configs() -> None:
     cs.store(group="floor", name="base_default", node=FloorConfig)
     cs.store(group="eval", name="base_hm3d", node=EvalConfig)
     cs.store(group="ycb", name="base_authored", node=YCBAuthoredConfig)
+    cs.store(group="dualmap", name="base_protocol", node=DualMapProtocolConfig)

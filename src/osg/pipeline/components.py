@@ -21,7 +21,9 @@ def build_env(cfg):
     `ycb_authored` is the dynamic-scene benchmark: it discovers the collector's
     authored layouts at runtime, generates deterministic episodes from the
     placed YCB objects, and re-injects every rigid object after each Habitat
-    reset. `objectnav` is the standard HM3D episode dataset.
+    reset. `objectnav` is the standard HM3D episode dataset. `dualmap_protocol`
+    is the released DualMap benchmark scored by DualMap's own rule, paired
+    trial-by-trial with a measured run of that system.
     """
     mode = str(cfg.eval.mode)
     if mode == "ycb_authored":
@@ -32,6 +34,10 @@ def build_env(cfg):
         from ..sim.habitat_env import HabitatObjectNavEnv
 
         return HabitatObjectNavEnv(cfg)
+    if mode == "dualmap_protocol":
+        from ..sim.dualmap_env import DualMapProtocolEnv
+
+        return DualMapProtocolEnv(cfg)
     raise ValueError(f"unknown eval.mode: {mode}")
 
 

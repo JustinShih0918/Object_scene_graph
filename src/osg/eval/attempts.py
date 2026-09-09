@@ -27,7 +27,19 @@ def attempt_succeeded(env, frame, cfg) -> bool:
     terminates the episode -- so a multi-attempt protocol has to evaluate the
     same criterion itself: geodesic distance from the agent to the nearest goal
     view point, under the same success_distance.
+
+    A benchmark that defines success differently supplies `attempt_scored` and
+    is asked instead. That is not a convenience: when the point of a run is to
+    compare against another system, the other system's rule has to be the one
+    the agent's attempts are spent against, or the two runs are not answering
+    the same question.
     """
+    scored = getattr(env, "attempt_scored", None)
+    if callable(scored):
+        try:
+            return bool(scored(frame, cfg))
+        except Exception:  # never let scoring bookkeeping end a run
+            return False
     try:
         episode = env.current_episode
         sim = env.env.sim
