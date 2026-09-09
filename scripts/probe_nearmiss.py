@@ -45,7 +45,20 @@ register_configs()
 # The classes that own the pixels a small object sits on. Not a guess: these are
 # what `index.tsv` records under top_labels on the frames that missed.
 COMPETITORS = ["sofa", "pillow", "cushion", "bed", "armchair", "chair",
-               "clothes", "towel", "rug", "counter", "table", "desk", "shelf"]
+               "clothes", "towel", "rug", "counter", "table", "desk", "shelf",
+               # Added 2026-09-08 from the released-benchmark dump, where these
+               # two are the top-scoring rival on more missed frames than
+               # anything else: `lamp` on 29 (median 0.81, and 0.91 on a plate),
+               # `picture` on 9. Neither is furniture an object sits on -- they
+               # are simply classes this head fires on confidently and often.
+               "lamp", "picture"]
+
+# Dropping all of COMPETITORS measures a CEILING, not a shippable vocabulary:
+# `sofa`, `table`, `desk`, `shelf` and `counter` are the containers the search
+# posterior ranks, so removing them would cost the search what it wins the
+# detector. These are the ones with no such role -- what `probe.drop` uses by
+# default, and the only removal that can be deployed as-is.
+NON_CONTAINER_COMPETITORS = ["lamp", "picture"]
 
 CANDIDATES: Dict[str, List[str]] = {
     "tin can": ["tin can", "soup can", "can", "canned food", "red and white can",
@@ -149,6 +162,15 @@ def main(cfg: DictConfig) -> None:
     sweep([c for c in base_vocab
            if normalize_label(c) not in {normalize_label(x) for x in COMPETITORS}],
           "nocompete", target)
+
+    # The deployable subset: drop only the classes that are not containers, so
+    # the search posterior keeps everything it ranks. `probe.drop=[a,b]`
+    # overrides the list to test a specific removal.
+    drop = [str(x) for x in probe.get("drop", NON_CONTAINER_COMPETITORS)]
+    if drop:
+        sweep([c for c in base_vocab
+               if normalize_label(c) not in {normalize_label(x) for x in drop}],
+              "drop:" + "+".join(drop), target)
 
     for name in CANDIDATES.get(target, [target]):
         sweep([name if normalize_label(c) == normalize_label(target) else c
