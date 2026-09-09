@@ -234,3 +234,12 @@ This is not only the reachability check: the navmesh follower's goal is
 snapped the same way, which is where "the follower reports None while the
 agent is still 6.4 m away" came from. `agent.navmesh_snap_on_agent_island`
 constrains both. Arm `v2_island`, running on both failure subsets.
+
+### 23:06 — Restrike guard + nearest-free reachability on the 22 cross-anchor failures: 5 converted
+
+`outputs/osg_next_cross/flat_anchor_v2_nf` against the fixed arm on the same
+ids: **5/22 against 0/22** (the second cut alone gave 3/22); never-in-view
+9 -> 5; on the 11 no-detection failures the target was named in 5 (was 0).
+On cross-anchor the nearest-free answer does fire where the in-anchor one
+did not -- the objects sit on beds and benches whose free cell is reachable
+-- so the mitigation buys two trials the island fix should buy outright.
