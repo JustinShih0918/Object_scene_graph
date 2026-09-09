@@ -627,7 +627,11 @@ survive the change of benchmark almost untouched:
 So the drop was the rule, the legs are fixed, and what remains is neither eyes
 nor legs. It is where the camera is when it looks, and what the agent does when
 a correct arrival meets a silent detector. `SR_PROPOSAL_CLOSE_LOOK.md` is the
-proposal for both.
+proposal for both, and its result: the look before absence is a small, cheap
+positive (ten re-detections, the median episode 55 steps shorter, SR +1 / +1);
+the opportunistic look is a null, because in 28 of the 32 cross-anchor
+failures the agent never came within 4 m of the object's surface at all. The
+cross-anchor problem is the search order, not the look.
 
 ## The terminal approach, corrected
 

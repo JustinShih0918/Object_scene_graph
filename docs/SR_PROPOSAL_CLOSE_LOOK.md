@@ -183,3 +183,66 @@ what the design says: silent arrival, look, detection at 1.55 m, re-aim.
 Presets: `dualmap_protocol_osg_look_inanchor`, `_look_opportunistic`,
 `_look_both`, all on top of `dualmap_protocol_osg_tightring`; the batch is
 `scripts/run_close_look_ab.sh`.
+
+## Result (2026-09-09): one half works, the other half was aimed at the wrong thing
+
+Four arms, 107 dynamic trials each, paired on trial id against the tight-ring
+baseline; `scripts/compare_close_look.py` writes
+`outputs/osg_closelook/CLOSE_LOOK_AB.md`. Every knob moved, so the nulls below
+are nulls and not untested arms.
+
+| arm | looks | detected during a look | re-approached | steps spent looking | median steps | at budget |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 0 | 0 | 0 | 0 | 421 | 47 |
+| before absence | 60 | 10 | 10 | 1136 | **366** | 46 |
+| opportunistic | 424 | 50 | 0 | 8010 | 402 | 50 |
+| both | 427 | 56 | 12 | 7970 | 386 | 47 |
+
+| split | baseline | before absence | opportunistic | both |
+|---|---:|---:|---:|---:|
+| in-anchor SR | 24/54 | 25/54 (+2 / -1) | 23/54 (+2 / -3) | 25/54 (+4 / -3) |
+| cross-anchor SR | 15/53 | 16/53 (+3 / -2) | 13/53 (+1 / -3) | 13/53 (+3 / -5) |
+
+No arm is significant (sign test p >= 0.6 throughout), as expected at n = 107.
+The mechanism tables are the result.
+
+**The look before absence is a small, cheap positive and stays.** Sixty looks
+cost 1136 steps in total, ten of them re-detected the target and re-aimed, and
+the median episode got *shorter* (421 to 366 steps) because a re-detection ends
+an episode that used to run to the budget: `0117 pitcher` went from 308 steps
+and 1.36 m to 68 steps and 0.97 m; `0118 plate` from 11.36 m to 1.66 m; `0118
+cracker box` from 8.41 m to 2.58 m. "Seen, never named" fell 10 to 8 in-anchor
+and 20 to 16 cross-anchor. What it did not do is empty the arrive-and-leave
+bucket: of the 23 in-anchor episodes whose first commit was already within 1 m
+of the object, 5 still ended more than 3 m away, in every arm. The look gives
+the detector its chance; on those five the detector still said nothing.
+
+**The opportunistic look is a null with a cost, and it is retired.** It fired
+424 times, hit its six-look cap in 66 of 107 episodes by a median step 155, and
+spent 8010 steps -- 15% of the whole batch's budget -- looking at beds, desks
+and cabinets around the *stale* position and along the frontier route. On the
+32 cross-anchor failures the proposal aimed it at, the object's own surface
+was close-looked in **one**. The reason is in the record it was built to
+write: in 28 of those 32 episodes the true surface was never within 4 m of a
+single glance. The agent never went near it. Never-in-view rose (12 to 19
+cross-anchor, 6 to 10 in-anchor) because the steps the looks consumed were the
+steps that used to reach a frontier.
+
+So the diagnosis "exposure: the object crossed the frame at 2-4 m" was right
+about the frame and wrong about the remedy. Those sightings were of the
+*object* at the edge of a room the agent was leaving, not of a surface it was
+passing. Looking harder along the route the search already takes cannot
+convert them, because the route is the failure: `container_prior`'s proximity
+term, `exp(-d / 1.0)` from the stale position, keeps the true surface out of
+the search order for the whole episode (memory:
+`osg-cross-anchor-is-proximity-bound`), and the frontier weight of 0.3 keeps
+the agent inspecting the stale room. The cross-anchor lever is where the
+search *goes*, not how it looks when it gets there.
+
+**Where this leaves the presets.** `close_look_before_absence` is worth carrying
+into the best-known configuration; `close_look_opportunistic` and the 2.5 m
+glance range are not, and the flags stay off by default. The next cross-anchor
+experiment is a search-order one: a proximity length or floor that lets a
+surface 5 m from the stale position be selected within the first hundred
+steps, measured first by "own surface selected / arrived" in the anatomy table
+and only then by SR.
