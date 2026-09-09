@@ -95,6 +95,8 @@ def _agent_with_twins(refuted: bool, **over):
     anchor = _track(1, [3.0, 0.5, 0.0], prior=True, live=False)
     if refuted:
         anchor.absence_arrivals = 1
+    else:
+        anchor.identity_rejections = 1  # an unreachable strike is not a refutation
         anchor.presence.log_odds = -3.0  # under the bar, as after a refutation
     twin = _track(2, [8.0, 0.5, 2.0], prior=True, live=False, score=0.8)
     live = _track(3, [5.0, 0.5, -2.0], prior=False, live=True, score=0.7)

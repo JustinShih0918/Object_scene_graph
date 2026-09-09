@@ -118,4 +118,5 @@ def rearm_after_failed_attempt(agent, cfg) -> None:
         # object that is really there, so the next keyframe re-detects it and
         # restores the belief the clamp just lowered.
         track.identity_rejections += 1
+        track.failed_attempts = int(getattr(track, "failed_attempts", 0)) + 1
     agent.rearm(cfg.agent.max_steps)

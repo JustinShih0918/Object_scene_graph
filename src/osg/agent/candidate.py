@@ -219,7 +219,8 @@ class CandidatePolicy:
         are ghosts of the same static pass, not places to go."""
         refuted = any(
             bool(getattr(t, "from_prior", False))
-            and (int(getattr(t, "absence_arrivals", 0)) > 0 or int(t.identity_rejections) > 0)
+            and (int(getattr(t, "absence_arrivals", 0)) > 0
+                 or int(getattr(t, "failed_attempts", 0)) > 0)
             for t in self.nav.object_layer.tracks(include_blacklisted=True)
             if t.label.lower().replace(" ", "_") == self.nav.target.lower().replace(" ", "_")
         )

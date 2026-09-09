@@ -95,6 +95,11 @@ class ObjectTrack:
     # counts only "I went to look, and it was gone" -- the event that refutes
     # the hypothesis the search prior is built on.
     absence_arrivals: int = 0
+    # Attempts the protocol scored as failed while committed to this track.
+    # Kept apart from `identity_rejections`, which an unreachable verdict also
+    # bumps: only an absence arrival or a failed attempt REFUTES a track in
+    # place, and the stale-twin rule keys on refutation.
+    failed_attempts: int = 0
 
     @property
     def seen_live(self) -> bool:
