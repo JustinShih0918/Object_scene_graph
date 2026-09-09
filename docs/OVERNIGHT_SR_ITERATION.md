@@ -164,3 +164,10 @@ fixed stale-anchor arm on the same ids: every funnel row identical, 5/32
 both. `absence_abandon` was already 4 on these trials after the stale stop
 took over the silent arrivals, so a knob that only changes what happens
 after an abandon has almost nothing left to act on. Not carried forward.
+
+### 21:50 — Belief clamp 6 -> 2: null
+
+`outputs/osg_next/flat_anchor_v2_clamp` on the same 21 in-anchor failures:
+funnel identical to the second cut, 2/21. The true track's belief is not
+what keeps it from being committed; the block is elsewhere in the candidate
+gates, and the next step is to read those gates on the ten trials directly.
