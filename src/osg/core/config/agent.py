@@ -179,6 +179,15 @@ class AgentConfig:
     # the two lowest-SR targets -- the pitcher (3 of 6 poses) and the bleach
     # bottle (2 of 6).
     reachable_via_viewpoint: bool = False
+    # A third answer to "can the agent get to this candidate": the nearest free
+    # costmap cell to the object, which is where `_aim` sends the approach when
+    # no ring pose exists. Read on the released benchmark's in-anchor failures:
+    # every candidate rejection was "unreachable", including live tracks 0.05 m
+    # from the object with belief 0.95 -- a plate on a desk against a wall,
+    # whose ring poses were all occupied or unknown at that moment and whose
+    # own position is off the navmesh. The place the approach would actually
+    # drive to was reachable all along.
+    reachable_via_nearest_free: bool = False
 
     # Canonical mover selection.  ``None`` preserves the historical
     # ``use_habitat_navmesh`` spelling; resolve_navigation() is the only place

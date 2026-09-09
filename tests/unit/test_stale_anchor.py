@@ -184,3 +184,23 @@ def test_a_failed_attempt_disables_every_fragment_at_the_place():
     assert not far.blacklisted
     assert agent.stats["failed_attempt_place_disabled"] == 3
     assert ghost[0].failed_attempts == 1
+
+
+def test_nearest_free_reachability_rescues_an_object_with_no_ring_pose():
+    """A candidate whose ring poses are all occupied and whose own position is
+    off the navmesh is reachable if the nearest free cell is."""
+    cfg = make_cfg(reachable_via_viewpoint=True, reachable_via_nearest_free=True)
+    agent = make_agent(cfg, target="chair")
+    asked = []
+    def reachable(xy, floor_y=None):
+        asked.append(np.asarray(xy, dtype=float).copy())
+        return len(asked) >= 2  # the viewpoint says no, the nearest free cell says yes
+    agent._reachable_fn = reachable
+    track = _track(1, [3.0, 0.5, 0.0], prior=False, live=True)
+    agent.object_layer._tracks[1] = track
+    assert agent.candidates._reachable(track, np.array([3.0, 0.0]), np.array([3.0, 0.5, 0.0])) is True
+    assert agent.stats["reachable_via_nearest_free"] == 1
+    cfg.agent.reachable_via_nearest_free = False
+    asked.clear()
+    agent._reachable_fn = lambda xy, floor_y=None: False
+    assert agent.candidates._reachable(track, np.array([3.0, 0.0]), np.array([3.0, 0.5, 0.0])) is False

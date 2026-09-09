@@ -56,6 +56,7 @@
   "agent.pointnav_stop_radius": 0.9,
   "agent.pointnav_weights": "data/weights/pointnav_weights.pth",
   "agent.policy": "nav_agent",
+  "agent.reachable_via_nearest_free": false,
   "agent.reachable_via_viewpoint": false,
   "agent.rednet_stairs": false,
   "agent.rednet_weights": "data/weights/rednet_semmap_mp3d_40.pth",

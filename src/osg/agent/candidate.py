@@ -274,6 +274,15 @@ class CandidatePolicy:
                 )
             if view_xy is not None and self.nav._reachable_fn(view_xy, floor_y):
                 return True
+        if bool(getattr(self.nav.cfg.agent, "reachable_via_nearest_free", False)):
+            from ..mapping.costmap import nearest_free_xy
+
+            near_xy = np.asarray(nearest_free_xy(self.nav.costmap, obj_xy), dtype=float)
+            if self.nav._reachable_fn(near_xy, floor_y):
+                self.nav.stats["reachable_via_nearest_free"] = (
+                    self.nav.stats.get("reachable_via_nearest_free", 0) + 1
+                )
+                return True
         return bool(self.nav._reachable_fn(obj_xy, floor_y))
 
     def verify(self, frame: FrameData) -> str:
