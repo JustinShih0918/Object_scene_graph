@@ -913,34 +913,51 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
         return self._to_frame(observations)
 
     def _shortest_to_object(self) -> Optional[float]:
-        """Geodesic from the start to the navigable point nearest the object,
-        for SPL under the object-distance rule."""
+        """Geodesic from the start to the nearest navigable point within the
+        success radius of the object, for SPL under the object-distance rule.
+
+        Sampled on rings around the object at the OBJECT's height, not the
+        start's (as the released harness does), because here the object may be
+        a storey away: a point at the start's height snaps to the start's floor
+        and never reaches the object's."""
+        import habitat_sim
+
         target = self._target_position()
         if target is None:
             return None
         try:
             pathfinder = self.env.sim.pathfinder
-            start = np.asarray(self.env.sim.get_agent_state().position, dtype=float)
-            snapped = pathfinder.snap_point(np.asarray(target, dtype=np.float32))
-            distance = float(pathfinder.geodesic_distance(start, snapped))
+            start = np.asarray(self.env.sim.get_agent_state().position, dtype=np.float32)
         except Exception:
             return None
-        return distance if math.isfinite(distance) else None
-
-    def step(self, action: str):
-        # Habitat ends the episode on the terminal STOP without routing it
-        # through `attempt_scored`, so the rule has to see it here, before the
-        # pose is gone (as sim/dualmap_env.py does).
-        if action == "stop" and self._object_rule.enabled:
-            self._record_stop()
-        frame = super().step(action)
-        self._maybe_relocate(frame)
-        self._object_rule.travelled(
-            np.asarray(self.env.sim.get_agent_state().position, dtype=float)
-        )
-        return frame
-
-    # ---------------------------------------------------- object-distance rule
+        threshold = float(self._object_rule.threshold_m)
+        best = math.inf
+        seen = set()
+        for radius in (0.0, 0.25, 0.5, 0.75, 0.95):
+            for sample in range(1 if radius == 0.0 else 36):
+                angle = 2.0 * math.pi * sample / max(1, (1 if radius == 0.0 else 36))
+                point = np.array(
+                    [target[0] + radius * math.cos(angle), target[1],
+                     target[2] + radius * math.sin(angle)], dtype=np.float32,
+                )
+                try:
+                    snapped = np.asarray(pathfinder.snap_point(point), dtype=float)
+                except Exception:
+                    continue
+                if not np.isfinite(snapped).all():
+                    continue
+                if self._object_rule.distances(snapped, target)[0] > threshold:
+                    continue
+                key = tuple(np.round(snapped, 2))
+                if key in seen:
+                    continue
+                seen.add(key)
+                path = habitat_sim.ShortestPath()
+                path.requested_start = start
+                path.requested_end = np.asarray(snapped, dtype=np.float32)
+                if pathfinder.find_path(path):
+                    best = min(best, float(path.geodesic_distance))
+        return best if math.isfinite(best) else None
 
     def _target_position(self) -> Optional[np.ndarray]:
         info = (getattr(self.current_episode, "info", None) or {}).get("ycb", {})
