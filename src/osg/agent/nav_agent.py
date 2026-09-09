@@ -396,6 +396,7 @@ class NavAgent:
         self._disbelieved: set = set()
         self._stale_stop_used = False
         self._stale_stop_pending = False
+        self._relook = None  # (key, centre_xy, radius_m, exclude_xy, label)
         self.state_log = []
         self.approach.reset()
         self.candidates.reset()
@@ -452,6 +453,7 @@ class NavAgent:
         The belief work belongs to the caller (eval/attempts.py), because what a
         failed attempt is WORTH is a protocol question, not an agent one.
         """
+        self._schedule_relook()
         self._candidate_id = None
         self._target_obj_xy = None
         self._goal_xy = None
@@ -467,6 +469,43 @@ class NavAgent:
         self.stats["attempts"] = self.stats.get("attempts", 1) + 1
 
     # ------------------------------------------------------------------- act
+
+    def _schedule_relook(self) -> None:
+        """A stale stop just failed: the object is probably still on that
+        surface. Remember the surface so the next attempt looks at it first,
+        from somewhere other than where the agent stood."""
+        if not bool(self.cfg.verification.relook_after_stale_stop):
+            return
+        if self._relook is not None or not self._stale_stop_used:
+            return
+        track = self.object_layer.get(self._candidate_id) if self._candidate_id is not None else None
+        if track is None or not getattr(track, "from_prior", False) or track.seen_live:
+            return
+        here = None if self._agent_xy is None else np.asarray(self._agent_xy, dtype=float).copy()
+        centre = np.asarray(self.object_layer.center_of(track), dtype=float)[list(PLANE)]
+        key, radius, label = -int(track.id), _horizontal_radius_m(track), str(track.label)
+        view = next((o for o in getattr(self.scene_graph, "objects", []) if int(o.track_id) == int(track.id)), None)
+        cid = getattr(view, "container_id", None) if view is not None else None
+        node = self.scene_graph.containers.get(int(cid)) if cid is not None else None
+        if node is not None:
+            from .close_look import _container_radius_m
+
+            key = int(cid)
+            centre = np.asarray(node.center, dtype=float)[list(PLANE)]
+            radius = _container_radius_m(self, node)
+            label = str(node.label)
+        self._relook = (key, centre, radius, here, label)
+        self.stats["relook_scheduled"] = self.stats.get("relook_scheduled", 0) + 1
+
+    def _start_relook(self, frame: FrameData) -> Optional[str]:
+        if self._relook is None or self.close_look.active:
+            return None
+        key, centre, radius, exclude_xy, label = self._relook
+        self._relook = None
+        self.stats["relook_started"] = self.stats.get("relook_started", 0) + 1
+        self.close_look.start(key, centre, radius, "explore", reason="relook",
+                              label=label, exclude_xy=exclude_xy)
+        return self.close_look.step(frame)
 
     def act(self, frame: FrameData) -> str:
         self.step_count += 1
@@ -578,6 +617,9 @@ class NavAgent:
             if pursuing and self._goal_xy is not None:
                 self.state = State.GOTO_FRONTIER  # resume the climb
             else:
+                relook = self._start_relook(frame)
+                if relook is not None:
+                    return relook
                 # Look at the surface before the selection round scores it
                 # searched -- the selection round retires it on arrival, and
                 # the belief update should rest on a frame that shows it.

@@ -188,17 +188,21 @@ class CloseLookPolicy:
     def start(self, cid: int, centre_xy: np.ndarray, radius_m: float, resume: str,
               reason: Optional[str] = None, label: Optional[str] = None,
               trigger_range_m: Optional[float] = None,
-              belief: Optional[float] = None) -> None:
+              belief: Optional[float] = None,
+              exclude_xy: Optional[np.ndarray] = None) -> None:
         nav = self.nav
         ring = [float(self.cfg.close_look_ring_m)]
+        exclude = None if exclude_xy is None else [np.asarray(exclude_xy, dtype=float)]
         view = nav.viewpoint_planner.approach_viewpoint(
             centre_xy, nav.costmap, obj_radius_m=radius_m, radii=ring,
+            exclude=exclude, exclude_radius_m=1.0,
         )
         planned = "strict"
         if view is None:
             view = nav.viewpoint_planner.approach_viewpoint(
                 centre_xy, nav.costmap, obj_radius_m=radius_m, radii=ring,
                 require_line_of_sight=False, allow_unknown=True,
+                exclude=exclude, exclude_radius_m=1.0,
             )
             planned = "relaxed"
         if view is None:

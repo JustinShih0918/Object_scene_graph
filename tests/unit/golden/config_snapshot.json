@@ -383,6 +383,7 @@
   "verification.min_score": 0.7,
   "verification.rank_candidates_by_presence": false,
   "verification.reject_cooldown_steps": 0,
+  "verification.relook_after_stale_stop": false,
   "verification.retire_stale_twins_after_absence": false,
   "verification.ring_radii_m": [
     0.8,

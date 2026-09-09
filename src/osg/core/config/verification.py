@@ -104,6 +104,13 @@ class VerificationConfig:
     # track centre and stops there, which is as close to the old position as
     # the furniture allows.
     stale_stop_at_nearest_free: bool = False
+    # After a stale stop FAILS, the object is still most likely on that same
+    # surface (in-anchor moves it a median 0.7 m along its anchor), and the
+    # remaining failures under the island fix stop at 1.0-1.9 m of it. With
+    # this on, the attempt after a failed stale stop begins with a close look
+    # at the stale track's container from a pose at least a metre from the
+    # one just stood on, before the search moves to other surfaces.
+    relook_after_stale_stop: bool = False
     # A failed attempt refutes the PLACE, not just the track. On 00848 the
     # pitcher's ghost is three fragment tracks 0.2 m apart; each failed stop
     # struck one of them and the next commit took the next, three attempts on

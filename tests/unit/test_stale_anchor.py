@@ -204,3 +204,30 @@ def test_nearest_free_reachability_rescues_an_object_with_no_ring_pose():
     asked.clear()
     agent._reachable_fn = lambda xy, floor_y=None: False
     assert agent.candidates._reachable(track, np.array([3.0, 0.0]), np.array([3.0, 0.5, 0.0])) is False
+
+
+def test_a_failed_stale_stop_schedules_a_relook_from_elsewhere():
+    from osg.agent.nav_agent import State
+    track = _track(1, [3.0, 0.5, 0.0], prior=True, live=False)
+    agent = _silent_arrival(track, stop_at_stale_anchor_once=True, relook_after_stale_stop=True)
+    assert agent.approach.step(_frame([0.0, 0.0])) == "stop"      # the stale stop
+    agent._agent_xy = np.array([2.4, 0.0])                        # where it stood
+    agent.rearm(100)                                              # the attempt failed
+    assert agent._relook is not None and agent.stats["relook_scheduled"] == 1
+    action = agent.act(_frame([2.4, 0.0], frame_id=3))            # EXPLORE opens with the look
+    assert action is not None and agent.state is State.CLOSE_LOOK
+    entry = agent.close_look.log[-1]
+    assert entry["reason"] == "relook"
+    assert np.linalg.norm(np.asarray(entry["goal_xy"]) - np.array([2.4, 0.0])) >= 1.0
+    assert agent.stats["relook_started"] == 1 and agent._relook is None
+
+
+def test_no_relook_without_a_stale_stop_or_with_the_flag_off():
+    track = _track(1, [3.0, 0.5, 0.0], prior=True, live=False)
+    agent = _silent_arrival(track, relook_after_stale_stop=True)   # no stale stop taken
+    agent.rearm(100)
+    assert agent._relook is None
+    agent = _silent_arrival(track, stop_at_stale_anchor_once=True)  # flag off
+    agent.approach.step(_frame([0.0, 0.0]))
+    agent.rearm(100)
+    assert agent._relook is None
