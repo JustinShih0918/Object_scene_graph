@@ -32,6 +32,9 @@ YCB_TARGET_LABELS: Dict[str, str] = {
     "037_scissors": "scissors",
     "053_mini_soccer_ball": "soccer ball",
     "077_rubiks_cube": "rubiks cube",
+    # The 15-scene authoring root places this in 14 of its 15 scenes; the name
+    # is the detector query, and this is the plain one.
+    "072-a_toy_airplane": "toy airplane",
 }
 
 
