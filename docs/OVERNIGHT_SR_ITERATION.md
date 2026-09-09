@@ -204,3 +204,14 @@ but a candidate the check calls unreachable is not committed either, and
 from the same pose the answer never changes. The block is the answer, not
 the counting. The nearest-free arm (`v2_nf`) asks the check about the cell
 the approach would actually drive to; running.
+
+### 22:30 — Second cut on the 22 cross-anchor failures: 3 converted
+
+`outputs/osg_next_cross/flat_anchor_v2` on the fixed arm's cross-anchor
+failures (scissors and mug dropped), against the fixed arm on the same ids:
+**3/22 against 0/22**; never-in-view 9 -> 5; on the 11 no-detection
+failures the object's own surface was selected in 3 (was 1) and the target
+named in 5 (was 0). Retiring a refuted place frees the budget the search
+needed. The second cut is a gain on both halves (in-anchor +2 of 21,
+cross-anchor +3 of 22 on the failure subsets) and becomes the base for the
+full-107 confirmation once the reachability arm reports.
