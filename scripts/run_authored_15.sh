@@ -9,9 +9,11 @@
 # built over the STATIC layout with the map directory as both map_out and
 # map_in so every static episode starts from what the previous ones mapped,
 # then the moved layouts are navigated from that stale map. Each scene is one
-# process per pass; MAX_PARALLEL bounds how many share the GPU (~1.3 GB each).
+# process per pass; MAX_PARALLEL bounds how many share the GPU. A multi-storey
+# process takes 1.6-1.9 GB (measured), and six of them ran the 10 GB card out
+# of memory mid-batch; four is the safe number.
 #
-#   scripts/run_authored_15.sh                          # all 15, 5 at a time
+#   scripts/run_authored_15.sh                          # all 15, 4 at a time
 #   SCENES="00800-TEEsavR23oF" scripts/run_authored_15.sh
 #   PRESET=ycb_authored_15 MAPS=outputs/maps_15 OUT=outputs/osg_authored_15
 #
@@ -23,7 +25,7 @@ set -a; . ./.env; set +a
 : "${PRESET:=ycb_authored_15}"
 : "${MAPS:=outputs/maps_15}"
 : "${OUT:=outputs/osg_authored_15}"
-: "${MAX_PARALLEL:=5}"
+: "${MAX_PARALLEL:=4}"
 : "${ROOT:=/datasets/habitat-data-collector/outputs/dualmap_authoring}"
 : "${SCENES:=$(ls "$ROOT" | grep -E '^[0-9]{5}-' | tr '\n' ' ')}"
 : "${DRY_RUN:=}"
