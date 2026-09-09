@@ -65,6 +65,13 @@ CANDIDATES: Dict[str, List[str]] = {
                 "tomato soup can", "food can", "soda can", "red can", "cylinder"],
     "red plate": ["red plate", "plate", "dish", "saucer", "round plate", "bowl",
                   "dinner plate", "red dish", "red disc"],
+    # The released benchmark's two undetectable queries (in-situ recall 0.02 and
+    # 0.00). Names span the shape, the material and the generic category.
+    "scissors": ["scissors", "pair of scissors", "shears", "metal scissors",
+                 "scissor", "cutting tool", "orange scissors", "office scissors",
+                 "tool", "knife"],
+    "mug": ["mug", "coffee mug", "cup", "coffee cup", "white mug", "ceramic mug",
+            "tea cup", "drinking cup", "beer mug", "container"],
 }
 
 _UV = re.compile(r"_u(\d+)_v(\d+)\.png$")

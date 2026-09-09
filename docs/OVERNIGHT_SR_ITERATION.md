@@ -55,3 +55,29 @@ about 35/39 in-anchor and 26/39 cross-anchor on the trials the detector can see.
    recorded here as a cost, not taken tonight.
 
 ## Log
+
+### 19:30 — Perception: scissors and mug cannot be named in situ, by anything cheap
+
+`scripts/probe_nearmiss.py` over every dumped in-view keyframe of the tight-ring
+run (`outputs/nearmiss_tightring/{scissors,mug}.log`): 352 scissors frames and
+160 mug frames, ranges 1.4-5.2 m, the frames on which the object was in front
+of the camera and unoccluded.
+
+| condition | scissors | mug |
+|---|---:|---:|
+| the run's own name and settings | 0/352 | 0/160 |
+| every furniture competitor removed | 0/352 | 0/160 |
+| window around the object, upscaled (160 px, 96 px) | 0/352, 0/352 | 0/160, 0/160 |
+| ten alternative names | 0/352 for all ten | 0/160 for nine; `cup` 9/160 (0.06) |
+
+The detector produces nothing over these two assets at any name, with no
+competitor to lose to, at any magnification: not a threshold, not a name, not
+scale. The bake-off (PERCEPTION_INVESTIGATION.md) already showed DualMap's own
+detector at 0.06 on scissors. These 24 trials (18 scissors, 6 mug) are a
+ceiling for both systems: without them the best attainable is 45/54 in-anchor
+(83%) and 44/53 cross-anchor (83%), so 70/50 does not need them. The only
+ways to move them are a different recogniser (a VLM on crops, at a per-frame
+cost this pipeline cannot pay) or substituting detectable objects in the
+released layouts, which requires rerunning DualMap on the substituted layouts
+(~10 h of their harness for three seeds). Neither is taken tonight; the night
+goes to the 83 trials the detector can see.
