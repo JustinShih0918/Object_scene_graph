@@ -605,11 +605,17 @@ survive the change of benchmark almost untouched:
 
 * *Cross-anchor never gets a look.* Never-in-view is 15/48 then and 12/53 now;
   wrong commits are 85% of all commits then and 84% now, and the first commit is
-  the stale prior in 38/48 and 26/43 episodes. And in **all 32** cross-anchor
+  the stale prior in 38/48 and 26/43 episodes. And across the **32** cross-anchor
   failures without a detection -- 12 never in view, 12 exposure, 8 detector wall
-  -- the mapped container the object actually sat on, within 1.5 m of it in
-  every case (a bed in 16), was selected by the search **0 times** and arrived
-  at 0 times, across 4-21 surface selections per episode. The reason is in
+  -- the search selected a container within 1.5 m of where the object sat in
+  6 and arrived at it in 6, five of those on detector-wall trials where the
+  agent stood at the right surface and the detector still said nothing. Among
+  the 24 never-in-view and exposure failures a search change could convert,
+  the search reached the object's surface **once**, across 4-21 surface
+  selections per episode. (An earlier draft of this section said "0 times"; that
+  matched container ids, and the agent's container id is the smallest track id
+  of a linked component, not the nearest track's. Surfaces are matched by
+  distance now, and runs record their own container table.) The reason is in
   `container_prior`: proximity to the *stale* position, `exp(-d / 1.0)`, gives a
   surface 5.6 m away 0.4% of the peak before the same-room bonus, and a passing
   glance from up to 4 m then retires whatever belief is left.
@@ -629,9 +635,11 @@ nor legs. It is where the camera is when it looks, and what the agent does when
 a correct arrival meets a silent detector. `SR_PROPOSAL_CLOSE_LOOK.md` is the
 proposal for both, and its result: the look before absence is a small, cheap
 positive (ten re-detections, the median episode 55 steps shorter, SR +1 / +1);
-the opportunistic look is a null, because in 28 of the 32 cross-anchor
-failures the agent never came within 4 m of the object's surface at all. The
-cross-anchor problem is the search order, not the look.
+the opportunistic look is a null with a cost: in 15 of the 32 cross-anchor
+failures the agent never came within 4 m of the object's surface, and in the
+17 where it did, its six looks had already gone to nearer surfaces. The
+cross-anchor problem is where the search goes and what it spends its looks
+on, not how it looks.
 
 ## The terminal approach, corrected
 

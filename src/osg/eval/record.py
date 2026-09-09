@@ -107,6 +107,22 @@ def stair_track_fields(agent) -> dict:
     }
 
 
+def container_table(agent) -> dict:
+    sg = getattr(agent, "scene_graph", None)
+    nodes = getattr(sg, "containers", None) or {}
+    out = {}
+    for cid, node in nodes.items():
+        try:
+            out[str(int(cid))] = {
+                "label": str(node.label),
+                "center": [round(float(v), 3) for v in node.center],
+                "floor": int(getattr(node, "floor_id", getattr(node, "floor", 0))),
+            }
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return out
+
+
 def target_track_fields(agent) -> dict:
     """Snapshot the committed target track for GT-localization analysis.
 
@@ -207,6 +223,11 @@ def build_episode_record(
         # where, and whether the detector answered.
         "close_look_log": getattr(agent, "close_look_log", []),
         "glance_ranges": getattr(agent, "glance_ranges", {}),
+        # Every container id the logs above name, resolved: the agent's id is
+        # the smallest track id of a linked component and may belong to a track
+        # mapped live, so no prior map can resolve it offline. Snapshot at the
+        # end of the episode; ids are stable for its length.
+        "containers": container_table(agent),
         "goal_commit_log": getattr(agent, "goal_commit_log", []),
         "target_tracks": [
             {

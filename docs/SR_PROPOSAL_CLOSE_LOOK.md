@@ -12,11 +12,15 @@ Both survive every change of benchmark and rule made so far, and both are
 about *where the camera is when it looks*, not about what the detector can do
 once it is there.
 
-**Cross-anchor: the object's own surface is never a goal.** In all 32
-cross-anchor failures without a detection, the mapped container the object sat
-on -- within 1.5 m of it every time, a bed in half of them -- was selected by
-the search 0 times and arrived at 0 times, while those episodes made 4-21
-surface selections and 150-2300 glance updates each. Twelve of the 32 did have
+**Cross-anchor: the object's own surface is almost never a goal.** Across the
+32 cross-anchor failures without a detection, the search selected a container
+within 1.5 m of where the object sat in 6 and arrived at it in 6 -- five of
+them detector-wall trials where the agent stood at the right surface and the
+detector still said nothing. Among the 24 never-in-view and exposure failures
+a search change could convert, it reached the object's surface once, while
+those episodes made 4-21 surface selections and 150-2300 glance updates each.
+(A first draft said "0 times"; it matched container ids, and the agent's id is
+the smallest track id of a linked component. Matched by distance now.) Twelve of the 32 did have
 the object in frame, at 2-4 m, during `goto_frontier`, where the detector's
 in-situ recall is 0.28; nine of the thirteen shared-target "seen, never named"
 failures are that, not the detector. The chain is:

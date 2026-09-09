@@ -396,15 +396,20 @@ def section_own_surface(current: List[Trial], maps_root: Path) -> List[str]:
     """Cross-anchor failures without a detection: was the object's own surface ever a goal?"""
     maps: Dict[str, Dict[int, Dict[str, Any]]] = {}
 
+    full: Dict[str, Dict[int, Dict[str, Any]]] = {}
+
+    def all_maps(scene: str) -> Dict[int, Dict[str, Any]]:
+        if scene not in full:
+            path = maps_root / scene / f"{scene}.json"
+            full[scene] = {} if not path.exists() else {
+                int(t["id"]): t for t in json.loads(path.read_text(encoding="utf-8"))["tracks"]
+            }
+        return full[scene]
+
     def containers(scene: str) -> Dict[int, Dict[str, Any]]:
         if scene not in maps:
-            path = maps_root / scene / f"{scene}.json"
-            if not path.exists():
-                maps[scene] = {}
-            else:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                maps[scene] = {int(t["id"]): t for t in data["tracks"]
-                               if t.get("label") in CONTAINER_CATEGORIES}
+            maps[scene] = {cid: t for cid, t in all_maps(scene).items()
+                           if t.get("label") in CONTAINER_CATEGORIES}
         return maps[scene]
 
     kinds = collections.OrderedDict((k, [0, 0, 0, 0, collections.Counter(), 0, 0])
@@ -421,11 +426,23 @@ def section_own_surface(current: List[Trial], maps_root: Path) -> List[str]:
                     f"Prior map not found under `{maps_root}`; table skipped."]
         dist, near = min((horizontal(tr["center"], t.new_pos), tr) for tr in tracks.values())
         events = t.record.get("search_log_events") or []
-        cid = int(near["id"])
-        selected = any(e.get("container_id") == cid and "utility" in e for e in events)
-        arrived = any(e.get("container_id") == cid and e.get("arrived") for e in events)
-        looked = any(int(e.get("container_id", -10**9)) == cid for e in (t.record.get("close_look_log") or []))
-        glance = (t.record.get("glance_ranges") or {}).get(str(cid))
+        # Matched by distance, not id: the agent's container id is the smallest
+        # track id of a linked component, so the nearest single track's id need
+        # not be the id the search logs.
+        all_tracks = dict(all_maps(scene))
+        for cid, node in (t.record.get("containers") or {}).items():
+            all_tracks[int(cid)] = {"id": int(cid), "label": node["label"], "center": node["center"]}
+
+        def close(cid) -> bool:
+            tr = all_tracks.get(int(cid)) if cid is not None else None
+            return tr is not None and horizontal(tr["center"], t.new_pos) <= 1.5
+
+        selected = any("utility" in e and close(e.get("container_id")) for e in events)
+        arrived = any(e.get("arrived") and close(e.get("container_id")) for e in events)
+        looked = any(int(e.get("container_id", -1)) >= 0 and close(e["container_id"])
+                     for e in (t.record.get("close_look_log") or []))
+        glances = [float(v) for k, v in (t.record.get("glance_ranges") or {}).items() if close(k)]
+        glance = min(glances) if glances else None
         row = kinds[kind]
         row[0] += 1
         row[1] += int(dist <= 1.5)
@@ -443,8 +460,11 @@ def section_own_surface(current: List[Trial], maps_root: Path) -> List[str]:
          "that container ever selected by the search", "ever arrived at", "close-looked",
          "glanced from <= 2.5 m", "what it was"],
         rows,
-        "Read from the prior map's container tracks and the episode's `search_log_events`, "
-        "`close_look_log` and `glance_ranges` (the last two are empty on runs that predate them). "
+        "Read from the prior map's tracks and the episode's `search_log_events`, "
+        "`close_look_log` and `glance_ranges` (the last two are empty on runs that predate them); "
+        "an event counts as the object's own surface when the logged container's centre is within 1.5 m "
+        "of where the object landed, because the agent's container id is the smallest track id of a "
+        "linked component and need not equal the nearest track's id. "
         "The search made 4-21 surface selections per episode and never chose this one.",
     )
 

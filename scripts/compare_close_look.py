@@ -91,29 +91,45 @@ class Maps:
             path = self.root / scene / f"{scene}.json"
             self.cache[scene] = {} if not path.exists() else {
                 int(t["id"]): t for t in json.loads(path.read_text(encoding="utf-8"))["tracks"]
-                if t.get("label") in CONTAINER_CATEGORIES
             }
         return self.cache[scene]
 
 
-def own_surface(r: Dict[str, Any], maps: Maps) -> Optional[Dict[str, Any]]:
-    """What happened to the container the object actually sat on."""
-    tracks = maps.containers(str(r["scene"]))
+def own_surface(r: Dict[str, Any], maps: Maps, radius_m: float = 1.5) -> Optional[Dict[str, Any]]:
+    """What happened to the container the object actually sat on.
+
+    Matched by DISTANCE, not id: the agent's container id is the smallest track
+    id of a linked component (an L-shaped sofa, a bed in three ellipsoids), so
+    the nearest single track's id need not be the id the search logs. A search
+    event counts as the object's own surface when the logged container's map
+    centre is within `radius_m` of where the object landed.
+    """
+    tracks = dict(maps.containers(str(r["scene"])))
+    # The record's own table (runs that carry it) resolves ids the prior map
+    # cannot: containers mapped live during the episode.
+    for cid, node in (r.get("containers") or {}).items():
+        tracks[int(cid)] = {"id": int(cid), "label": node["label"], "center": node["center"]}
     if not tracks:
         return None
     new = r["authored_layout"]["target_position"]
-    dist, near = min((horizontal(t["center"], new), t) for t in tracks.values())
-    cid = int(near["id"])
+    dist, near = min((horizontal(t["center"], new), t) for t in tracks.values()
+                     if t.get("label") in CONTAINER_CATEGORIES)
+
+    def close(cid) -> bool:
+        t = tracks.get(int(cid)) if cid is not None else None
+        return t is not None and horizontal(t["center"], new) <= radius_m
+
     events = r.get("search_log_events") or []
-    looks = [e for e in (r.get("close_look_log") or []) if int(e.get("container_id", -10**9)) == cid]
-    glance = (r.get("glance_ranges") or {}).get(str(cid))
+    looks = [e for e in (r.get("close_look_log") or []) if int(e.get("container_id", -1)) >= 0
+             and close(e["container_id"])]
+    glances = [float(v) for k, v in (r.get("glance_ranges") or {}).items() if close(k)]
     return {
-        "cid": cid, "label": str(near["label"]), "dist": dist,
-        "selected": any(e.get("container_id") == cid and "utility" in e for e in events),
-        "arrived": any(e.get("container_id") == cid and e.get("arrived") for e in events),
+        "cid": int(near["id"]), "label": str(near["label"]), "dist": dist,
+        "selected": any("utility" in e and close(e.get("container_id")) for e in events),
+        "arrived": any(e.get("arrived") and close(e.get("container_id")) for e in events),
         "close_looked": bool(looks),
         "look_detected": any(e.get("detected") for e in looks),
-        "glance_min_m": None if glance is None else float(glance),
+        "glance_min_m": min(glances) if glances else None,
     }
 
 
@@ -190,15 +206,22 @@ def main() -> None:
     rows = []
     for name, recs in arms.items():
         first_far, n_far, n_sel, own_sel, own_arr, own_look = [], [], [], 0, 0, 0
+        n_unresolved = []
         for t in cross_ids:
             r = recs[t]
             al = r["authored_layout"]
             olds = release.static_target_positions(al["scene"], al["dualmap"]["query"])
             stale = min(olds, key=lambda o: horizontal(o[0], al["target_position"]))[0]
             sels = [e for e in (r.get("search_log_events") or []) if "utility" in e]
+            resolve = dict(maps.containers(str(r["scene"])))
+            for cid, node in (r.get("containers") or {}).items():
+                resolve[int(cid)] = {"center": node["center"]}
             far = [e for e in sels if e.get("container_id") is not None
                    and (lambda c: c is not None and horizontal(c["center"], stale) > 3.0)(
-                       maps.containers(str(r["scene"])).get(int(e["container_id"])))]
+                       resolve.get(int(e["container_id"])))]
+            unresolved = sum(1 for e in sels if e.get("container_id") is not None
+                             and resolve.get(int(e["container_id"])) is None)
+            n_unresolved.append(unresolved)
             n_sel.append(len(sels)); n_far.append(len(far))
             if far:
                 first_far.append(far[0]["step"])
@@ -207,14 +230,19 @@ def main() -> None:
                 own_sel += fate["selected"]; own_arr += fate["arrived"]; own_look += fate["close_looked"]
         rows.append([name, str(len(cross_ids)), med(n_sel), med(n_far),
                      str(len(first_far)), med(first_far), str(own_sel), str(own_arr), str(own_look),
+                     str(sum(n_unresolved)),
                      str(sum(int(recs[t].get("gt_kf_in_view") or 0) > 0 for t in cross_ids)),
                      str(sum(int(recs[t].get("gt_kf_detected") or 0) > 0 for t in cross_ids))])
     lines += table("2b. Search order, all cross-anchor trials",
                    ["arm", "trials", "median surface selections", "median selections > 3 m from the stale position",
                     "episodes that ever selected one", "median step of the first", "own surface selected",
-                    "own surface arrived", "own surface close-looked", "target ever in view", "target ever named"],
+                    "own surface arrived", "own surface close-looked", "selections with an unresolvable id",
+                    "target ever in view", "target ever named"],
                    rows, "A cross-anchor object moved a median 5.6 m. A search that never selects a surface "
-                         "more than 3 m from where the object used to be cannot reach it by design.")
+                         "more than 3 m from where the object used to be cannot reach it by design. "
+                         "\"Own surface\" is any logged container within 1.5 m of where the object landed; "
+                         "an id that neither the prior map nor the record's container table resolves is a "
+                         "live-mapped container on a run that predates the table, and counts as neither.")
 
     # 3. In-anchor arrive-and-leave, on the baseline's first-commit-correct in-anchor episodes
     inanchor = [t for t in sorted(common)
