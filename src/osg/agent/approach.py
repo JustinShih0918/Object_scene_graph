@@ -47,6 +47,8 @@ class ApproachPolicy:
         self.reset()
 
     def reset(self) -> None:
+        # Horizontal extent of the track under approach; see _ring_offset_m.
+        self.obj_radius_m = 0.0
         # The last pose from which the target was confirmed visible, and the
         # retreat target when a step carries the agent behind an occluder the
         # 2D costmap line-of-sight check cannot see.
@@ -390,7 +392,9 @@ class ApproachPolicy:
             # object. ViewpointPlanner samples the SAME radii, so driving to one
             # of its poses puts the agent ON a ring, where the only error left
             # is angular -- at worst half the sampling step, about 0.10 m.
-            view_xy = self.nav.viewpoint_planner.approach_viewpoint(obj_xy, self.nav.costmap)
+            view_xy = self.nav.viewpoint_planner.approach_viewpoint(
+                obj_xy, self.nav.costmap, obj_radius_m=self._ring_offset_m()
+            )
             if view_xy is not None:
                 self.nav.stats["approach_viewpoint"] = (
                     self.nav.stats.get("approach_viewpoint", 0) + 1
@@ -411,7 +415,11 @@ class ApproachPolicy:
                 # own table is not a blocked view. Any pose ON a ring beats any
                 # pose off it.
                 view_xy = self.nav.viewpoint_planner.approach_viewpoint(
-                    obj_xy, self.nav.costmap, require_line_of_sight=False, allow_unknown=True
+                    obj_xy,
+                    self.nav.costmap,
+                    require_line_of_sight=False,
+                    allow_unknown=True,
+                    obj_radius_m=self._ring_offset_m(),
                 )
                 self.nav.stats["approach_viewpoint_none"] = (
                     self.nav.stats.get("approach_viewpoint_none", 0) + 1
@@ -441,12 +449,26 @@ class ApproachPolicy:
             self.nav._goal_xy = nearest_free_xy(self.nav.costmap, obj_xy)
         self.nav._target_obj_xy = obj_xy.copy()
 
+    def _ring_offset_m(self) -> float:
+        """How far to push the viewpoint rings out to clear the object itself.
+
+        Zero unless `verification.ring_radius_extent_aware` is set, so the
+        default behaviour -- and every result measured under it -- is unchanged.
+        """
+        if not self.nav.cfg.verification.ring_radius_extent_aware:
+            return 0.0
+        return float(self.obj_radius_m)
+
     def start(
         self,
         obj_xy: np.ndarray,
         agent_xy: Optional[np.ndarray] = None,
         floor_y: Optional[float] = None,
+        obj_radius_m: float = 0.0,
     ) -> None:
+        # Horizontal extent of the track being approached, held for the whole
+        # approach so retargets re-aim on the same ladder.
+        self.obj_radius_m = float(obj_radius_m)
         # Height to snap the navmesh goal at for the rest of this approach.
         # None keeps the legacy "use the agent's own height" behaviour.
         self.nav._goal_floor_y_cache = floor_y

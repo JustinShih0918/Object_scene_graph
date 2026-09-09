@@ -26,11 +26,21 @@ class ViewpointPlanner:
         exclude_radius_m: float = 0.5,
         require_line_of_sight: bool = True,
         allow_unknown: bool = False,
+        obj_radius_m: float = 0.0,
     ) -> Optional[np.ndarray]:
         """Best world-xy pose to observe the object from, or None if the
         object is not yet observable from mapped free space. `exclude` lists
         previously tried viewpoints (e.g., where the detector could not see
         the object due to 3D occlusion the 2D map misses).
+
+        `obj_radius_m` measures the rings from the object's estimated SURFACE
+        rather than its centre. The radii were chosen for tabletop YCB objects,
+        whose extent is a few centimetres and so does not matter; on a couch or a
+        counter the centre can be a metre inside the furniture, and a ring drawn
+        around it puts every sample inside the object. Passing the track's
+        horizontal semi-axis pushes the whole ladder outwards by that much, which
+        is what lets the innermost ring be small enough to score without the goal
+        landing in an occupied cell. 0.0 reproduces the original behaviour.
 
         The two relaxations exist for the fallback in `_start_approach`, and
         both are about the difference between "I know this is bad" and "I do not
@@ -44,7 +54,8 @@ class ViewpointPlanner:
         exclude = exclude or []
         clearance = ndimage.distance_transform_edt(costmap.grid != OCCUPIED) * costmap.resolution
         best, best_score = None, -1.0
-        for radius in self.ring_radii:
+        for ring in self.ring_radii:
+            radius = float(obj_radius_m) + float(ring)
             for k in range(self.n_samples):
                 ang = 2.0 * np.pi * k / self.n_samples
                 cand = obj_xy + radius * np.array([np.cos(ang), np.sin(ang)])

@@ -119,6 +119,21 @@ class VerificationConfig:
     # erring toward not rejecting real targets over aggressively filtering).
     min_evidence: float = 1.0
     ring_radii_m: List[float] = field(default_factory=lambda: [0.8, 1.2, 1.5, 2.0])
+    # Measure the rings from the object's estimated surface rather than its
+    # centre. The radii above were tuned against HM3D ObjectNav, which scores
+    # distance to a sampled goal VIEWPOINT, so the innermost ring at 0.8 m is a
+    # success by construction. A benchmark that scores distance to the OBJECT at
+    # 1 m has no such slack: measured over the 15 released-benchmark trials that
+    # committed to the right object and still failed, the goal was placed well
+    # (median 0.82 m from truth, 10/15 already inside 1 m) and the agent stopped
+    # a further 0.37 m short of it, ending at a median 1.27 m. Shrinking the
+    # innermost ring is what recovers those, and it is only safe if the ring
+    # clears the object: on a couch or a counter the track centre is a metre
+    # inside the furniture, and every sample on a small ring lands in an
+    # occupied cell -> approach_viewpoint returns None -> the fallback goal that
+    # scored 0.100 against 0.516. Off by default: every result in ARCHITECTURE.md
+    # and every frozen condition was measured with centred rings.
+    ring_radius_extent_aware: bool = False
     accept_confidence: float = 0.5
     # Forced-choice verification: instead of asking the VLM "is this a <target>?"
     # (which it tends to agree with), show it the object and the FULL category

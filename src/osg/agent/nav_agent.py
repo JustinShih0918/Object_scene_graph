@@ -60,6 +60,27 @@ from ..core.labels import normalize_label
 from ..graph.containers import CONTAINER_CATEGORIES
 from .state import FORWARD_ACTION, STOP_ACTION, TURN_ACTION, State
 
+def _horizontal_radius_m(track) -> float:
+    """The track's ground-plane extent, from its fitted ellipsoid.
+
+    The semi-axes are in the ellipsoid's own frame, so the honest ground-plane
+    radius is the largest of them: a box seen edge-on has its long axis
+    horizontal whichever way R points, and over-estimating the radius pushes the
+    viewpoint ring outwards, which is the safe direction -- a ring that is too
+    big costs a little distance, one that is too small lands in an occupied cell
+    and loses the viewpoint entirely.
+    """
+    ellipsoid = getattr(track, "ellipsoid", None)
+    axes = getattr(ellipsoid, "axes", None)
+    if axes is None:
+        return 0.0
+    try:
+        radius = float(np.max(np.abs(np.asarray(axes, dtype=float))))
+    except (TypeError, ValueError):
+        return 0.0
+    return radius if np.isfinite(radius) else 0.0
+
+
 class NavAgent:
     def __init__(
         self,
@@ -1370,14 +1391,17 @@ class NavAgent:
         self.approach_recheck_max = None
         self._approach_start_step = self.step_count
         here = agent_xy if agent_xy is not None else self._agent_xy
-        if self._candidate_id is not None and here is not None:
+        obj_radius_m = 0.0
+        if self._candidate_id is not None:
             track = self.object_layer.get(self._candidate_id)
             if track is not None:
-                nearest = self.object_layer.nearest_point_xy(track, here)
-                self._target_cloud_xy = (
-                    None if nearest is None else np.asarray(nearest, dtype=float).copy()
-                )
-        self.approach.start(obj_xy, agent_xy, floor_y)
+                if here is not None:
+                    nearest = self.object_layer.nearest_point_xy(track, here)
+                    self._target_cloud_xy = (
+                        None if nearest is None else np.asarray(nearest, dtype=float).copy()
+                    )
+                obj_radius_m = _horizontal_radius_m(track)
+        self.approach.start(obj_xy, agent_xy, floor_y, obj_radius_m=obj_radius_m)
 
     def _abandon_approach(self) -> str:
         disabled = self._candidate_id is not None and self.object_layer.disable_target(
