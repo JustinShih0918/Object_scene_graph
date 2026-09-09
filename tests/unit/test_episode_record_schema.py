@@ -27,6 +27,7 @@ EXPECTED_KEYS = {
     # from, and the container table that resolves their ids
     # (agent/close_look.py; scripts/compare_close_look.py reads all three).
     "close_look_log", "glance_ranges", "containers",
+    "habitat_success", "habitat_spl",
     "attempt_log", "attempts_used", "authored_layout", "cand_best_cam_xy",
     "cand_best_score", "cand_n_obs", "control_fps", "detector",
     "distance_to_goal", "episode_id", "final_xy", "final_y", "floor_changes",

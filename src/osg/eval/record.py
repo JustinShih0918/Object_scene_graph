@@ -194,6 +194,13 @@ def build_episode_record(
         "detector": detector_identity,
         "authored_layout": authored or None,
         "success": float(metrics.get("success", 0.0)),
+        # When a benchmark scores by its own rule (dualmap_protocol, or
+        # ycb.score_by_object_distance), habitat's viewpoint numbers ride
+        # along under their own names; None on runs scored by habitat alone.
+        "habitat_success": (
+            None if metrics.get("habitat_success") is None else float(metrics["habitat_success"])
+        ),
+        "habitat_spl": None if metrics.get("habitat_spl") is None else float(metrics["habitat_spl"]),
         "spl": float(metrics.get("spl", 0.0)),
         "distance_to_goal": float(metrics.get("distance_to_goal", -1.0)),
         "steps": outcome.steps,
