@@ -361,3 +361,35 @@ first at a median step 114). The trajectories are deterministic given the
 hosted-LLM answers, so the noise that matters is the binomial noise of 107
 trials, not the run; a difference between arms on the gate is a mechanism
 difference, and a difference of two trials on SR is not.
+
+## The look spent by belief (2026-09-09): eyes on the target, no score
+
+`look_belief` -- the opportunistic look gated on the surface's search belief
+(`close_look_by_belief`, `close_look_min_belief` 0.5 of the floor's best) on
+top of `look_flat` -- on the 33-trial hard subset, paired against `look_flat`
+(`outputs/osg_hard/BELIEF_AB.md`):
+
+| | flat | belief |
+|---|---:|---:|
+| opportunistic looks | 0 | 117 |
+| steps spent looking | 599 | 2930 |
+| own surface close-looked, 26 cross-anchor | 0 | 5 |
+| on the 14 no-detection failures: target had >= 3 close+centred keyframes | 1 | 5 |
+| on those 14: target ever named | 0 | 3 |
+| on those 14: scored | 0 | 0 |
+| cross-anchor SR, 26 | 5 | 3 (0 gained, 2 lost) |
+| trials at budget, 33 | 18 | 21 |
+
+The mechanism now does what the nearest-first look could not: it brings the
+camera to the object's surface and the detector names the object. What it does
+not do is convert, and it spends the budget that two other trials needed. On
+the three trials where the look named the target, the episode still ended
+"named, never admitted" or "admitted, never committed": the sighting came late
+and from a look the candidate path did not follow up, with the budget gone.
+
+Retired in this form as well; both opportunistic flags stay off. What the
+result says is narrower than "looking does not help": a look that names the
+target at step 300 of 500 is too late, and a search that reaches the surface
+at step 114 (flat's median first far selection) leaves too little budget for
+a detour. The remaining lever on cross-anchor is earlier arrival at the right
+surface, which is the search order and the frontier weight, not a look.
