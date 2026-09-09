@@ -350,3 +350,14 @@ passes DualMap's measured 30.2%. The next experiments, on the hard subset
 first: a repeat of `flat` to size run-to-run noise on the gate, and a look that
 spends its budget by surface belief rather than by order of encounter, now
 that the search order reaches the surfaces worth looking at.
+
+## Run-to-run noise on the gate (2026-09-09)
+
+`look_flat` repeated on the 33-trial hard subset (`outputs/osg_hard/repeat1`,
+six shards, 26 minutes): every trial ended in the same funnel stage as in
+the full run, 5/26 cross-anchor and 0/7 in-anchor both times, and the
+search-order gate matched row for row (19 episodes selecting a far surface,
+first at a median step 114). The trajectories are deterministic given the
+hosted-LLM answers, so the noise that matters is the binomial noise of 107
+trials, not the run; a difference between arms on the gate is a mechanism
+difference, and a difference of two trials on SR is not.
