@@ -122,3 +122,32 @@ def test_nothing_is_retired_before_a_refutation_or_with_the_flag_off():
     agent = _agent_with_twins(refuted=True)
     agent.candidates.check(np.zeros(2))
     assert "stale_twins_retired" not in agent.stats
+
+
+def test_the_stop_granted_inside_the_look_is_taken_on_the_next_ring_arrival():
+    """With the look before absence on, the silent look ends on the 1.5 m
+    ring; the stop must be taken back at the tight ring, not spent there."""
+    from osg.agent.nav_agent import State
+    track = _track(1, [3.0, 0.5, 0.0], prior=True, live=False)
+    cfg = make_cfg(approach_to_viewpoint=False, approach_navigable_goal=False,
+                   close_look_before_absence=True, close_look_max_steps=1,
+                   close_look_face_turns=0, close_look_hold_steps=0)
+    cfg.verification.stop_at_stale_anchor_once = True
+    agent = make_agent(cfg, target="chair")
+    agent.object_layer._tracks[1] = track
+    agent._candidate_id = 1
+    agent.approach.start(np.array([3.0, 0.0]), agent_xy=np.zeros(2))
+    agent.approach.steps_left = 0
+    agent._goto_deadline = 10_000
+    agent.approach.step(_frame([0.0, 0.0]))          # silent arrival -> look
+    assert agent.state is State.CLOSE_LOOK
+    for i in range(6):                                # the look ends silent
+        if agent.state is not State.CLOSE_LOOK:
+            break
+        agent.act(_frame([0.0, 0.0], frame_id=i + 1))
+    assert agent.stats["stale_anchor_stop"] == 1
+    assert agent._stale_stop_pending is True and agent.state is State.APPROACH
+    agent.approach.steps_left = 0                     # arrive at the ring again
+    action = agent.approach.step(_frame([0.0, 0.0], frame_id=20))
+    assert action == "stop" and agent.state is State.DONE
+    assert agent._stale_stop_pending is False

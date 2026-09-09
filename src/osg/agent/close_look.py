@@ -363,7 +363,8 @@ class CloseLookPolicy:
             nav.stats["close_look_reapproach"] = nav.stats.get("close_look_reapproach", 0) + 1
             nav._start_approach(centre[list(PLANE)], floor_y=nav.floors.goal_floor_y(centre))
             return nav._do_approach(frame)
-        abandon = nav._absence_at_arrival(frame, self.absence_reason or "close_look")
+        abandon = nav._absence_at_arrival(frame, self.absence_reason or "close_look",
+                                          from_look=True)
         if abandon is not None:
             return abandon
         # The reading did not abandon (the VLM saw it, or nothing was expected).

@@ -395,6 +395,7 @@ class NavAgent:
         self.presence_events: List[dict] = []
         self._disbelieved: set = set()
         self._stale_stop_used = False
+        self._stale_stop_pending = False
         self.state_log = []
         self.approach.reset()
         self.candidates.reset()
@@ -460,6 +461,7 @@ class NavAgent:
         self.approach.scan_expected = 0
         self.approach.stop_reason = None
         self.close_look.abort()
+        self._stale_stop_pending = False
         self.state = State.EXPLORE
         self._goto_deadline = self.step_count + int(max_steps)
         self.stats["attempts"] = self.stats.get("attempts", 1) + 1
@@ -900,7 +902,8 @@ class NavAgent:
 
     # ------------------------------------------------------------- candidates
 
-    def _absence_at_arrival(self, frame: FrameData, reason: str) -> Optional[str]:
+    def _absence_at_arrival(self, frame: FrameData, reason: str,
+                            from_look: bool = False) -> Optional[str]:
         """The approach is ending and the target was never seen. Say so.
 
         Returns an action when the candidate is abandoned (the caller must not
@@ -917,6 +920,11 @@ class NavAgent:
         )
         if track is None or self.approach.last_good_xy is not None:
             return None
+        if self._stale_stop_pending and not from_look:
+            # Granted at the end of the close look; the approach walked back to
+            # its ring and this is the arrival the STOP was promised for.
+            self._stale_stop_pending = False
+            return None
         if (
             bool(self.cfg.verification.stop_at_stale_anchor_once)
             and not self._stale_stop_used
@@ -926,8 +934,12 @@ class NavAgent:
             # The stale anchor is the answer more often than not, and a stop
             # here costs one attempt of three. Returning None lets the
             # approach STOP; the protocol scores it and, if it fails, applies
-            # the negative reading (eval/attempts.py).
+            # the negative reading (eval/attempts.py). From the close look the
+            # agent stands on the 1.5 m ring, too far to score, so the look's
+            # own path re-approaches the tight ring and the STOP is taken on
+            # that arrival instead (`_stale_stop_pending`).
             self._stale_stop_used = True
+            self._stale_stop_pending = bool(from_look)
             self.stats["stale_anchor_stop"] = self.stats.get("stale_anchor_stop", 0) + 1
             return None
         verdict = self.absence.observe(
