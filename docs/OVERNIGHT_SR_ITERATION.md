@@ -187,3 +187,10 @@ from the same pose and strikes it again, and `max_identity_rejections = 2`
 retires it for the episode. The restrike guard (`unreachable_restrike_m`)
 was written for exactly this and has been shipping at 0.0, off. Arm: 1.0 m,
 so retiring a track takes two strikes from places more than a metre apart.
+
+### 22:06 — Ranking by confidence x presence: null
+
+`outputs/osg_next/flat_anchor_v2_rankp` on the 21 in-anchor failures: 2/21,
+admitted-never-committed still 9. The ranking never sees the true track,
+because the reachability check strikes it before ranking matters (previous
+entry). Not carried forward.
