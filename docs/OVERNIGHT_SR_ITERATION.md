@@ -194,3 +194,13 @@ so retiring a track takes two strikes from places more than a metre apart.
 admitted-never-committed still 9. The ranking never sees the true track,
 because the reachability check strikes it before ranking matters (previous
 entry). Not carried forward.
+
+### 22:27 — Restrike guard alone: the track survives and is still never a goal
+
+`outputs/osg_next/flat_anchor_v2_restrike` on the 21 in-anchor failures:
+2/21, unchanged. The guard did what it says -- 325 unreachable verdicts, 292
+of them discounted as restrikes, so the true track is no longer retired --
+but a candidate the check calls unreachable is not committed either, and
+from the same pose the answer never changes. The block is the answer, not
+the counting. The nearest-free arm (`v2_nf`) asks the check about the cell
+the approach would actually drive to; running.
