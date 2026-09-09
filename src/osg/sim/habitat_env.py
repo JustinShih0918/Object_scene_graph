@@ -95,6 +95,7 @@ class HabitatObjectNavEnv:
         self._follower = None
         self._action_name = {v: k for k, v in self.ACTIONS.items()}
         self._navmesh_goal_radius = float(cfg.agent.navmesh_goal_radius)
+        self.snap_on_agent_island = bool(getattr(cfg.agent, "navmesh_snap_on_agent_island", False))
 
     def _ensure_follower(self):
         if self._follower is None:
@@ -113,6 +114,23 @@ class HabitatObjectNavEnv:
                 stop_on_error=False,
             )
         return self._follower
+
+    def _snap_goal(self, goal3d: np.ndarray) -> np.ndarray:
+        """Snap a 3D goal to the navmesh -- onto the agent's own island when
+        `agent.navmesh_snap_on_agent_island` is set, so a goal beside a desk
+        lands on the floor beside the desk and not on the desk top."""
+        pf = self.env.sim.pathfinder
+        point = np.asarray(goal3d, dtype=np.float32)
+        if bool(getattr(self, "snap_on_agent_island", False)):
+            try:
+                here = pf.snap_point(np.asarray(self.env.sim.get_agent_state().position, dtype=np.float32))
+                island = int(pf.get_island(here))
+                snapped = np.asarray(pf.snap_point(point, island_index=island), dtype=np.float32)
+                if not bool(np.isnan(snapped).any()):
+                    return snapped
+            except (TypeError, AttributeError, RuntimeError):
+                pass
+        return np.asarray(pf.snap_point(point), dtype=np.float32)
 
     def _goal3d(self, goal, floor_y=None) -> np.ndarray:
         """Lift a goal to a 3D navmesh query point.
@@ -175,7 +193,7 @@ class HabitatObjectNavEnv:
         """
         follower = self._ensure_follower()
         goal3d = self._goal3d(goal_xy, floor_y)
-        snapped = self.env.sim.pathfinder.snap_point(goal3d)
+        snapped = self._snap_goal(goal3d)
         if snapped is None or bool(np.isnan(np.asarray(snapped)).any()):
             self.nav_reasons["nav_snap_failed"] += 1
             return None  # unreachable -> caller treats as "arrived" and re-decides
@@ -223,7 +241,7 @@ class HabitatObjectNavEnv:
 
         pf = self.env.sim.pathfinder
         pos = self.env.sim.get_agent_state().position
-        g = pf.snap_point(self._goal3d(goal_xy, floor_y))
+        g = self._snap_goal(self._goal3d(goal_xy, floor_y))
         if g is None or bool(np.isnan(np.asarray(g)).any()):
             return False
         path = habitat_sim.ShortestPath()

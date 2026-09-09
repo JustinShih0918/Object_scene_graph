@@ -188,6 +188,17 @@ class AgentConfig:
     # own position is off the navmesh. The place the approach would actually
     # drive to was reachable all along.
     reachable_via_nearest_free: bool = False
+    # Snap navmesh goals and reachability queries onto the AGENT'S island.
+    # HM3D navmeshes carry furniture tops as tiny separate islands (00880:
+    # one floor of 63 m2 and three tops of 2 m2), and `snap_point` from the
+    # agent's height lands a goal beside a desk on the desk-top island because
+    # it is nearer in 3D than the floor next to the desk. Every such goal then
+    # reads as unreachable: 37 of 37 candidate rejections on the released
+    # benchmark's in-anchor failures, including a live track 0.05 m from the
+    # object. With this on, the query is constrained to the island the agent
+    # stands on (habitat_sim snap_point(..., island_index)), and falls back to
+    # the plain snap only when that returns nothing.
+    navmesh_snap_on_agent_island: bool = False
 
     # Canonical mover selection.  ``None`` preserves the historical
     # ``use_habitat_navmesh`` spelling; resolve_navigation() is the only place

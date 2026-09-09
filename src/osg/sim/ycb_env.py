@@ -864,6 +864,7 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
         self._follower = None
         self._action_name = {value: key for key, value in self.ACTIONS.items()}
         self._navmesh_goal_radius = float(cfg.agent.navmesh_goal_radius)
+        self.snap_on_agent_island = bool(getattr(cfg.agent, "navmesh_snap_on_agent_island", False))
         self._active_objects: List[Any] = []
         # The released rule, when asked for: a STOP within
         # `object_success_distance_m` of the object, within three attempts.

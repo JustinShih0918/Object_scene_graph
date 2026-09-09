@@ -46,6 +46,7 @@
   "agent.navmesh_3d_goals": false,
   "agent.navmesh_approach_steps": 200,
   "agent.navmesh_goal_radius": 0.1,
+  "agent.navmesh_snap_on_agent_island": false,
   "agent.pointnav_approach_creep_m": 1.0,
   "agent.pointnav_arrival_m": 0.0,
   "agent.pointnav_depth_shape": [
