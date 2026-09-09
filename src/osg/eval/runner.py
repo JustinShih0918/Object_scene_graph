@@ -150,6 +150,7 @@ def run_eval(cfg) -> dict:
             # "verify_detector_absence_recall" "verify_min_bbox_px"
             # "verify_min_obs" "verify_min_score" "verify_rank_candidates_by_presence"
             # "verify_reject_cooldown_steps" "verify_ring_radius_extent_aware"
+            # "verify_retire_stale_twins_after_absence" "verify_stop_at_stale_anchor_once"
             # "verify_target_bypasses_bbox_gate"
             # "verify_terminal" "verify_unreachable_is_absorbing" "verify_vlm_q"
             # "verify_vlm_recall" "viewpoint_stop_m" "voronoi_goal_near_m"

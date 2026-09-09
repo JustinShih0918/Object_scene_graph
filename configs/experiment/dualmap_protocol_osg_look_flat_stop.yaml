@@ -1,0 +1,7 @@
+# @package _global_
+# look_flat plus only the stale-anchor stop (one half of look_flat_anchor).
+defaults:
+  - dualmap_protocol_osg_look_flat
+
+verification:
+  stop_at_stale_anchor_once: true

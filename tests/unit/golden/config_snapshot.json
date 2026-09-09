@@ -380,6 +380,7 @@
   "verification.min_score": 0.7,
   "verification.rank_candidates_by_presence": false,
   "verification.reject_cooldown_steps": 0,
+  "verification.retire_stale_twins_after_absence": false,
   "verification.ring_radii_m": [
     0.8,
     1.2,
@@ -387,6 +388,7 @@
     2.0
   ],
   "verification.ring_radius_extent_aware": false,
+  "verification.stop_at_stale_anchor_once": false,
   "verification.target_bypasses_bbox_gate": false,
   "verification.terminal": false,
   "verification.unreachable_is_absorbing": true,

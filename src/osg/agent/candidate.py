@@ -87,6 +87,8 @@ class CandidatePolicy:
             floor_key=self.nav.floors.current_id,
             step=self.nav.step_count,
         )
+        if candidates and bool(self.nav.cfg.verification.retire_stale_twins_after_absence):
+            candidates = self._without_stale_twins(candidates)
         if not candidates:
             return
         track = candidates[0]
@@ -211,6 +213,26 @@ class CandidatePolicy:
             "center": [round(float(x), 3) for x in centre],
         })
 
+    def _without_stale_twins(self, candidates):
+        """Once a prior-map track of the label has been refuted in place, the
+        other prior-map tracks of the label that this episode has never seen
+        are ghosts of the same static pass, not places to go."""
+        refuted = any(
+            bool(getattr(t, "from_prior", False))
+            and (int(getattr(t, "absence_arrivals", 0)) > 0 or int(t.identity_rejections) > 0)
+            for t in self.nav.object_layer.tracks(include_blacklisted=True)
+            if t.label.lower().replace(" ", "_") == self.nav.target.lower().replace(" ", "_")
+        )
+        if not refuted:
+            return candidates
+        kept = [t for t in candidates if not (getattr(t, "from_prior", False) and not t.seen_live)]
+        dropped = len(candidates) - len(kept)
+        if dropped:
+            self.nav.stats["stale_twins_retired"] = (
+                self.nav.stats.get("stale_twins_retired", 0) + dropped
+            )
+        return kept
+
     def _log_goal_commit(self, track) -> None:
         """What the map believed at the moment it committed. A commit to a
         track the agent has already looked for and failed to find is a stale
@@ -223,6 +245,8 @@ class CandidatePolicy:
                 "p": round(float(track.presence.p), 4),
                 "n_missed": int(track.presence.n_missed),
                 "center": [float(v) for v in self.nav.object_layer.center_of(track)],
+                "prior": bool(getattr(track, "from_prior", False)),
+                "seen_live": bool(track.seen_live),
             }
         )
 

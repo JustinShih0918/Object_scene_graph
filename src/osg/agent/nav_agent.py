@@ -394,6 +394,7 @@ class NavAgent:
         # from these two logs plus the relocation step the env records.
         self.presence_events: List[dict] = []
         self._disbelieved: set = set()
+        self._stale_stop_used = False
         self.state_log = []
         self.approach.reset()
         self.candidates.reset()
@@ -915,6 +916,19 @@ class NavAgent:
             if self._candidate_id is not None else None
         )
         if track is None or self.approach.last_good_xy is not None:
+            return None
+        if (
+            bool(self.cfg.verification.stop_at_stale_anchor_once)
+            and not self._stale_stop_used
+            and bool(getattr(track, "from_prior", False))
+            and not track.seen_live
+        ):
+            # The stale anchor is the answer more often than not, and a stop
+            # here costs one attempt of three. Returning None lets the
+            # approach STOP; the protocol scores it and, if it fails, applies
+            # the negative reading (eval/attempts.py).
+            self._stale_stop_used = True
+            self.stats["stale_anchor_stop"] = self.stats.get("stale_anchor_stop", 0) + 1
             return None
         verdict = self.absence.observe(
             track, self.target, frame, self.object_layer.presence_filter,

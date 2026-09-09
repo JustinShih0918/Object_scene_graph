@@ -346,6 +346,7 @@ def apply_map(
         track = _track_from_record(rec)
         track.blacklisted = False
         track.identity_rejections = 0  # episode-scoped, for the same reason
+        track.from_prior = True
         track.presence.log_odds = min(float(track.presence.log_odds), float(max_log_odds))
         for obs in track.observations:
             obs.frame_id = int(obs.frame_id) - PRIOR_SESSION_OFFSET

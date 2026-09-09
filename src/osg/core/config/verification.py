@@ -75,6 +75,27 @@ class VerificationConfig:
     # remain; the belief arithmetic still does its work in the ranking. Lower
     # this only to A/B the stricter behaviour.
     abandon_below_p: float = 1.0
+    # Two rules about PRIOR-MAP tracks of the target's label, measured on the
+    # released benchmark (docs/SR_PROPOSAL_CLOSE_LOOK.md, "The stale anchor"):
+    # the static pass names the target in 39 of 54 in-anchor and 39 of 53
+    # cross-anchor trials, and in-anchor moves it a median 0.7 m, so the stale
+    # track is the answer more often than not -- yet a silent arrival there
+    # abandons it. And every prior-map track of the label OTHER than the one
+    # the object sat at is a false positive by construction (one instance per
+    # scene), yet the agent spends 37% (in-anchor) and 52% (cross-anchor) of
+    # its steps walking to them, a median 90 steps each.
+    #
+    # `stop_at_stale_anchor_once`: the first silent arrival at a prior-map
+    # track never seen live this episode STOPs instead of consulting the
+    # absence sensor. It costs at most one of the protocol's three attempts;
+    # a failed attempt still applies the negative reading through
+    # eval/attempts.rearm_after_failed_attempt.
+    # `retire_stale_twins_after_absence`: once any prior-map track of the label
+    # has been refuted in place (an absence arrival or a failed attempt at it),
+    # the remaining prior-map tracks of that label that have not been seen live
+    # are no longer candidates, so the search runs instead of the ghost tour.
+    stop_at_stale_anchor_once: bool = False
+    retire_stale_twins_after_absence: bool = False
     # Is "I cannot reach that" a permanent verdict?
     #
     # True is the shipped behaviour and it blacklists, which is absorbing --

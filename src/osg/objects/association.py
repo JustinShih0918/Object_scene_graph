@@ -95,6 +95,20 @@ class ObjectTrack:
     # counts only "I went to look, and it was gone" -- the event that refutes
     # the hypothesis the search prior is built on.
     absence_arrivals: int = 0
+
+    @property
+    def seen_live(self) -> bool:
+        """Has THIS episode's detector ever seen this track?"""
+        return any(
+            int(getattr(o, "frame_id", 0)) >= 0
+            for o in (self.observations or []) if o is not None
+        )
+
+    # Restored from a prior-map snapshot (graph/map_store.apply_map) rather than
+    # created by this episode's detector. Such a track's observations carry
+    # negative frame ids; a live sighting appends a non-negative one, which is
+    # what `seen_live` reads.
+    from_prior: bool = False
     # Persistent floor identity.  Keys never change when height order changes.
     floor_key: int = 0
     suppressed_until: int = 0
