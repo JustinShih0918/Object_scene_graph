@@ -959,6 +959,20 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
                     best = min(best, float(path.geodesic_distance))
         return best if math.isfinite(best) else None
 
+    def step(self, action: str):
+        # Habitat ends the episode on the terminal STOP without routing it
+        # through `attempt_scored`, so the rule has to see it here, before the
+        # pose is gone (as sim/dualmap_env.py does).
+        if action == "stop" and self._object_rule.enabled:
+            self._record_stop()
+        frame = super().step(action)
+        self._maybe_relocate(frame)
+        if self._object_rule.enabled:
+            self._object_rule.travelled(
+                np.asarray(self.env.sim.get_agent_state().position, dtype=float)
+            )
+        return frame
+
     def _target_position(self) -> Optional[np.ndarray]:
         info = (getattr(self.current_episode, "info", None) or {}).get("ycb", {})
         position = info.get("target_position")

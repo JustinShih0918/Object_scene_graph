@@ -90,3 +90,14 @@ def test_a_none_verdict_falls_through_to_the_viewpoint_rule():
     # A real verdict is final, whatever habitat would have said.
     assert attempt_succeeded(_fake_env(False, geodesic_m=0.1), SimpleNamespace(), cfg) is False
     assert attempt_succeeded(_fake_env(True, geodesic_m=9.0), SimpleNamespace(), cfg) is True
+
+
+def test_the_authored_env_overrides_step_for_the_terminal_stop_and_travel():
+    """The step override was once lost to an editing slip and SPL came out 1.0
+    on every success (no travel accumulated) with the relocation hook gone."""
+    from osg.sim.habitat_env import HabitatObjectNavEnv
+    from osg.sim.ycb_env import YCBAuthoredNavEnv
+    assert YCBAuthoredNavEnv.step is not HabitatObjectNavEnv.step
+    import inspect
+    src = inspect.getsource(YCBAuthoredNavEnv.step)
+    assert "_record_stop" in src and "_maybe_relocate" in src and "travelled" in src
