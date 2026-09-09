@@ -246,3 +246,42 @@ experiment is a search-order one: a proximity length or floor that lets a
 surface 5 m from the stale position be selected within the first hundred
 steps, measured first by "own surface selected / arrived" in the anatomy table
 and only then by SR.
+
+## Iterating faster: the hard subset
+
+A full arm is 107 dynamic trials and about 4.8 hours of process time, at
+0.44 s per step. The per-step cost is structural -- nearly every step is a
+keyframe, and the object layer (146 ms), scene graph (80-230 ms) and detector
+(100 ms) run on each -- so the lever is not the step but which trials run. 68%
+of a batch's wall clock is the 46 failures that run to the 500-step budget,
+and those are the only trials a search-order or approach change can move.
+
+`scripts/make_hard_subset.py` picks, from a reference run, the cross-anchor
+trials where the target was never named, the cross-anchor trials named and
+still failed, and the in-anchor trials whose first commit was already within
+1 m of the object and which still failed -- and drops scissors and mug, which
+the detector cannot name in situ and no search change converts. From the
+look-before-absence run that is **33 trials, 1.9 hours of process time**, in
+`data/splits/dualmap_hard.json`, with each trial's reference outcome recorded.
+
+`scripts/run_close_look_ab.sh` takes `TRIAL_SET` (the subset), `SHARDS_PER_SCENE`
+(split a scene's trials across processes; the subset is lopsided, 16 on 00848
+against 6 on 00829) and `MAX_STEPS` (a shorter budget for mechanism-only
+iteration; the search-order gate is read in the first ~150 steps, and a
+300-step cap forfeits the 6-7 of 107 successes that land after step 300):
+
+    TRIAL_SET=data/splits/dualmap_hard.json SHARDS_PER_SCENE=2 MAX_PARALLEL=6 \
+      MAX_STEPS=300 ARMS=drop OUT_ROOT=outputs/osg_hard scripts/run_close_look_ab.sh
+    python scripts/compare_close_look.py --arm base=outputs/osg_closelook/inanchor \
+      --arm drop=outputs/osg_hard/drop
+
+One arm on the subset, six processes, is about twenty minutes against three
+and a half hours for a full three-arm batch. The report pairs on the trial ids
+both runs share, so a subset run reads against any full run.
+
+Two things a subset result is not. It is selected on a reference run's
+*outcome*, so it selects on noise as well as difficulty -- a trial that failed
+once by chance is in, one that scored once by chance is out -- and a gain on
+it is a gain on trials chosen for having failed. And a capped budget changes
+what "failed" means. Both are for deciding which arm deserves the full 107,
+which remains the number reported.
