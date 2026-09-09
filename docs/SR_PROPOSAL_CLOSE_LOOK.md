@@ -226,22 +226,30 @@ the detector its chance; on those five the detector still said nothing.
 spent 8010 steps -- 15% of the whole batch's budget -- looking at beds, desks
 and cabinets around the *stale* position and along the frontier route. On the
 32 cross-anchor failures the proposal aimed it at, the object's own surface
-was close-looked in **one**. The reason is in the record it was built to
-write: in 28 of those 32 episodes the true surface was never within 4 m of a
-single glance. The agent never went near it. Never-in-view rose (12 to 19
-cross-anchor, 6 to 10 in-anchor) because the steps the looks consumed were the
-steps that used to reach a frontier.
+was close-looked in **four**, and one of those looks found the target. The
+record it was built to write says why, in two halves. In 15 of the 32 the true
+surface was never within 4 m of a single glance: the agent never went near it.
+In the other 17 it came within 2.5 m -- inside the trigger range -- but the
+six looks had already gone to the surfaces nearest the start, by a median step
+155. Never-in-view rose (12 to 19 cross-anchor, 6 to 10 in-anchor) because the
+steps those looks consumed were the steps that used to reach a frontier.
 
 So the diagnosis "exposure: the object crossed the frame at 2-4 m" was right
-about the frame and wrong about the remedy. Those sightings were of the
-*object* at the edge of a room the agent was leaving, not of a surface it was
-passing. Looking harder along the route the search already takes cannot
-convert them, because the route is the failure: `container_prior`'s proximity
-term, `exp(-d / 1.0)` from the stale position, keeps the true surface out of
-the search order for the whole episode (memory:
-`osg-cross-anchor-is-proximity-bound`), and the frontier weight of 0.3 keeps
-the agent inspecting the stale room. The cross-anchor lever is where the
-search *goes*, not how it looks when it gets there.
+about the frame and half wrong about the remedy. Looking harder along the
+route the search already takes, nearest surface first, cannot convert them:
+half the time the route never passes the surface, because `container_prior`'s
+proximity term, `exp(-d / 1.0)` from the stale position, keeps it out of the
+search order (memory: `osg-cross-anchor-is-proximity-bound`); the other half,
+the look budget is spent on the stale neighbourhood before the route gets
+there. Both halves are the same lever: where the search *goes* and what it
+spends its looks on, not how it looks when it gets there. A variant that
+spends looks by surface belief rather than by order of encounter is the
+untested follow-up; this form is retired.
+
+(The numbers in this paragraph were corrected after a first draft that
+matched container ids and reported "close-looked in one" and "28 of 32 never
+within 4 m". Runs now record their own container table so every logged id
+resolves.)
 
 **Where this leaves the presets.** `close_look_before_absence` is worth carrying
 into the best-known configuration; `close_look_opportunistic` and the 2.5 m
