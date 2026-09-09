@@ -20,6 +20,8 @@
   "dualmap_protocol_osg_look_flat_anchor_drop": "9260c91d5d6d1711e79b1c207dbb12546876489b17108c496afe3aecdc145031",
   "dualmap_protocol_osg_look_flat_anchor_stop2": "2de7fdd0acdb39db6d57db7ed2c1f61296e87d96766faeb348d2cf574eeb6854",
   "dualmap_protocol_osg_look_flat_anchor_v2": "6126743f7c192cce26e5b450c982db838b034d5bcb9b035ba2a145df449d7c28",
+  "dualmap_protocol_osg_look_flat_anchor_v2_clamp": "215682b6cc6152e1072ac47f91409bc51d2e1b832ad6d9b40e3b05176229ed82",
+  "dualmap_protocol_osg_look_flat_anchor_v2_rankp": "f2fc4c3df621bf7402b41ae54d4de7f80a14983fd01be72a2bb132fbc16958c7",
   "dualmap_protocol_osg_look_flat_stop": "86208390b4a62a21aa84b01d2eddc9f0284e9b85e76cb54720b710980c4ff374",
   "dualmap_protocol_osg_look_flat_twins": "c2cf524e675fc595169a98c6328e190439e5c51e7e6f85ea8a5efb94d71fc054",
   "dualmap_protocol_osg_look_inanchor": "d7a26735149f0167c5fcce1e126050650c07c37bb586baab73d7c05a7ac937c0",

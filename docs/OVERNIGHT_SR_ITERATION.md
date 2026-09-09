@@ -142,3 +142,17 @@ fixed stale-anchor arm on the same ids: in-anchor 2/8 against 1/8,
 cross-anchor **2/24 against 4/24** (1 gained, 3 lost). Anchoring the search
 on the stale spot until it is refuted costs cross-anchor what it was meant
 to give in-anchor. Not carried forward.
+
+### 21:15 — Second cut on the 21 in-anchor failures: 2 converted, the rest never commit
+
+`outputs/osg_next/flat_anchor_v2` on the fixed arm's in-anchor failures with
+scissors and mug dropped (`V2_INANCHOR.md`). The nearest-free stop fired 6
+times and now lands at 0.66-1.8 m (was 1.15-1.9 on the ring); two soup-can
+trials converted at 0.94 and 0.66 m. Place retirement fired 33 times. The
+other 19 stay failures, and the funnel says where: **admitted, never
+committed 9 of 21** -- the detector did name the true object, and the agent
+never made it a goal. The true track's belief sits at the negative clamp,
+driven there by missed expectations on the way, and a single sighting is not
+enough to lift it over the bar. Two arms next, both one knob:
+`presence.l_clamp` 6 -> 2 (a sighting can bring a track back) and
+`rank_candidates_by_presence` off (confidence counts again).
