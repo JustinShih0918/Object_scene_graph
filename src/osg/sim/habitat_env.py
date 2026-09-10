@@ -249,6 +249,36 @@ class HabitatObjectNavEnv:
         path.requested_end = g
         return bool(pf.find_path(path))
 
+    def nearest_navigable_xy(self, xy, floor_y=None, max_radius_m: float = 1.5):
+        """Nearest navmesh point to a ground-plane point, on the agent's island.
+
+        The costmap's nearest FREE cell sits outside its obstacle inflation, so
+        beside furniture it is a metre from the object; the navmesh already
+        accounts for the agent's radius and knows the real edge of the floor.
+        Rings of 0.05 m are sampled outward and the closest snapped point by
+        horizontal distance is returned as an (x, z) pair, or None when nothing
+        within `max_radius_m` snaps.
+        """
+        centre = self._goal3d(xy, floor_y)
+        best, best_d = None, float("inf")
+        n = 24
+        for rad in np.arange(0.0, float(max_radius_m) + 1e-6, 0.05):
+            for k in range(n if rad > 0.0 else 1):
+                ang = 2.0 * np.pi * k / n
+                q = np.array([centre[0] + rad * np.cos(ang), centre[1], centre[2] + rad * np.sin(ang)],
+                             dtype=np.float32)
+                s = self._snap_goal(q)
+                if s is None or bool(np.isnan(np.asarray(s)).any()):
+                    continue
+                d = float(np.hypot(float(s[0]) - float(centre[0]), float(s[2]) - float(centre[2])))
+                if d < best_d:
+                    best, best_d = s, d
+            if best is not None and best_d <= rad + 0.05:
+                break  # no farther ring can snap nearer than this one
+        if best is None:
+            return None
+        return np.array([float(best[0]), float(best[2])], dtype=float)
+
     # ---------------------------------------------------------------- episode
 
     def reset(self) -> FrameData:

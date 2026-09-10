@@ -94,6 +94,7 @@ class NavAgent:
         profiler: Optional[Profiler] = None,
         nav_fn=None,
         reachable_fn=None,
+        nearest_navigable_fn=None,
         pointnav=None,
         ranker=None,
         floor_planner=None,
@@ -112,6 +113,9 @@ class NavAgent:
         # frontier extraction / scene graph), only navigation switches.
         self._nav_fn = nav_fn
         self._reachable_fn = reachable_fn
+        # nearest_navigable_fn(xy, floor_y) -> the navmesh point nearest to xy
+        # on the agent's island, for closing the last metre of an approach.
+        self._nearest_navigable_fn = nearest_navigable_fn
         self.navigation = resolve_navigation(cfg.agent)
         self._use_navmesh = nav_fn is not None and self.navigation == "navmesh"
         if pointnav is None and self.navigation == "pointnav":
@@ -982,7 +986,10 @@ class NavAgent:
             # that arrival instead (`_stale_stop_pending`).
             self._stale_stop_used = True
             self.stats["stale_anchor_stop"] = self.stats.get("stale_anchor_stop", 0) + 1
-            if bool(self.cfg.verification.stale_stop_at_nearest_free):
+            if (bool(self.cfg.verification.stale_stop_at_nearest_free)
+                    and not bool(getattr(self.approach, "closed", False))):
+                # (skipped when the approach already closed the last metre on
+                # the navmesh, which gets nearer than the costmap's free cell)
                 # Not here: as close to the old position as the furniture allows.
                 from ..mapping.costmap import nearest_free_xy
 

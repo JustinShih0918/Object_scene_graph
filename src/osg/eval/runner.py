@@ -154,6 +154,7 @@ def run_eval(cfg) -> dict:
             # "verify_stale_stop_at_nearest_free" "verify_failed_attempt_disables_place"
             # "verify_relook_after_stale_stop"
             # "reachable_via_nearest_free" "navmesh_snap_on_agent_island"
+            # "approach_close_last_metre_m"
             # "verify_target_bypasses_bbox_gate"
             # "verify_terminal" "verify_unreachable_is_absorbing" "verify_vlm_q"
             # "verify_vlm_recall" "viewpoint_stop_m" "voronoi_goal_near_m"
@@ -217,6 +218,8 @@ def run_eval(cfg) -> dict:
             profiler=profiler,
             nav_fn=(env.action_to_goal if components["navigation"] == "navmesh" else None),
             reachable_fn=(env.is_reachable if components["navigation"] == "navmesh" else None),
+            nearest_navigable_fn=(getattr(env, "nearest_navigable_xy", None)
+                                  if components["navigation"] == "navmesh" else None),
         )
         debug = DebugVideo(cfg, out_dir, ep_tag) if cfg.eval.debug_frames else None
         outcome = run_episode(cfg, env, agent, episode, target, frame, detector, debug)

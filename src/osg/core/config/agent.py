@@ -115,6 +115,17 @@ class AgentConfig:
     # this many times is not converging and the walk should end on the estimate
     # it has rather than chase one.
     approach_retarget_max: int = 3
+    # Close the last metre. With `approach_to_viewpoint` the walk ends on the
+    # innermost viewpoint ring that has a FREE costmap cell, and beside a bed
+    # or a desk the inflated costmap has none nearer than about a metre: on
+    # DualMap's released benchmark 20 failed trials stopped 1.0-1.6 m from an
+    # object whose track was within 0.6 m of it, having reached the goal to
+    # 0.1 m, while the navmesh floor came within 0.9 m of the object in 13 of
+    # them. When the viewpoint is reached and the agent is still farther than
+    # this from the track centre, the approach asks the navmesh for the
+    # nearest navigable point to the centre and walks there before it stops.
+    # 0 keeps the viewpoint as the stopping pose.
+    approach_close_last_metre_m: float = 0.0
     approach_max_steps: int = 12  # ~3 m of travel at forward_m=0.25
     # Tighter-than-default planner/controller stopping precision for the
     # final APPROACH segment only (P1f). HM3D success is a geodesic

@@ -63,6 +63,11 @@ class ApproachPolicy:
         # pose" goal within the same episode phase.
         self.path_goal: Optional[np.ndarray] = None
         self.last_follow_none_reason: Optional[str] = None
+        # Closing the last metre (`agent.approach_close_last_metre_m`): walking
+        # from the reached viewpoint to the navmesh point nearest the track,
+        # and whether that walk has been made for this approach.
+        self.closing = False
+        self.closed = False
         # Calibration data for approach_stop_bbox_px (P1c): every bbox_px
         # observed during APPROACH, plus why the episode's approach ended.
         self.bbox_log: list = []
@@ -204,6 +209,9 @@ class ApproachPolicy:
             turn = self.scan_at_viewpoint(det, frame)
             if turn is not None:
                 return turn
+            close = self._close_last_metre(frame, agent_xy)
+            if close is not None:
+                return close
             # ...unless it is not as close as it gets. On the navmesh the
             # follower returns None for arrived AND for unreachable, and the
             # approach has been treating both as an arrival: it stops, which
@@ -458,6 +466,65 @@ class ApproachPolicy:
             self.nav._goal_xy = nearest_free_xy(self.nav.costmap, obj_xy)
         self.nav._target_obj_xy = obj_xy.copy()
 
+    def _close_last_metre(self, frame: FrameData, agent_xy: np.ndarray) -> Optional[str]:
+        """The viewpoint is reached; walk the rest of the way before stopping.
+
+        The rings stop at the innermost FREE costmap cell, and beside a bed or
+        a desk the inflation leaves none nearer than about a metre from the
+        track. The navmesh knows where the floor really ends, so ask it for
+        the point nearest the track centre and drive there; when that walk is
+        consumed the normal stop follows. Returns an action while closing,
+        None when there is nothing to close (off, already closed, no navmesh,
+        already near, or the navmesh point is no nearer than this pose).
+        """
+        close_m = float(getattr(self.nav.cfg.agent, "approach_close_last_metre_m", 0.0) or 0.0)
+        if close_m <= 0.0 or self.closed or not self.nav._use_navmesh:
+            return None
+        obj_xy = self.nav._target_obj_xy
+        stats = self.nav.stats
+        if self.closing:
+            # The closing walk was consumed: this is the pose to stop at.
+            self.closing = False
+            self.closed = True
+            if obj_xy is not None and self.diag is not None:
+                self.diag["close_to_m"] = float(np.linalg.norm(agent_xy - obj_xy))
+            stats["approach_close_arrived"] = stats.get("approach_close_arrived", 0) + 1
+            return None
+        fn = getattr(self.nav, "_nearest_navigable_fn", None)
+        if fn is None or obj_xy is None:
+            return None
+        here_d = float(np.linalg.norm(agent_xy - obj_xy))
+        if here_d <= close_m or here_d > 3.0:
+            return None  # near enough already, or this was no arrival at all
+        goal = fn(obj_xy, self.nav._goal_floor_y_cache)
+        if goal is None:
+            return None
+        goal = np.asarray(goal, dtype=float).ravel()[:2]
+        if float(np.linalg.norm(goal - obj_xy)) >= here_d - 0.15:
+            stats["approach_close_no_gain"] = stats.get("approach_close_no_gain", 0) + 1
+            self.closed = True
+            return None
+        self.closing = True
+        self.nav._goal_xy = goal.copy()
+        self.nav._current_path = None
+        self.path_goal = None
+        self.steps_left = max(int(self.steps_left), 40)
+        self.nav._goto_deadline = max(int(self.nav._goto_deadline), self.nav.step_count + 40)
+        stats["approach_close_started"] = stats.get("approach_close_started", 0) + 1
+        if self.diag is not None:
+            self.diag["close_from_m"] = here_d
+            self.diag["close_goal_to_obj_m"] = float(np.linalg.norm(goal - obj_xy))
+        action = self.follow_to(frame, self.nav._goal_xy)
+        if action is not None:
+            return action
+        # Nothing to walk (the follower has us there, or refuses): stop here.
+        self.closing = False
+        self.closed = True
+        stats["approach_close_arrived"] = stats.get("approach_close_arrived", 0) + 1
+        if self.diag is not None:
+            self.diag["close_to_m"] = here_d
+        return None
+
     def _ring_offset_m(self) -> float:
         """How far to push the viewpoint rings out to clear the object itself.
 
@@ -489,6 +556,8 @@ class ApproachPolicy:
         self.nav.state = State.APPROACH
         self.nav._current_path = None
         self.path_goal = None
+        self.closing = False
+        self.closed = False
         if self.nav._use_navmesh:
             # Navmesh drives the FULL distance to the object (no viewpoint
             # pre-positioning), so the short-leg cap (approach_max_steps ~= 3 m)

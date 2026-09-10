@@ -152,14 +152,16 @@ def build_run_components(cfg) -> dict:
 
 def build_agent(
     cfg, components: dict, target: str, *, keyframe_dir=None, profiler=None,
-    nav_fn=None, reachable_fn=None,
+    nav_fn=None, reachable_fn=None, nearest_navigable_fn=None,
 ):
     """Build one policy behind the common ``act(frame)`` contract."""
     policy = components["policy"]
+    extra = {}
     if policy == "nav_agent":
         from ..agent.nav_agent import NavAgent
 
         agent_cls = NavAgent
+        extra["nearest_navigable_fn"] = nearest_navigable_fn
     elif policy == "ascent":
         from ..agent.ascent_agent import AscentAgent
 
@@ -172,7 +174,7 @@ def build_agent(
         cfg, components["detector"], components["scorer"],
         components["verifier"], target, keyframe_dir=keyframe_dir,
         profiler=profiler, nav_fn=nav_fn, reachable_fn=reachable_fn,
-        pointnav=components["pointnav"], ranker=components["ranker"],
+        pointnav=components["pointnav"], ranker=components["ranker"], **extra,
         floor_planner=components["floor_planner"],
         room_classifier=components["room_classifier"],
         image_text=components["image_text"],
