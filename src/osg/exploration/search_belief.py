@@ -33,6 +33,7 @@ import numpy as np
 
 from ..core.labels import normalize_label
 from ..graph.priors import AFFINITY_POWER, UNLISTED_AFFINITY, affinity_scores, affords
+from ..objects.feature_memory import feature_term
 
 
 @dataclass
@@ -200,7 +201,19 @@ def build_container_candidates(
     affinity_source=None,
     surface_mass: float = 0.5,
     present=None,
+    feature_scores: Optional[Dict[int, float]] = None,
+    feature_beta: float = 0.0,
+    feature_floor: float = 1.0,
 ) -> List[SearchCandidate]:
+    """Every mapped surface worth looking at, priced.
+
+    `feature_scores` is the appearance channel (objects/feature_memory.py): the
+    best cosine between the query text and what each surface holds. It multiplies
+    the prior BEFORE the peak normalisation below, so it reorders surfaces
+    without touching the magnitude that decides search-versus-explore. Left None
+    the arithmetic is untouched, term by term.
+    """
+    sim_max = max(feature_scores.values()) if feature_scores else 0.0
     raw: List[tuple] = []
     for node in getattr(scene_graph, "containers", {}).values():
         floor_key = int(getattr(node, "floor_id", getattr(node, "floor", 0)))
@@ -213,6 +226,12 @@ def build_container_candidates(
             proximity_floor=proximity_floor, affinity_source=affinity_source,
             present=present,
         )
+        if prior <= 0.0:
+            continue
+        if feature_scores is not None:
+            prior *= feature_term(
+                feature_scores.get(int(node.id)), sim_max, feature_beta, feature_floor
+            )
         if prior <= 0.0:
             continue
         raw.append((node, centre_xy, prior, floor_key))

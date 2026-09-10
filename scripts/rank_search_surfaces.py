@@ -75,7 +75,7 @@ def load_scene_graph(map_path: Path, sg_cfg=None):
     from osg.core.config import SceneGraphConfig
     from osg.graph.map_store import apply_map, load_map
     from osg.graph.scene_graph import SceneGraph
-    from osg.mapping.costmap import Costmap2D
+    from osg.mapping.floor_stack import FloorStack
     from osg.mapping.room_seg import VoronoiRoomSegmenter
     from osg.objects.object_layer import ObjectLayer
 
@@ -83,11 +83,19 @@ def load_scene_graph(map_path: Path, sg_cfg=None):
     cfg = sg_cfg if sg_cfg is not None else SceneGraphConfig()
 
     class _Shim:
-        """The three attributes apply_map writes through."""
+        """What `apply_map` writes through on a real agent.
+
+        It restores a floor STACK, not a lone costmap -- one costmap per storey
+        plus the room labels and stair edges beside it -- so the stack is the
+        real class rather than a stand-in; a v1 snapshot is defined as its
+        single floor 0.
+        """
 
         def __init__(self) -> None:
             self.object_layer = ObjectLayer()
-            self.costmap = Costmap2D(resolution=float(blob.get("resolution", 0.05)))
+            self._floor_stack = FloorStack(
+                resolution_m=float(blob.get("resolution", 0.05))
+            )
             self.scene_graph = SceneGraph(
                 container_top_h_m=tuple(cfg.container_top_h_m),
                 container_min_area_m2=float(cfg.container_min_area_m2),
@@ -96,14 +104,25 @@ def load_scene_graph(map_path: Path, sg_cfg=None):
                 container_min_score=float(cfg.container_min_score),
                 container_merge_m=float(cfg.container_merge_m),
             )
+            self.floors = None
             self._room_labels = None
+
+        @property
+        def costmap(self):
+            return self._floor_stack.current.costmap
 
     shim = _Shim()
     apply_map(shim, blob)
-    # apply_map only rebuilds when the snapshot carried room labels; segment
-    # here so the container layer exists either way.
+    if shim._room_labels is None:
+        shim._room_labels = getattr(shim._floor_stack.current, "room_labels", None)
+    # The snapshot's own room labels are what the agent wakes up with, so
+    # prefer them and re-segment only when the file carried none; a fresh
+    # Voronoi pass would draw different rooms and hand the same surface a
+    # different same-room bonus than the episode saw.
     if not shim.scene_graph.containers:
-        labels = VoronoiRoomSegmenter().segment(shim.costmap)
+        labels = shim._room_labels
+        if labels is None:
+            labels = VoronoiRoomSegmenter().segment(shim.costmap)
         shim.scene_graph.rebuild(labels, shim.costmap, shim.object_layer, floors=None)
     return shim.scene_graph
 
