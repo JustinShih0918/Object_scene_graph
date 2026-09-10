@@ -343,3 +343,24 @@ the stop; the costmap re-aim of the stale stop stands down once that walk
 has been made. Arm `flat_anchor_v2_island_close`, first on the 20 near-miss
 trials (`data/splits/dualmap_nearmiss.json`, `outputs/osg_next_close`),
 then the full 107 if it converts.
+
+### 07:25 — Closing the last metre on the 20 near-miss trials: 4 converted, none lost
+
+`outputs/osg_next_close/flat_anchor_v2_island_close` against the island
+run on the same ids: in-anchor 1/12, cross-anchor **3/8**, no trial lost.
+Every conversion is a live track walked from 1.00-1.39 m to 0.55-0.86 m
+(00880 bowl in-anchor; 00848 plate, 00880 bowl and plate cross-anchor), at
+73-315 steps where the island run had spent 93-500. The walk started 11
+times and was declined 18 times as "no gain". Two things in the per-trial
+lines: a stop at 1.00004 m was left alone because the walk required a 0.15 m
+gain, and twice the follower gave up short and the agent ended *farther*
+from the track than the viewpoint it left (1.41 -> 1.53 m, 1.49 -> 2.14 m).
+Both fixed in 8cb9763 (margin 0.05 m; a worse close walks back to the
+viewpoint before the stop) and rerun on the same 20 before the full 107.
+
+What the walk cannot reach: the in-anchor stops at 1.15-1.56 m on a *prior*
+track that was never seen live (soup can, two pitchers, banana). The track
+centre is the stale position and the object moved 0.7 m; the nearest floor
+to the stale centre is not nearer to the object. Those are the stale-anchor
+stops that the close look did not convert, and they are a perception
+problem at the look, not a geometry one.
