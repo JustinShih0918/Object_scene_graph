@@ -46,6 +46,8 @@ set -a; . ./.env; set +a
 # one process per scene still takes an hour; six shards of five or six trials
 # take twenty minutes. Each process re-loads the scene and prior map (~1 min).
 : "${SHARDS_PER_SCENE:=1}"
+# Prior maps per scene (outputs/maps_swap for the swapped release).
+: "${MAP_ROOT:=outputs/maps_v5}"
 
 # Trial ids for one (scene, shard) from the subset file, as a Hydra list
 # literal, and how many that is (the completion check counts against it).
@@ -92,7 +94,7 @@ run_one() {
   python scripts/run_eval.py "+experiment=${PRESET_PREFIX}${arm}" \
     "dualmap.scenes=[$scene]" \
     'dualmap.conditions=[in_anchor,cross_anchor]' \
-    "ycb.map_in=outputs/maps_v5/$scene" \
+    "ycb.map_in=$MAP_ROOT/$scene" \
     "output_dir=$out" \
     "+run_tag=CLOSELOOK_${arm^^}" \
     "${extra[@]}" \
