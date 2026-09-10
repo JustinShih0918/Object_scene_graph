@@ -244,6 +244,7 @@
   "feature_memory.enabled": false,
   "feature_memory.fuse_presence": false,
   "feature_memory.half": true,
+  "feature_memory.local_max_extent_m": 0.6,
   "feature_memory.local_min_obs": 3,
   "feature_memory.local_pick_on_arrival": true,
   "feature_memory.local_radius_m": 2.0,

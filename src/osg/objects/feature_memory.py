@@ -294,6 +294,7 @@ class FeatureMemory:
         "feature_local_considered",
         "feature_local_committed",
         "feature_presence_changed_pick",
+        "feature_local_too_large",
         "feature_prior_rounds",
         "feature_prior_argmax_changed",
         "same_class_fallback_applied",
@@ -426,6 +427,9 @@ class FeatureMemory:
             ft = getattr(track, "clip_ft", None)
             if ft is None:
                 continue
+            if not self._small_enough(track):
+                self.counters["feature_local_too_large"] += 1
+                continue
             xy = np.asarray(self._centre_of(track), dtype=float)
             if float(np.linalg.norm(xy - centre)) > radius:
                 continue
@@ -461,6 +465,26 @@ class FeatureMemory:
             "argmax_sim_track": int(plain.id),
         }
         return best
+
+    def _small_enough(self, track) -> bool:
+        """Could this track be the object, on size alone?
+
+        The ellipsoid's horizontal diameter against `local_max_extent_m`. A
+        track wider than that is the furniture the object rests on, and a crop
+        of a bed matches "a photo of a mug" better than forty pixels of the
+        real one -- which is what the first version of this pick kept choosing.
+        """
+        cap = float(getattr(self.cfg, "local_max_extent_m", 0.0) or 0.0)
+        if cap <= 0.0:
+            return True
+        ell = getattr(track, "ellipsoid", None)
+        axes = getattr(ell, "axes", None)
+        if axes is None:
+            return True
+        a = np.asarray(axes, dtype=float)
+        if a.size < 3:
+            return True
+        return float(2.0 * max(a[0], a[2])) <= cap
 
     def note_admitted(self, track) -> None:
         """Count each track admitted by appearance once per episode."""

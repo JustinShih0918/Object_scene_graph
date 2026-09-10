@@ -61,6 +61,23 @@ class FeatureMemoryConfig:
     # surface; two leaves room for a second opinion without spending the budget.
     max_local_picks: int = 2
 
+    # The pick may only consider tracks small enough to BE the thing asked for.
+    #
+    # Without it the argmax is furniture: over 24 mug and scissors trials the
+    # first version picked a pillow 13 times, a lamp 5, a bench 4 -- 37 of 44
+    # picks were furniture-sized -- because a bed's crop is a perfectly good
+    # match for "a photo of a mug" next to a 40-pixel smudge of the real one.
+    # DualMap never faces this: its detector proposes the small object (its mug
+    # arrives labelled `speaker`), so its local map holds tight crops and the
+    # argmax runs over things that are already object-shaped. Ours mostly
+    # proposes the furniture the object rests on, so the bound is applied here,
+    # from mapped geometry alone -- no ground truth, no per-target tuning.
+    #
+    # 0.6 m is deliberately loose: every movable query in this benchmark is
+    # under 0.3 m across, so this rejects beds and counters without pretending
+    # to know which object is being sought.
+    local_max_extent_m: float = 0.6
+
     # Fuse the appearance score with the presence belief before the argmax.
     #
     # This is the one place we have something DualMap does not. Its memory of a

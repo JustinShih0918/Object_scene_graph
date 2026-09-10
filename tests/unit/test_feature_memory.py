@@ -332,3 +332,41 @@ def test_the_running_mean_is_what_gets_matched():
     t.clip_ft, t.clip_n = merge_running_mean(t.clip_ft, t.clip_n, unit(0, 1, 0))
     assert fm.best_near((0.0, 0.0), [t]).id == 1
     assert abs(fm.sim(t.clip_ft) - float(np.dot(unit(1, 1, 0), unit(1, 0, 0)))) < 1e-3
+
+
+def _sized(tid, label, ft, xy, extent_m, **kw):
+    t = _live(tid, label, ft, xy, **kw)
+    half = extent_m / 2.0
+    t.ellipsoid = type("E", (), {
+        "center": np.array([xy[0], 0.8, xy[1]]),
+        "axes": np.array([half, half, half]),
+    })()
+    return t
+
+
+def test_the_pick_will_not_choose_furniture():
+    """A bed's crop matches "a photo of a mug" better than forty pixels of the
+    real mug, so the bound is on geometry, not on the score."""
+    class Cfg(_Cfg):
+        local_max_extent_m = 0.6
+
+    from osg.objects.feature_memory import FeatureMemory
+    fm = FeatureMemory(_Encoder(unit(1, 0, 0)), Cfg())
+    fm.set_target("mug")
+    tracks = [
+        _sized(1, "bed", unit(1, 0, 0), (0.3, 0.0), 2.0),      # perfect match, too big
+        _sized(2, "towel", unit(0.6, 0.8, 0), (0.4, 0.0), 0.2),  # worse match, mug-sized
+    ]
+    pick = fm.best_near((0.0, 0.0), tracks)
+    assert pick.id == 2
+    assert fm.counters["feature_local_too_large"] == 1
+
+
+def test_the_size_bound_is_off_at_zero_and_tolerates_a_missing_ellipsoid():
+    class Cfg(_Cfg):
+        local_max_extent_m = 0.0
+
+    from osg.objects.feature_memory import FeatureMemory
+    fm = FeatureMemory(_Encoder(unit(1, 0, 0)), Cfg())
+    fm.set_target("mug")
+    assert fm.best_near((0.0, 0.0), [_sized(1, "bed", unit(1, 0, 0), (0.3, 0.0), 2.0)]).id == 1
