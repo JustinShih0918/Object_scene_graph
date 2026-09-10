@@ -208,13 +208,19 @@ def setup_dualmap(scene: str, out: Path, query: str):
                 "yolo.given_classes_path=config/class_list/hm3d300_classes_ycb.txt",
             ],
         )
+    # An asset swap (scripts/make_dualmap_swap.py) adds the new queries' names to
+    # DualMap's detector list; DUALMAP_CLASS_LIST names that file (absolute).
+    class_list = os.environ.get("DUALMAP_CLASS_LIST")
+    if class_list:
+        cfg.yolo.given_classes_path = str(Path(class_list).resolve())
     for group, key in (
         ("yolo", "model_path"),
         ("sam", "model_path"),
         ("fastsam", "model_path"),
         ("yolo", "given_classes_path"),
     ):
-        cfg[group][key] = str(DUALMAP_ROOT / str(cfg[group][key]))
+        if not Path(str(cfg[group][key])).is_absolute():
+            cfg[group][key] = str(DUALMAP_ROOT / str(cfg[group][key]))
     cfg.ros_stream_config_path = str(
         DUALMAP_ROOT / "config/data_config/ros/self_collected.yaml"
     )
