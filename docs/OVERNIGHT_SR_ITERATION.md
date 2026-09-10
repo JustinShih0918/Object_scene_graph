@@ -476,3 +476,26 @@ because its spin ran into the budget rather than the deadline, and is
 covered by the full run. Combined with the radius in
 `island_close_arrive_r10`, in flight on the full 107
 (`outputs/osg_combined_full`).
+
+### 10:33 — Combined arrival + radius on the full 107: a regression, and it is the radius
+
+`outputs/osg_combined_full` (`COMBINED_FULL.md`, `COMBINED_PAIRED.txt`):
+in-anchor **28/54**, cross-anchor **23/53**, against 32/25 for the close
+run on the same ids (+3 / -7 and +6 / -8). The two mechanisms did what the
+subsets said -- the third 00829 cracker box stops at 0.45 m, the 00848
+pitcher that had stopped at 1.00004 m stops at 0.96 m, three more
+cross-anchor trials close from 0.83-0.91 m to 0.53-0.80 m -- and the run
+still lost more than it gained, because the 0.10 m navmesh changes every
+frontier path, not only the last metre. Never-in-view went 0 -> 6 in-anchor
+and 4 -> 8 cross-anchor. Four of the seven in-anchor losses are mug and
+scissors trials the close run had scored on a *live* commit at steps
+386-450 -- the search reached a close view of the "undetectable" object
+at the very end of the budget -- and on the new mesh the same 500 steps
+took a different route and never got there. The banana lost its second,
+live commit the same way.
+
+Decision: the radius is dropped (its +7 on the subsets is real and its
+path lottery on the other 90 trials costs more), and the arrival tolerance
+alone, `island_close_arrive`, goes to the full 107
+(`outputs/osg_arrive_full`). The four late mug and scissors successes are
+also a note on the budget: they scored at 420-460 of 500 steps.
