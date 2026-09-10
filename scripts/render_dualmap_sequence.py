@@ -169,10 +169,11 @@ def main() -> None:
         cv2.imwrite(str(out / "depth" / f"{stamp}.png"), np.clip(depth * 1000.0, 0, 65535).astype(np.uint16))
         if i % 500 == 0:
             print(f"  {i}/{len(poses)}", flush=True)
-    if not (out / "pose.txt").exists():
-        (out / "pose.txt").write_text((rec / "pose.txt").read_text())
-    if not (out / "camera_intrinsics.json").exists():
-        (out / "camera_intrinsics.json").write_text((rec / "camera_intrinsics.json").read_text())
+    for name in ("pose.txt", "camera_intrinsics.json"):
+        if (out / name).is_symlink():
+            (out / name).unlink()
+        if not (out / name).exists():
+            (out / name).write_text((rec / name).read_text())
     sim.close()
     print(f"wrote {out}")
 

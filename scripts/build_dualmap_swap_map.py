@@ -41,10 +41,12 @@ def main() -> None:
     if str(release).startswith(str(ORIGINAL.resolve())):
         raise SystemExit("refusing to write a map into the released data")
     scene_dir = release / args.scene
-    for name in ("rgb", "depth", "pose.txt"):
+    for name in ("rgb", "depth"):
         p = scene_dir / name
         if p.is_symlink() or not p.exists():
             raise SystemExit(f"{p} must be a real rendered sequence (scripts/render_dualmap_sequence.py)")
+    if not (scene_dir / "pose.txt").exists():
+        raise SystemExit(f"{scene_dir / 'pose.txt'} is missing")
     n_rgb = len(list((scene_dir / "rgb").glob("*.png")))
     n_pose = sum(1 for l in (scene_dir / "pose.txt").read_text().splitlines() if l.strip())
     print(f"{args.scene}: {n_rgb} rgb frames, {n_pose} poses", flush=True)
