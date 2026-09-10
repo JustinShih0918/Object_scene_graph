@@ -1,0 +1,15 @@
+# @package _global_
+#
+# The closing walk plus both last-metre fixes measured on its failures:
+# arrival declared within 0.3 m of the approach goal (the follower's 0.1 m
+# radius let three 00829 cracker boxes spin at the goal to the deadline) and
+# DualMap's navmesh radius (HM3D ships meshes cut for 0.10 m; ours was recut
+# at 0.18 m and every floor edge sat 8 cm farther from the object). Each was
+# a single-knob arm on its own subset first (docs/OVERNIGHT_SR_ITERATION.md,
+# 09:00-09:30); this is their union for the full 107.
+defaults:
+  - dualmap_protocol_osg_look_flat_anchor_v2_island_close
+
+agent:
+  approach_arrival_m: 0.3
+  agent_radius: 0.1

@@ -449,3 +449,17 @@ excluded), read against DualMap's own per-trial results
 
 The soup can (00829) and cracker box (00848) that DualMap scores are
 detector walls here (0 detections in 19 and 0 close, centred keyframes).
+
+### 09:11 — DualMap's navmesh radius on the 16 near-miss trials: 4 converted, none lost
+
+`outputs/osg_next_r10/flat_anchor_v2_island_close_r10` against the close run
+on the same ids: in-anchor **2/11**, cross-anchor **2/5**. The conversions
+are the shape predicted: the 00848 pitcher that had stopped at 1.00004 m
+stops at 0.96 m; a 00880 pitcher closes 0.98 -> 0.48 m; a 00829 cracker
+box and a 00880 plate reach 0.49 and 0.64 m on a third attempt. The banana
+moves 1.09 -> 1.11 m (the 8 cm went elsewhere on this mesh), and the stops
+of the two 00880 cracker boxes moved by metres in both directions: the
+radius changes every path, not only the last one, and the sign on the full
+107 is what matters. Goes into the combined preset
+`island_close_arrive_r10` with the arrival tolerance once the spin subset
+reports.
