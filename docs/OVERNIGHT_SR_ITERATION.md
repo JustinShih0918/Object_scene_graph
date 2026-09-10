@@ -593,6 +593,29 @@ it was never proposed as a scissors; what changes is the surface prior, the
 exploration it drove, and the honesty of every scissors number on this
 benchmark.
 
+`outputs/maps_released` is built and verified: the phantom is gone from all
+three scissors positions, 00829 now holds a real `scissors` track 0.01 m from
+the object, and 00848 and 00880 hold the furniture it rests on (0.25 m, 0.23 m)
+because the detector never named it. Track counts 682 / 800 / 618 against
+maps_v5's 689 / 343 / 520 -- 00848 and 00880 are richer because the released
+worlds have more objects to hunt (seven in 00848 against five), so an SR
+comparison against `outputs/osg_close_full` would mix the phantom's removal with
+extra mapping coverage rather than isolating one variable.
+
+**The 107 on these maps was started and stopped by choice after ~10 minutes**,
+so the SR effect of the corrected map is UNMEASURED and the maps are the
+deliverable. To measure it later, and note the confound above when reading it:
+
+```bash
+MAP_ROOT=outputs/maps_released ARMS=flat_anchor_v2_island_close \
+  TRIAL_SET=data/splits/dualmap_all.json SHARDS_PER_SCENE=2 MAX_PARALLEL=6 \
+  OUT_ROOT=outputs/osg_released_maps scripts/run_close_look_ab.sh
+python scripts/compare_close_look.py \
+  --arm close=outputs/osg_close_full/flat_anchor_v2_island_close \
+  --arm released=outputs/osg_released_maps/flat_anchor_v2_island_close \
+  --out outputs/osg_released_maps/RELEASED_MAPS.md
+```
+
 ## Appendix: presets of the arms that were not carried forward
 
 Removed from `configs/experiment/` in the clean-up of 2026-09-10; each is its parent preset plus the overrides below, so any logged arm can be recomposed by hand (`+experiment=<parent>` and the overrides on the command line).

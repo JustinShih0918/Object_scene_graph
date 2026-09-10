@@ -145,6 +145,34 @@ across frames, which is exactly what an admission rule has to do. For the
 scissors the feature channel is also *worse* than the label under a metre, where
 the detector already names it on 47% of frames.
 
+## 3b. Re-measured on the corrected map, and the answer gets cleaner
+
+The probe above ran against `maps_v5`, so its scissors verdict was measured on a
+map of the substituted world. Rebuilding from the release (`outputs/maps_released`,
+built from `outputs/collector_layouts`) and re-running Part A on MobileCLIP-S2:
+
+| scene | nearest track to the scissors | distance | feature rank | text-only rank |
+|---|---|---:|---:|---:|
+| 00829 | **`scissors`** | 0.01 m | 15 / 682 | **1 / 38** |
+| 00848 | `bed` | 0.25 m | 779 / 800 | 19 / 42 |
+| 00880 | `desk` | 0.23 m | 302 / 618 | 10 / 43 |
+
+00829 improves enormously -- 359 / 689 to 15 / 682 -- because the map now holds a
+real scissors track instead of a bottle. It still does not pass, and the last
+column is why it does not matter: the track's label is `scissors`, so the
+existing label match already ranks it first. Feature memory adds nothing where
+the object is mapped under the right name.
+
+In the other two scenes the detector never named the scissors during mapping, so
+there is no scissors track at all and the nearest thing is the furniture it rests
+on. There is nothing to retrieve, by feature or by label.
+
+So on this benchmark the scissors has no regime where appearance matching is the
+lever: mapped under the right name, the label path wins; not mapped, neither
+works. The 00848 mug is the same story -- its nearest track is now a `dresser`
+0.08 m away, ranked 605 / 800. Controls hold up at 10 / 15 top-5, so the
+mechanism is intact; it simply has no work to do here.
+
 ## 4. What was built, and what was not
 
 Kept, because the measurement should be repeatable:
