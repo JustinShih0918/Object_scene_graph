@@ -308,3 +308,38 @@ paper; in-anchor is 9 below DualMap and 14 below the goal. What is left
 in-anchor is no longer reachability: the funnel is "seen, never named" 9
 (scissors/mug 7 of them), "committed elsewhere" 7, "admitted, never
 committed" 5, "committed, never arrived" 3.
+
+### 06:55 — "Committed elsewhere" is a near-miss stop followed by place retirement
+
+The island run's seven in-anchor "committed elsewhere" trials read, commit
+by commit: in six the agent committed to a *live* track 0.03-0.6 m from the
+object, stopped, and the stop was scored a failure at 1.00-1.56 m; the
+failed attempt then disabled the place (`failed_attempt_disables_place`),
+the true track was bypassed, and the next commit was whatever remained,
+metres away. The wrong final commit is the symptom; the near-miss stop is
+the cause. Across the full run the band is wider than those seven:
+
+| split | failures | with a stop in (1.0, 1.6] m | best stop <= 2.0 m | no stop at all |
+|---|---:|---:|---:|---:|
+| in-anchor | 24 | **12** | 15 | 5 |
+| cross-anchor | 30 | **8** | 9 | 7 |
+
+The geometry of the 20 (`nearmiss_geom.py`, habitat's own pathfinder on the
+scene navmesh): the agent had reached its viewpoint goal to within 0.1 m in
+most of them, so the goal itself was the problem. The ring ladder stops at
+the innermost ring with a FREE costmap cell, and beside a bed or a desk the
+inflated costmap has none nearer than about a metre from the track centre;
+the navmesh floor, which already accounts for the agent's radius, comes
+within 0.9 m of the object in 13 of the 20 (0.30-0.93 m) and 1.04-1.16 m in
+the other 7, which no stopping rule can score.
+
+The lever is the last metre, again ([[osg-standoff-costs-the-last-metre]]
+was the same shape at 1.27 m): `agent.approach_close_last_metre_m` (commit
+8f6a65f). When an approach path is consumed and the agent is still farther
+than 0.8 m from the track centre, it asks the navmesh for the nearest
+navigable point to the centre on its own island
+(`HabitatObjectNavEnv.nearest_navigable_xy`, 5 ms) and walks there before
+the stop; the costmap re-aim of the stale stop stands down once that walk
+has been made. Arm `flat_anchor_v2_island_close`, first on the 20 near-miss
+trials (`data/splits/dualmap_nearmiss.json`, `outputs/osg_next_close`),
+then the full 107 if it converts.
