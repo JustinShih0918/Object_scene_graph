@@ -263,3 +263,13 @@ no-detection failures the object's own surface was selected in 2 and the
 target named in **6** (was 0). The island fix does on cross-anchor what the
 reachability mitigations did, and does it by fixing the cause. The
 confirmation run of `v2_island` on the full 107 is in flight (six shards).
+
+### 00:09 — Relook after a failed stale stop: null
+
+`outputs/osg_next/flat_anchor_v2_island_relook` on the 21 in-anchor
+failures: 6/21, identical funnel. The relook was scheduled in only 3 trials
+and started in 2, because a failed stale stop is now usually followed by a
+live sighting of the target on the walk (the track is then `seen_live` and
+the rule stands down), and the failures that remain are "committed
+elsewhere" (6) and "admitted, never committed" (5), neither of which a
+second look at the stale surface addresses. Not carried forward.
