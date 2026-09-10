@@ -33,6 +33,9 @@ EXPECTED_KEYS = {
     "distance_to_goal", "episode_id", "final_xy", "final_y", "floor_changes",
     "floor_class", "floor_log", "floor_transitions", "floor_y_drift",
     "frontier_select_log", "giveup_log", "goal_commit_log", "goal_y_span",
+    # One entry per appearance commit (agent/candidate._appearance_pick):
+    # which surface, which track, its cosine, how many it beat.
+    "feature_pick_log",
     "gt_best_det_bbox_px", "gt_best_det_score", "gt_best_offaxis", "gt_frames",
     "gt_in_view_close_frames", "gt_in_view_frames", "gt_kf_close_centred",
     "gt_kf_close_centred_detected", "gt_kf_close_peripheral",

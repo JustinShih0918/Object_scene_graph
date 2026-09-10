@@ -239,3 +239,96 @@ def test_the_feature_term_can_reorder_surfaces_without_changing_the_scale():
     # The best candidate still carries the full surface mass, so the
     # search-versus-explore comparison sees the same magnitude it always did.
     assert max(priors.values()) == max(plain.values())
+
+
+# ------------------------------------------------------- the local inquiry
+
+class _Cfg:
+    local_pick_on_arrival = True
+    local_radius_m = 2.0
+    local_min_obs = 3
+    max_local_picks = 2
+    max_live_crops_per_keyframe = 32
+    admit_threshold = 0.0
+    admit_prior_tracks = False
+    prompt_template = "a photo of a {target}"
+
+
+class _Encoder:
+    """Text and image features chosen by the test, no model."""
+
+    def __init__(self, text, images=None):
+        self._text = text
+        self._images = images or {}
+
+    def text_feature(self, prompt):
+        return self._text
+
+    def encode_images(self, crops):
+        return np.stack([self._images[id(c)] for c in crops])
+
+
+def _live(tid, label, ft, xy, n_obs=5, **kw):
+    t = _Track(tid, label, ft, **kw)
+    t._seen_live = kw.get("seen_live", True)
+    t.n_obs = n_obs
+    t.ellipsoid = type("E", (), {"center": np.array([xy[0], 0.8, xy[1]])})()
+    return t
+
+
+def _memory(target_ft):
+    from osg.objects.feature_memory import FeatureMemory
+
+    fm = FeatureMemory(_Encoder(target_ft), _Cfg())
+    fm.set_target("mug")
+    return fm
+
+
+def test_the_pick_takes_the_argmax_and_never_needs_a_threshold():
+    """Even a poor best is returned: DualMap's matcher always answers, which is
+    the whole difference from an admission bar."""
+    fm = _memory(unit(1, 0, 0))
+    near = [_live(1, "towel", unit(0.9, 0.44, 0), (0.2, 0.0)),
+            _live(2, "chair", unit(0.2, 0.98, 0), (0.5, 0.0))]
+    assert fm.best_near((0.0, 0.0), near).id == 1
+    fm2 = _memory(unit(1, 0, 0))
+    weak = [_live(3, "chair", unit(0.05, 0.999, 0), (0.3, 0.0))]
+    assert fm2.best_near((0.0, 0.0), weak).id == 3
+
+
+def test_the_pick_is_scoped_by_radius_observations_and_liveness():
+    fm = _memory(unit(1, 0, 0))
+    tracks = [
+        _live(1, "towel", unit(1, 0, 0), (9.0, 0.0)),               # too far
+        _live(2, "towel", unit(1, 0, 0), (0.3, 0.0), n_obs=2),      # too few views
+        _live(3, "towel", unit(1, 0, 0), (0.3, 0.0), seen_live=False, from_prior=True),
+        _live(4, "towel", unit(1, 0, 0), (0.3, 0.0), absence_arrivals=1),  # refuted
+        _live(5, "desk", unit(0.7, 0.71, 0), (0.4, 0.0)),           # the only eligible one
+    ]
+    assert fm.best_near((0.0, 0.0), tracks).id == 5
+
+
+def test_a_track_is_picked_at_most_once_and_the_budget_is_honoured():
+    fm = _memory(unit(1, 0, 0))
+    tracks = [_live(1, "towel", unit(1, 0, 0), (0.2, 0.0)),
+              _live(2, "desk", unit(0.9, 0.44, 0), (0.3, 0.0)),
+              _live(3, "rug", unit(0.8, 0.6, 0), (0.4, 0.0))]
+    assert fm.best_near((0.0, 0.0), tracks).id == 1
+    assert fm.best_near((0.0, 0.0), tracks).id == 2   # 1 is not offered again
+    assert fm.counters["feature_local_picks"] == 2    # the caller enforces the cap
+
+
+def test_no_eligible_track_means_no_pick_and_no_counter():
+    fm = _memory(unit(1, 0, 0))
+    assert fm.best_near((0.0, 0.0), []) is None
+    assert fm.counters["feature_local_picks"] == 0
+
+
+def test_the_running_mean_is_what_gets_matched():
+    """DualMap matches an object's average appearance, not its best frame."""
+    fm = _memory(unit(1, 0, 0))
+    t = _live(1, "towel", None, (0.2, 0.0))
+    t.clip_ft, t.clip_n = merge_running_mean(None, 0, unit(1, 0, 0))
+    t.clip_ft, t.clip_n = merge_running_mean(t.clip_ft, t.clip_n, unit(0, 1, 0))
+    assert fm.best_near((0.0, 0.0), [t]).id == 1
+    assert abs(fm.sim(t.clip_ft) - float(np.dot(unit(1, 1, 0), unit(1, 0, 0)))) < 1e-3

@@ -13,6 +13,7 @@ from ..core.types import Detection, FrameData
 from ..mapping.costmap import HEIGHT_AXIS, PLANE
 from .association import DataAssociator, Observation, ObjectTrack
 from .ellipsoid import Ellipsoid
+from .feature_memory import merge_running_mean
 from .linking import object_center, relink
 from .presence import PresenceFilter
 from .optimization import WassersteinRefiner
@@ -35,6 +36,7 @@ class ObjectLayer:
         confirm_baseline_m: float = 0.0,
         repeat_view_discount: float = 0.2,
         presence_filter: Optional[PresenceFilter] = None,
+        feature_memory=None,
         max_range_m: float = 5.0,
         fp_disable_radius_m: float = 0.5,
         cloud_stride: int = 4,
@@ -67,6 +69,9 @@ class ObjectLayer:
         self.confirm_baseline_m = confirm_baseline_m
         self.repeat_view_discount = repeat_view_discount
         self.presence_filter = presence_filter
+        # None unless feature_memory.enabled; nothing is loaded and no code
+        # path below changes while it is None.
+        self.feature_memory = feature_memory
         self.max_range_m = float(max_range_m)
         self.fp_disable_radius_m = float(fp_disable_radius_m)
         self.cloud_stride = int(cloud_stride)
@@ -165,6 +170,11 @@ class ObjectLayer:
         dets = admitted
         if not dets:
             return
+        # One batched CLIP forward per keyframe over what the map is about to
+        # remember. Detections, not frames: the cost is a function of how much
+        # is in view, not of the control rate.
+        if self.feature_memory is not None:
+            self.feature_memory.embed_detections(dets)
         matches = self._associator.associate(dets, frame, same_floor)
         K = frame.intrinsics.K()
         T_cw = frame.T_cw
@@ -199,6 +209,11 @@ class ObjectLayer:
                 if not self._marginal(det, frame):
                     track.out_of_range = False
             track.observations.append(obs)
+            if self.feature_memory is not None and det.clip_ft is not None:
+                track.clip_ft, track.clip_n = merge_running_mean(
+                    track.clip_ft, track.clip_n, det.clip_ft
+                )
+                self.feature_memory.tag(track)
             if det.score > track.best_score:
                 track.best_score = det.score
                 track.best_crop = det.crop if det.crop is not None else det.crop_from(frame.rgb)

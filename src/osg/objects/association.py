@@ -95,6 +95,18 @@ class ObjectTrack:
     # counts only "I went to look, and it was gone" -- the event that refutes
     # the hypothesis the search prior is built on.
     absence_arrivals: int = 0
+    # Appearance, accumulated. `clip_ft` is the renormalised running mean over
+    # this track's detections -- DualMap merges the same way, and averaging is
+    # most of why its per-object match beats a per-frame one. `feature_sim` is
+    # the cosine against the current episode's query text, recomputed whenever
+    # the mean moves. Derived state: never persisted, recomputed on load.
+    clip_ft: Optional[np.ndarray] = None
+    clip_n: int = 0
+    feature_sim: float = -1.0
+    # Committed on appearance rather than on its label, so the label-keyed
+    # predicates (stale twins, place disabling, the search anchor) can still
+    # recognise it as being about the target.
+    feature_admitted: bool = False
     # Attempts the protocol scored as failed while committed to this track.
     # Kept apart from `identity_rejections`, which an unreachable verdict also
     # bumps: only an absence arrival or a failed attempt REFUTES a track in

@@ -146,6 +146,7 @@ def build_run_components(cfg) -> dict:
         "floor_planner": build_floor_planner(cfg),
         "room_classifier": build_room_classifier(cfg),
         "image_text": build_image_text_scorer(cfg),
+        "feature_memory": build_feature_memory(cfg),
         "stair_segmenter": build_stair_segmenter(cfg),
     }
 
@@ -178,8 +179,18 @@ def build_agent(
         floor_planner=components["floor_planner"],
         room_classifier=components["room_classifier"],
         image_text=components["image_text"],
+        feature_memory=components.get("feature_memory"),
         stair_segmenter=components["stair_segmenter"],
     )
+
+
+def build_feature_memory(cfg):
+    """The appearance matcher, or None when it is off (nothing is loaded)."""
+    from ..objects.feature_memory import FeatureMemory
+    from ..perception.feature_encoder import build_feature_encoder
+
+    encoder = build_feature_encoder(cfg)
+    return None if encoder is None else FeatureMemory(encoder, cfg.feature_memory)
 
 
 def build_verifier(cfg):

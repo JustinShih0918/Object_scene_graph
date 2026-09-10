@@ -236,6 +236,9 @@ def build_episode_record(
         # end of the episode; ids are stable for its length.
         "containers": container_table(agent),
         "goal_commit_log": getattr(agent, "goal_commit_log", []),
+        # One entry per appearance commit: the surface, the track it chose,
+        # its cosine and how many tracks it beat.
+        "feature_pick_log": getattr(agent, "feature_pick_log", []),
         "target_tracks": [
             {
                 "track_id": int(t.id),

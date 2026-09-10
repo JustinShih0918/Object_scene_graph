@@ -65,6 +65,9 @@ class Detection:
     bbox_xyxy: np.ndarray  # (4,) float
     mask: np.ndarray  # (H, W) bool
     crop: Optional[np.ndarray] = None  # bbox-cropped rgb for VLM verification
+    # Unit CLIP image feature of `crop`, when feature memory is on. Set once
+    # per keyframe in a single batched encode (objects/object_layer.update).
+    clip_ft: Optional[np.ndarray] = None
 
     def crop_from(self, rgb: np.ndarray, pad: int = 8) -> np.ndarray:
         x1, y1, x2, y2 = self.bbox_xyxy.astype(int)

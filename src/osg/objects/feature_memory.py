@@ -132,6 +132,14 @@ def feature_term(
     return float(f + (1.0 - f) * math.exp(-b * gap))
 
 
+def _presence(track: Any) -> float:
+    """A track's belief that its object is still there, or 1.0 when the presence
+    filter is off -- an absent belief must not silently veto a candidate."""
+    presence = getattr(track, "presence", None)
+    p = getattr(presence, "p", None)
+    return 1.0 if p is None else float(p)
+
+
 def refuted(track: Any) -> bool:
     """Has the agent been to this track and found the target was not there?
 
@@ -282,6 +290,10 @@ class FeatureMemory:
         "feature_admitted_live",
         "feature_admitted_prior",
         "feature_admitted_committed",
+        "feature_local_picks",
+        "feature_local_considered",
+        "feature_local_committed",
+        "feature_presence_changed_pick",
         "feature_prior_rounds",
         "feature_prior_argmax_changed",
         "same_class_fallback_applied",
@@ -299,6 +311,17 @@ class FeatureMemory:
         # cache keyed on the object would never hit.
         self._prior_cache: Dict[Tuple[str, int], np.ndarray] = {}
         self._admitted_seen: set = set()
+        # One appearance commit per track per episode: without it a wrong pick
+        # that survives its absence reading is re-picked at the next surface.
+        self._picked: set = set()
+        self.last_pick: Optional[Dict[str, Any]] = None
+        # How a track's ground-plane position is read. The agent's object layer
+        # resolves a linked component's centre, which a bare ellipsoid centre
+        # does not; injected so this module never imports the layer.
+        self._centre_of = lambda t: np.asarray(t.ellipsoid.center, dtype=float)[[0, 2]]
+
+    def bind_centres(self, fn) -> None:
+        self._centre_of = fn
 
     # ----------------------------------------------------------------- episode
 
@@ -308,6 +331,8 @@ class FeatureMemory:
         self.text_ft = self.encoder.text_feature(prompt)
         self.counters = {k: 0 for k in self.COUNTERS}
         self._admitted_seen = set()
+        self._picked = set()
+        self.last_pick = None
 
     def sim(self, ft: Optional[np.ndarray]) -> float:
         return cosine(ft, self.text_ft)
@@ -315,18 +340,17 @@ class FeatureMemory:
     # ------------------------------------------------------------------ tracks
 
     def tag(self, track) -> float:
-        """Recompute a track's similarity and whether appearance admits it."""
+        """Record how much this track looks like the query.
+
+        Only records. Whether a track may be committed to is decided by the
+        argmax in `best_near`, never by this number crossing a bar -- the probe
+        found no bar that admits the mug without admitting its neighbours, and
+        DualMap does not use one.
+        """
         sim = self.sim(getattr(track, "clip_ft", None))
-        track.feature_sim = sim
-        was = bool(getattr(track, "feature_admitted", False))
-        now = admits(
-            track,
-            float(self.cfg.admit_threshold),
-            bool(self.cfg.admit_prior_tracks),
-        )
-        track.feature_admitted = now
-        if now and not was:
+        if track.feature_sim <= -1.0 and sim > -1.0:
             self.counters["feature_tracks_tagged"] += 1
+        track.feature_sim = sim
         return sim
 
     def embed_detections(self, dets: Sequence[Any]) -> int:
@@ -373,6 +397,70 @@ class FeatureMemory:
                 n += 1
         self.counters["feature_tracks_embedded"] += n
         return n
+
+    def best_near(self, centre_xy, tracks, *, floor_key=None) -> Optional[Any]:
+        """DualMap's local inquiry: the track near this surface that looks most
+        like the query. Argmax, never a threshold, so it always answers.
+
+        The candidate set is the live map only. A prior-map track the episode has
+        not seen is a memory of another session, and DualMap's local map has no
+        such thing -- it is built from this run's frames. Refuted tracks are out
+        for the same reason a searched surface decays: the agent went and looked.
+        """
+        if self.text_ft is None:
+            return None
+        radius = float(self.cfg.local_radius_m)
+        min_obs = int(self.cfg.local_min_obs)
+        centre = np.asarray(centre_xy, dtype=float)
+        eligible = []
+        n_seen = 0
+        for track in tracks:
+            if not bool(getattr(track, "seen_live", False)):
+                continue
+            if int(getattr(track, "n_obs", 0)) < min_obs:
+                continue
+            if refuted(track) or int(track.id) in self._picked:
+                continue
+            if floor_key is not None and int(getattr(track, "floor_key", 0)) != int(floor_key):
+                continue
+            ft = getattr(track, "clip_ft", None)
+            if ft is None:
+                continue
+            xy = np.asarray(self._centre_of(track), dtype=float)
+            if float(np.linalg.norm(xy - centre)) > radius:
+                continue
+            n_seen += 1
+            eligible.append((track, self.sim(ft)))
+        self.counters["feature_local_considered"] += n_seen
+        if not eligible:
+            return None
+        sim_max = max(sim for _, sim in eligible)
+        if bool(getattr(self.cfg, "fuse_presence", False)):
+            beta = float(self.cfg.presence_beta)
+            floor = float(self.cfg.presence_floor)
+            scored = [
+                (t, sim, feature_term(sim, sim_max, beta, floor) * _presence(t))
+                for t, sim in eligible
+            ]
+        else:
+            scored = [(t, sim, sim) for t, sim in eligible]
+        best, best_sim, best_score = max(scored, key=lambda x: x[2])
+        self._picked.add(int(best.id))
+        self.counters["feature_local_picks"] += 1
+        # Did the belief change the answer? The counter that decides whether the
+        # fusion did anything at all, separately from whether SR moved.
+        plain = max(eligible, key=lambda x: x[1])[0]
+        if int(plain.id) != int(best.id):
+            self.counters["feature_presence_changed_pick"] += 1
+        self.last_pick = {
+            "track_id": int(best.id), "label": str(best.label),
+            "sim": round(float(best_sim), 4),
+            "score": round(float(best_score), 4),
+            "p": round(_presence(best), 4),
+            "n_considered": n_seen,
+            "argmax_sim_track": int(plain.id),
+        }
+        return best
 
     def note_admitted(self, track) -> None:
         """Count each track admitted by appearance once per episode."""

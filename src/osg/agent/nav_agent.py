@@ -100,6 +100,7 @@ class NavAgent:
         floor_planner=None,
         room_classifier=None,
         image_text=None,
+        feature_memory=None,
         stair_segmenter=None,
     ) -> None:
         self.cfg = cfg
@@ -164,6 +165,13 @@ class NavAgent:
             verifier is not None and bool(cfg.verification.terminal)
         )
         self.profiler = profiler or Profiler()
+        # Appearance matching (objects/feature_memory.py), or None. Kept apart
+        # from `image_text`: any non-None value THERE turns the semantic value
+        # map on for every frame, which is a different mechanism entirely.
+        self.feature_memory = feature_memory
+        # One entry per appearance commit: which surface, which track, how
+        # much it looked like the query, and how many it beat.
+        self.feature_pick_log: list = []
         # Debug hook: if set, called with (frame, dets) every keyframe right
         # after the detections that feed object_layer.update() are computed
         # -- lets diagnostics observe exactly what the scene graph is built
@@ -203,6 +211,7 @@ class NavAgent:
             else self.planner
         )
         self.object_layer = ObjectLayer(
+            feature_memory=feature_memory,
             assoc_score_thresh=cfg.scene_graph.assoc_score_thresh,
             assoc_depth_gate_m=cfg.scene_graph.assoc_depth_gate_m,
             assoc_category_gate=cfg.scene_graph.assoc_category_gate,
@@ -434,6 +443,15 @@ class NavAgent:
         self.detector.set_vocabulary(
             target_vocabulary(self.target, self.cfg.detector.vocabulary)
         )
+        if self.feature_memory is not None:
+            # The prompt changes once an episode, so the text encoder runs once
+            # an episode. Centres come from the object layer, which resolves a
+            # linked component rather than one ellipsoid.
+            self.feature_memory.set_target(self.target)
+            self.feature_memory.bind_centres(
+                lambda t: self.object_layer.center_of(t)[list(PLANE)]
+            )
+            self.feature_pick_log = []
         self.object_layer.set_target(self.target)
         self.object_layer.keep_cloud_labels = {self.target}
         if self.pointnav is not None:
@@ -590,6 +608,11 @@ class NavAgent:
 
         if self.kf_selector.is_keyframe(frame.T_wc):
             self._on_keyframe(frame)
+            if self.feature_memory is not None:
+                # Mechanism counters ride out with the rest; on this benchmark
+                # SR cannot resolve anything under about three trials, so an arm
+                # that cannot be seen in a counter cannot be judged at all.
+                self.stats.update(self.feature_memory.counters)
             if self.cfg.exploration.search_posterior:
                 self.exploration.glance(self._world(frame))
             self.close_look.maybe_opportunistic(frame)

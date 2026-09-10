@@ -90,7 +90,10 @@ class CandidatePolicy:
         if candidates and bool(self.nav.cfg.verification.retire_stale_twins_after_absence):
             candidates = self._without_stale_twins(candidates)
         if not candidates:
-            return
+            picked = self._appearance_pick()
+            if picked is None:
+                return
+            candidates = [picked]
         track = candidates[0]
         self.nav._candidate_id = track.id
         self.center_turns = 0  # fresh centering budget for this candidate
@@ -170,6 +173,53 @@ class CandidatePolicy:
         self.nav._current_path = None
         self.nav._goto_deadline = self.nav.step_count + 80
 
+    def _appearance_pick(self):
+        """The surface is reached, the label path has nothing: which nearby
+        object LOOKS most like the target?
+
+        This is DualMap's local inquiry and the one place its result is
+        reproduced. It fires only on arrival at a searched surface, takes an
+        argmax rather than clearing a threshold, and hands its winner back into
+        the ordinary commit path below -- so reachability, the VLM, the identity
+        channel, the absence sensor and the attempt protocol all still judge it.
+        Nothing here can stop an approach or score a trial by itself.
+
+        Measured before it was built: on the dumped mug frames a box small enough
+        to BE the mug covers it on 39 of 160, labelled `towel` 27 times, and
+        ranking every detection in the frame by cosine picks it on 27.8% of
+        frames in the 2.5-4 m band. The label path scores 0 on all 160.
+        """
+        fm = getattr(self.nav, "feature_memory", None)
+        if fm is None or not bool(fm.cfg.local_pick_on_arrival):
+            return None
+        exploration = getattr(self.nav, "exploration", None)
+        cid = getattr(exploration, "arrived_container", None)
+        if cid is None:
+            return None
+        exploration.arrived_container = None  # one inquiry per arrival
+        if fm.counters["feature_local_picks"] >= int(fm.cfg.max_local_picks):
+            return None
+        node = self.nav.scene_graph.containers.get(int(cid))
+        if node is None:
+            return None
+        centre_xy = np.asarray(node.center, dtype=float)[list(PLANE)]
+        picked = fm.best_near(
+            centre_xy,
+            self.nav.object_layer.tracks(),
+            floor_key=self.nav.floors.current_id,
+        )
+        if picked is None:
+            return None
+        picked.feature_admitted = True
+        self.nav.stats["feature_local_pick_step"] = int(self.nav.step_count)
+        self.nav.feature_pick_log.append({
+            "step": int(self.nav.step_count),
+            "container_id": int(cid),
+            "container_label": str(node.label),
+            **(fm.last_pick or {}),
+        })
+        return picked
+
     def _restrike_is_the_same_verdict(self, track, agent_xy) -> bool:
         """Has this track already been ruled unreachable from where we stand?
 
@@ -238,6 +288,9 @@ class CandidatePolicy:
         """What the map believed at the moment it committed. A commit to a
         track the agent has already looked for and failed to find is a stale
         goal -- the failure DualMap's ignore list exists to paper over."""
+        fm = getattr(self.nav, "feature_memory", None)
+        if fm is not None and bool(getattr(track, "feature_admitted", False)):
+            fm.counters["feature_local_committed"] += 1
         self.goal_commit_log.append(
             {
                 "step": int(self.nav.step_count),
@@ -248,6 +301,9 @@ class CandidatePolicy:
                 "center": [float(v) for v in self.nav.object_layer.center_of(track)],
                 "prior": bool(getattr(track, "from_prior", False)),
                 "seen_live": bool(track.seen_live),
+                # Proposed by appearance rather than by its label.
+                "feature_admitted": bool(getattr(track, "feature_admitted", False)),
+                "feature_sim": round(float(getattr(track, "feature_sim", -1.0)), 4),
             }
         )
 

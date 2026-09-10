@@ -161,6 +161,8 @@ class ExplorationStrategy:
         # mostly stops being -- the distinction an ignore list cannot make.
         self.search_log = InspectionLog()
         self.search_container: Optional[int] = None
+        # Set on arrival, read and cleared by the appearance pick.
+        self.arrived_container: Optional[int] = None
         # Which room the surface being inspected belongs to, and how many
         # fruitless arrivals each room has absorbed. The same-room bonus is a
         # prior; this is the likelihood that updates it (see
@@ -773,6 +775,13 @@ class ExplorationStrategy:
         """
         if self.search_container is None:
             return
+        # The moment DualMap runs its local inquiry: it has reached the anchor
+        # its global text match chose, and asks which nearby object looks most
+        # like the query. Published rather than acted on here, because
+        # committing to a candidate is the candidate policy's job; it is
+        # consumed once and cleared.
+        if arrived:
+            self.arrived_container = int(self.search_container)
         d = float(self.cfg.search_detect_prob)
         if not arrived:
             d *= float(self.cfg.search_unreached_credit)
