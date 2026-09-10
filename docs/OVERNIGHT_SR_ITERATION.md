@@ -550,3 +550,25 @@ What the last three arms taught, and what it means for the next step:
 3. **Cross-anchor is 2 trials from the paper's 50%**, and the remaining
    failures are search exposure (never in view 4, seen never named 13),
    where the noise floor is the same size as the gap.
+
+## Appendix: presets of the arms that were not carried forward
+
+Removed from `configs/experiment/` in the clean-up of 2026-09-10; each is its parent preset plus the overrides below, so any logged arm can be recomposed by hand (`+experiment=<parent>` and the overrides on the command line).
+
+- `dualmap_protocol_osg_look_belief`: parent `dualmap_protocol_osg_look_flat`; `agent.close_look_opportunistic=True`; `agent.close_look_by_belief=True`; `exploration.search_glance_range_m=2.5`
+- `dualmap_protocol_osg_look_both`: parent `dualmap_protocol_osg_tightring`; `agent.close_look_opportunistic=True`; `agent.close_look_before_absence=True`; `exploration.search_glance_range_m=2.5`; `eval.gt_dump_dir=`
+- `dualmap_protocol_osg_look_drop`: parent `dualmap_protocol_osg_look_inanchor`; `exploration.search_drop_proximity_after_absence=True`
+- `dualmap_protocol_osg_look_flat_anchor_drop`: parent `dualmap_protocol_osg_look_flat_anchor`; `exploration.search_proximity_len_m=1.0`; `exploration.search_drop_proximity_after_absence=True`
+- `dualmap_protocol_osg_look_flat_anchor_stop2`: parent `dualmap_protocol_osg_look_flat_anchor`; `verification.abandon_below_p=0.3`
+- `dualmap_protocol_osg_look_flat_anchor_v2_clamp`: parent `dualmap_protocol_osg_look_flat_anchor_v2`; `scene_graph.presence={'l_clamp': 2.0}`
+- `dualmap_protocol_osg_look_flat_anchor_v2_nf`: parent `dualmap_protocol_osg_look_flat_anchor_v2_restrike`; `agent.reachable_via_nearest_free=True`
+- `dualmap_protocol_osg_look_flat_anchor_v2_rankp`: parent `dualmap_protocol_osg_look_flat_anchor_v2`; `verification.rank_candidates_by_presence=False`
+- `dualmap_protocol_osg_look_flat_anchor_v2_restrike`: parent `dualmap_protocol_osg_look_flat_anchor_v2`; `agent.unreachable_restrike_m=1.0`
+- `dualmap_protocol_osg_look_flat_anchor_v2_island_relook`: parent `dualmap_protocol_osg_look_flat_anchor_v2_island`; `verification.relook_after_stale_stop=True`
+- `dualmap_protocol_osg_look_flat_stop`: parent `dualmap_protocol_osg_look_flat`; `verification.stop_at_stale_anchor_once=True`
+- `dualmap_protocol_osg_look_flat_twins`: parent `dualmap_protocol_osg_look_flat`; `verification.retire_stale_twins_after_absence=True`
+- `dualmap_protocol_osg_look_len4`: parent `dualmap_protocol_osg_look_inanchor`; `exploration.search_proximity_len_m=4.0`
+- `dualmap_protocol_osg_look_opportunistic`: parent `dualmap_protocol_osg_tightring`; `agent.close_look_opportunistic=True`; `exploration.search_glance_range_m=2.5`; `eval.gt_dump_dir=`
+- `dualmap_protocol_osg_look_flat_anchor_v2_island_close_arrive`: parent `dualmap_protocol_osg_look_flat_anchor_v2_island_close`; `agent.approach_arrival_m=0.3`
+- `dualmap_protocol_osg_look_flat_anchor_v2_island_close_arrive_r10`: parent `dualmap_protocol_osg_look_flat_anchor_v2_island_close`; `agent.approach_arrival_m=0.3`; `agent.agent_radius=0.1`
+- `dualmap_protocol_osg_look_flat_anchor_v2_island_close_r10`: parent `dualmap_protocol_osg_look_flat_anchor_v2_island_close`; `agent.agent_radius=0.1`

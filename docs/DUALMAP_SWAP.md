@@ -1,5 +1,10 @@
 # The swapped benchmark: DualMap's released trials with scissors and mug replaced
 
+> **Status (2026-09-10): paused before any trial ran.** The copy, its
+> re-rendered sequences and our prior maps exist as described below; DualMap's
+> global map was being rebuilt when the work was stopped, and no benchmark
+> run on the copy has been completed for either system.
+
 A sibling copy of DualMap's released HM3D benchmark in which the two assets
 neither system's detector can see (`docs/ASSET_SUBSTITUTION_EVIDENCE.md`) are
 replaced by two objects from our 15-scene authored set. The released data

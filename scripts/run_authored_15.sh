@@ -14,6 +14,7 @@
 # of memory mid-batch; four is the safe number.
 #
 #   scripts/run_authored_15.sh                          # all 15, 4 at a time
+#   python scripts/report_authored_15.py --run outputs/osg_authored_15   # the report
 #   SCENES="00800-TEEsavR23oF" scripts/run_authored_15.sh
 #   PRESET=ycb_authored_15 MAPS=outputs/maps_15 OUT=outputs/osg_authored_15
 #

@@ -27,7 +27,7 @@ chance is in, one that scored once by chance is out -- so subset results are
 for iterating on a mechanism, and the full 107 remain the number reported.
 
     python scripts/make_hard_subset.py --reference outputs/osg_closelook/inanchor
-    TRIAL_SET=data/splits/dualmap_hard.json ARMS=drop scripts/run_close_look_ab.sh
+    TRIAL_SET=data/splits/dualmap_hard.json ARMS=flat_anchor_v2_island_close scripts/run_close_look_ab.sh
 """
 from __future__ import annotations
 

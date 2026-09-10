@@ -1,7 +1,0 @@
-# @package _global_
-# look_flat plus only the stale-twin retirement (the other half of look_flat_anchor).
-defaults:
-  - dualmap_protocol_osg_look_flat
-
-verification:
-  retire_stale_twins_after_absence: true

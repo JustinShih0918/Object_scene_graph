@@ -4,11 +4,9 @@
 # at outputs/osg_dualmap_tightring. Each (arm, scene) is one process because the
 # prior map is per scene; MAX_PARALLEL bounds how many share the GPU.
 #
-#   scripts/run_close_look_ab.sh              # all nine, 3 at a time
-#   MAX_PARALLEL=4 scripts/run_close_look_ab.sh
-#   ARMS="inanchor" scripts/run_close_look_ab.sh   # a subset
-#   ARMS="drop len4 flat" OUT_ROOT=outputs/osg_searchorder scripts/run_close_look_ab.sh
-#   TRIAL_SET=data/splits/dualmap_hard.json MAX_STEPS=300 ARMS=drop \
+#   scripts/run_close_look_ab.sh              # the working configuration, 3 scenes
+#   MAX_PARALLEL=4 ARMS="tightring flat_anchor_v2_island_close" scripts/run_close_look_ab.sh
+#   TRIAL_SET=data/splits/dualmap_hard.json MAX_STEPS=300 ARMS=flat_anchor_v2_island \
 #     OUT_ROOT=outputs/osg_hard scripts/run_close_look_ab.sh
 #
 # TRIAL_SET restricts each scene to the trial ids in a subset file written by
@@ -32,7 +30,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
 : "${MAX_PARALLEL:=3}"
-: "${ARMS:=inanchor opportunistic both}"
+: "${ARMS:=flat_anchor_v2_island_close}"
 : "${SCENES:=00829-QaLdnwvtxbs 00848-ziup5kvtCCR 00880-Nfvxx8J5NCo}"
 : "${TRIALS_PER_SCENE:=35}"
 : "${OUT_ROOT:=outputs/osg_closelook}"
