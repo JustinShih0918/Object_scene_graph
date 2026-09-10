@@ -499,3 +499,54 @@ path lottery on the other 90 trials costs more), and the arrival tolerance
 alone, `island_close_arrive`, goes to the full 107
 (`outputs/osg_arrive_full`). The four late mug and scissors successes are
 also a note on the budget: they scored at 420-460 of 500 steps.
+
+### 11:42 — Arrival by distance on the full 107: even in-anchor, -2 cross-anchor; not adopted
+
+`outputs/osg_arrive_full` (`ARRIVE_FULL.md`, `ARRIVE_PAIRED.txt`): in-anchor
+**32/54** (+3 / -3 against the close run), cross-anchor **23/53** (+3 / -5).
+The mechanism did exactly what the subset said: all three 00829 cracker
+boxes now stop at 0.46, 0.98 and 0.99 m instead of spinning at the goal,
+and "committed, never arrived" is 0. The losses are the same shape as the
+radius arm's: ending the first, wrong approach a few centimetres earlier
+changes the pose the search resumes from, and three cross-anchor cracker
+boxes the close run found on a later attempt (0.55-0.92 m at 210-224 steps)
+are now wrong commits and a budget. Median steps 244 -> 294 in-anchor.
+
+**Decision: `island_close` stays the working configuration** (32/54,
+25/53). `approach_arrival_m` stays in the code, off, as the fix for a real
+defect (the spin at the goal) that this benchmark does not reward on net.
+
+## Where the morning ends
+
+| split | tight ring (start) | **island + close** | DualMap measured | paper | goal |
+|---|---:|---:|---:|---:|---:|
+| in-anchor | 24/54 = 44.4% | **32/54 = 59.3%** | 35/54 = 64.8% | 70 | 70 |
+| cross-anchor | 15/53 = 28.3% | **25/53 = 47.2%** | 16/53 = 30.2% | 50 | 50 |
+
+Both against the tight ring at p < 0.05 on the sign test (0.039 / 0.013).
+Preset `dualmap_protocol_osg_look_flat_anchor_v2_island_close`; four
+mechanisms carried it: the flat prior, the look before absence, the
+stale-anchor policy with twin retirement, the island-constrained navmesh
+snap, and the closing walk on the navmesh.
+
+What the last three arms taught, and what it means for the next step:
+
+1. **The benchmark has a noise floor of about +-3 trials per split for any
+   change that touches where an approach ends.** Three arms whose
+   mechanisms converted every trial they were aimed at (+7, +3, +4 on
+   their subsets, none lost) came back even or negative on the full 107,
+   each time by re-routing the exploration of trials they were not aimed
+   at. Runs are deterministic ([[osg-repeat-is-exact-on-hard-subset]]),
+   so this is sensitivity, not randomness: a different pose at step 100
+   is a different episode. Below about four trials, the mechanism counters
+   are the result and SR is not.
+2. **The ceiling under the 1 m rule on this dataset is near.** Of the 22
+   in-anchor failures: 12 are scissors and mug beyond a metre (detectable
+   only inside ~1 m, three genuine successes prove it), 8 are objects more
+   than a metre from any navigable floor point that DualMap fails too, and
+   the last 2 are the stale-prior stops where the object moved away from
+   the floor side. 70% in-anchor (38/54) is not attainable without either
+   the substitution (DualMap rerun, ~10 h) or a different success rule.
+3. **Cross-anchor is 2 trials from the paper's 50%**, and the remaining
+   failures are search exposure (never in view 4, seen never named 13),
+   where the noise floor is the same size as the gap.
