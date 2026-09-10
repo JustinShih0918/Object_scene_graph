@@ -37,7 +37,10 @@ from ..core.paths import collector_data_root
 
 
 DATA_ROOT = Path(os.environ.get("OSG_DATA_ROOT", collector_data_root()))
-RELEASE_ROOT = DATA_ROOT / "dualmap/HM3D_collect"
+# A sibling copy of the release with assets swapped (scripts/make_dualmap_swap.py)
+# is selected by pointing this at the copy; the copy's `swap.json` renames the
+# queries below. The released data itself is never edited.
+RELEASE_ROOT = Path(os.environ.get("OSG_DUALMAP_RELEASE_ROOT", str(DATA_ROOT / "dualmap/HM3D_collect")))
 OBJECTS_ROOT = DATA_ROOT / "objects/ycb/configs"
 
 SUCCESS_DISTANCE_M = 1.0
@@ -95,7 +98,45 @@ STATIC_QUERIES = {
     ),
 }
 
+
+
+def _load_swap(root: Path) -> Dict[str, Any]:
+    path = root / "swap.json"
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+SWAP = _load_swap(RELEASE_ROOT)
+if SWAP:
+    # Rename the swapped queries everywhere the protocol names them, and teach
+    # the handle table the new assets. Trial ids change with the query name;
+    # `load_reference` maps them back to the released ids for start poses.
+    _rename = dict(SWAP.get("queries", {}))
+    for _old, _new in SWAP.get("handles", {}).items():
+        HANDLE_TO_QUERY[_new] = _rename.get(HANDLE_TO_QUERY.pop(_old, _old), _new)
+    TARGETS = {scene: tuple(_rename.get(q, q) for q in qs) for scene, qs in TARGETS.items()}
+    STATIC_QUERIES = {scene: tuple(_rename.get(q, q) for q in qs) for scene, qs in STATIC_QUERIES.items()}
+
 YCB_QUERIES = frozenset(HANDLE_TO_QUERY.values())
+
+
+def swapped_trial_id(released_id: str) -> str:
+    """The id a released trial has under the active swap (identity without one)."""
+    if not SWAP:
+        return released_id
+    scene, condition, layout, query = released_id.split("__", 3)
+    fwd = {k.replace(" ", "_"): v.replace(" ", "_") for k, v in SWAP.get("queries", {}).items()}
+    return f"{scene}__{condition}__{layout}__{fwd.get(query, query)}"
+
+
+def released_trial_id(trial_id: str) -> str:
+    """The id this trial had in the released protocol (identity without a swap)."""
+    if not SWAP:
+        return trial_id
+    scene, condition, layout, query = trial_id.split("__", 3)
+    back = {v.replace(" ", "_"): k.replace(" ", "_") for k, v in SWAP.get("queries", {}).items()}
+    return f"{scene}__{condition}__{layout}__{back.get(query, query)}"
 
 PUBLISHED = {
     ("00829-QaLdnwvtxbs", "in_anchor"): (12, 18),

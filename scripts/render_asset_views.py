@@ -38,7 +38,8 @@ THEIR_CLASSES = VENDOR / "config/class_list/hm3d300_classes_ycb.txt"
 THEIR_NAME = {"tin can": "soup can", "red plate": "plate", "blue plastic pitcher": "pitcher"}
 # Longest extent of each YCB asset (m), from the meshes; the circle drawn.
 EXTENT_M = {"scissors": 0.202, "mug": 0.117, "bowl": 0.161, "cracker box": 0.213,
-            "plate": 0.261, "pitcher": 0.242, "soup can": 0.102, "banana": 0.178}
+            "plate": 0.261, "pitcher": 0.242, "soup can": 0.102, "banana": 0.178,
+            "mustard bottle": 0.19, "coffee can": 0.14, "toy airplane": 0.23, "bleach bottle": 0.25}
 
 
 def hz(a, b):
@@ -77,6 +78,12 @@ def main(cfg: DictConfig) -> None:
     env = build_env(cfg)
     detector = build_detector(cfg)
     their_names = [n.strip() for n in THEIR_CLASSES.read_text().splitlines() if n.strip()]
+    # A swapped-in asset has no entry in DualMap's list; its rerun would add
+    # one, so the test gives its detector the same name.
+    for trial in env.trials:
+        name = THEIR_NAME.get(trial["query"], trial["query"])
+        if name not in their_names:
+            their_names.append(name)
     theirs = YOLOWorld(str(THEIR_WEIGHTS))
     theirs.set_classes(their_names)
 

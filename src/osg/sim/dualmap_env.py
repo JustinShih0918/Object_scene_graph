@@ -44,6 +44,7 @@ from ..eval.dualmap_release import (
     distance_to_target,
     protocol,
     shortest_success_path,
+    swapped_trial_id,
     trial_targets,
 )
 from .habitat_env import HabitatObjectNavEnv, make_objectnav_config
@@ -130,6 +131,9 @@ def load_reference(run_root: Path) -> Dict[str, Dict[str, Any]]:
     for path in sorted(run_root.glob("trials/*/result.json")):
         record = json.loads(path.read_text(encoding="utf-8"))
         out[str(record["trial_id"])] = record
+        # Under an asset swap the trial is renamed after its new query; the
+        # start pose is the released trial's, so alias it under the new id.
+        out.setdefault(swapped_trial_id(str(record["trial_id"])), record)
     if not out:
         raise FileNotFoundError(f"no DualMap trial results under {run_root}")
     return out
