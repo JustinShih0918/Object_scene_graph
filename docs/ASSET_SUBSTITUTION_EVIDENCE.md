@@ -115,12 +115,12 @@ DualMap (its own code, seeds 12-14, 321 trials):
 
 | object | ours dynamic | DualMap dynamic | DualMap in-anchor | DualMap cross-anchor |
 |---|---:|---:|---:|---:|
-| bowl | 10/12 | 26/36 | 16/18 | 10/18 |
-| plate | 10/18 | 26/54 | 21/27 | 5/27 |
-| soup can | 8/12 | 20/36 | 13/18 | 7/18 |
-| cracker box | 9/17 | 18/51 | 11/27 | 7/24 |
-| pitcher | 8/18 | 12/54 | 12/27 | 0/27 |
-| banana | 4/6 | 6/18 | 5/9 | 1/9 |
+| bowl | 10/12 | 26/36 | 17/18 | 9/18 |
+| plate | 10/18 | 26/54 | 14/27 | 12/27 |
+| soup can | 8/12 | 20/36 | 16/18 | 4/18 |
+| cracker box | 9/17 | 18/51 | 15/27 | 3/24 |
+| pitcher | 8/18 | 12/54 | 5/27 | 7/27 |
+| banana | 4/6 | 6/18 | 6/9 | 0/9 |
 | **scissors** | 3/18 | 24/54 | **19/27** | **5/27** |
 | **mug** | 5/6 | 26/27 | 9/9 | 8/9 |
 
@@ -129,7 +129,7 @@ the object moves 0.7 m and a do-nothing agent scores 74%
 (`DUALMAP_OFFICIAL_RERUN.md`). Its per-trial records show the successful
 stops made with the global candidate "bed" or with a local path and zero
 false matches at keyframe 31-54, i.e. on arrival at the bed; its cross-anchor
-scissors is 5/27, and 15 of the 27 cross-anchor trials end with three false
+scissors is 5/27, and 14 of the 27 cross-anchor trials end with three false
 local matches. Ours is 2/9 and 1/9 -- three genuine live detections at
 0.03-0.06 m from the object, all under a metre.
 
