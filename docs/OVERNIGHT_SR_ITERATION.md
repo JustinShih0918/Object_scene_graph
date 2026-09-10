@@ -551,6 +551,48 @@ What the last three arms taught, and what it means for the next step:
    failures are search exposure (never in view 4, seen never named 13),
    where the noise floor is the same size as the gap.
 
+## 20:12 — The prior map was built in the wrong world; rebuilding from the release
+
+Probing DualMap's feature matching (`docs/FEATURE_MEMORY_PROBE.md`) turned up a
+provenance bug that has nothing to do with features. `outputs/maps_v5` -- the
+prior map every arm above loads -- is built by `scripts/campaign/rebuild_maps.sh`
+with `ycb.layout_root=outputs/substituted_layouts`. Those layouts are the
+released ones with `037_scissors` replaced by `021_bleach_cleanser` at the same
+pose, authored deliberately for the *authored* YCB benchmark because neither
+detector can name the scissors asset. The DualMap-protocol episodes inject the
+RELEASED layout, so every scored run started from a map holding a bleach
+cleanser where the scissors is, and no scissors at all. The stored crop 0.01 m
+from each scene's scissors is visibly a bottle, at detector confidence
+0.62 / 0.78 / 0.82, and the released layouts place no bleach cleanser anywhere.
+
+The fix is the map, not the code. `rebuild_maps.sh` now takes `LAYOUT_ROOT`
+(default unchanged) and `SCENES` (one process per scene, since only the episodes
+*within* a scene must run in order). `outputs/collector_layouts` is the faithful
+import of `data/dualmap/HM3D_collect` -- verified object-for-object and
+pose-for-pose against the source, the only difference being 00848's duplicate
+mug, which shares semantic id 98 with the first and which six of its seven
+layouts omit. Building `outputs/maps_released` from it:
+
+```bash
+for scene in 00829-QaLdnwvtxbs 00848-ziup5kvtCCR 00880-Nfvxx8J5NCo; do
+  SCENES="$scene" LAYOUT_ROOT=outputs/collector_layouts \
+    scripts/campaign/rebuild_maps.sh outputs/maps_released &
+done
+MAP_ROOT=outputs/maps_released ARMS=flat_anchor_v2_island_close \
+  TRIAL_SET=data/splits/dualmap_all.json SHARDS_PER_SCENE=2 MAX_PARALLEL=6 \
+  OUT_ROOT=outputs/osg_released_maps scripts/run_close_look_ab.sh
+```
+
+The scissors mapping episode is expected to find nothing -- recall is 0.00
+beyond a metre -- and that is the point: the map then holds what the detector
+can really see in the world the benchmark scores, instead of a phantom.
+
+Expect a small SR effect rather than a large one. The phantom track carries the
+label `bleach bottle`, and the candidate path is keyed on the target label, so
+it was never proposed as a scissors; what changes is the surface prior, the
+exploration it drove, and the honesty of every scissors number on this
+benchmark.
+
 ## Appendix: presets of the arms that were not carried forward
 
 Removed from `configs/experiment/` in the clean-up of 2026-09-10; each is its parent preset plus the overrides below, so any logged arm can be recomposed by hand (`+experiment=<parent>` and the overrides on the command line).
