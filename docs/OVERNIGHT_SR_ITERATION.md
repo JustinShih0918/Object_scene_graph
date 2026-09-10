@@ -463,3 +463,16 @@ radius changes every path, not only the last one, and the sign on the full
 107 is what matters. Goes into the combined preset
 `island_close_arrive_r10` with the arrival tolerance once the spin subset
 reports.
+
+### 09:26 — Arrival by distance on the 9 spin failures: 3 converted, none lost
+
+`outputs/osg_next_arrive/flat_anchor_v2_island_close_arrive` against the
+close run on the same ids: in-anchor **2/5**, cross-anchor **1/4**. The two
+00829 cracker boxes that had spun at the goal now stop at 0.98 and 0.99 m
+on their third attempt (293 and 295 steps where the close run spent 500 and
+never stopped); a 00848 pitcher stops at 0.73 m. Arrivals declared by
+distance: 5 in 9 trials. The third cracker box (0116) was not in this split
+because its spin ran into the budget rather than the deadline, and is
+covered by the full run. Combined with the radius in
+`island_close_arrive_r10`, in flight on the full 107
+(`outputs/osg_combined_full`).
