@@ -417,3 +417,35 @@ failures left (scissors and mug hold 12 of the 22): the stale-prior stops at
 whether the failed near-miss stop's own place retirement
 (`failed_attempt_disables_place`, 0.5 m) is hiding the object's new position
 from a later live detection -- in-anchor the object moved only 0.7 m.
+
+### 09:00 — What is left in-anchor: two mechanisms and a shared ceiling
+
+The 15 attainable in-anchor failures of `island_close` (scissors and mug
+excluded), read against DualMap's own per-trial results
+(`outputs/dualmap_official_bench/seed12/trials/*/result.json`):
+
+- **8 are DualMap failures too**, and in every one the object's nearest
+  navigable floor point is more than a metre away on habitat's own navmesh
+  (three 00848 pitchers, two 00880 plates, two 00880 cracker boxes, the
+  00829 pitcher; 1.04-1.16 m on the shipped mesh). A shared ceiling under
+  the 1 m rule, like scissors and mug.
+- **The three 00829 cracker boxes are a bug, not a search problem.** The
+  agent commits to a live track 0.03-0.14 m from the box, drives to within
+  0.11-0.13 m of its viewpoint goal, and never stops: the follower reports
+  arrival only inside its 0.1 m goal radius, and 0.25 m steps circle it
+  forever. Across the run, 14 final approaches spent 60-201 steps within
+  0.3 m of their goal (9 failures). `agent.approach_arrival_m` (commit
+  65776cf) consumes the path within 0.3 m, so the closing walk and the stop
+  follow. Arm `island_close_arrive`, first on the 9 spin failures
+  (`data/splits/dualmap_spin.json`).
+- **The last 8 cm are DualMap's navmesh.** HM3D ships navmeshes cut for a
+  0.10 m agent and DualMap drives on them; ours is recut for 0.18 m, so
+  every floor edge sits 8 cm farther out. The 00848 banana: DualMap stood
+  at 0.91 m, our closing walk reached the edge at 1.09 m; the shipped mesh
+  puts the floor at 0.93 m, ours at 1.11 m. Arm `island_close_r10`
+  (`agent.agent_radius: 0.1`, height and camera unchanged) on the 16
+  near-miss trials of the close run (`data/splits/dualmap_nearmiss2.json`)
+  is in flight. The radius changes every path, so the full 107 decides it.
+
+The soup can (00829) and cracker box (00848) that DualMap scores are
+detector walls here (0 detections in 19 and 0 close, centred keyframes).

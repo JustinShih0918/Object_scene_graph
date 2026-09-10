@@ -1,0 +1,121 @@
+{
+  "reference_run": "outputs/osg_close_full",
+  "rules": [
+    "spin_at_goal"
+  ],
+  "dropped_queries": [],
+  "selected_on": "failed trials whose last approach spent >= 60 steps within 0.3 m of its goal without the follower reporting arrival",
+  "counts": {
+    "total": 9,
+    "by_condition": {
+      "in_anchor": 5,
+      "cross_anchor": 4
+    },
+    "by_scene": {
+      "00829-QaLdnwvtxbs": 3,
+      "00848-ziup5kvtCCR": 2,
+      "00880-Nfvxx8J5NCo": 4
+    }
+  },
+  "trials": [
+    {
+      "trial_id": "00829-QaLdnwvtxbs__in_anchor__0117__cracker_box",
+      "scene": "00829-QaLdnwvtxbs",
+      "condition": "in_anchor",
+      "query": "cracker box",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 500,
+      "spin_steps": 201,
+      "min_dist_to_goal_m": 0.11
+    },
+    {
+      "trial_id": "00829-QaLdnwvtxbs__in_anchor__0118__cracker_box",
+      "scene": "00829-QaLdnwvtxbs",
+      "condition": "in_anchor",
+      "query": "cracker box",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 500,
+      "spin_steps": 114,
+      "min_dist_to_goal_m": 0.12
+    },
+    {
+      "trial_id": "00829-QaLdnwvtxbs__in_anchor__0118__pitcher",
+      "scene": "00829-QaLdnwvtxbs",
+      "condition": "in_anchor",
+      "query": "pitcher",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 500,
+      "spin_steps": 80,
+      "min_dist_to_goal_m": 0.11
+    },
+    {
+      "trial_id": "00848-ziup5kvtCCR__cross_anchor__0128-1__pitcher",
+      "scene": "00848-ziup5kvtCCR",
+      "condition": "cross_anchor",
+      "query": "pitcher",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 500,
+      "spin_steps": 149,
+      "min_dist_to_goal_m": 0.11
+    },
+    {
+      "trial_id": "00848-ziup5kvtCCR__in_anchor__0116__pitcher",
+      "scene": "00848-ziup5kvtCCR",
+      "condition": "in_anchor",
+      "query": "pitcher",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 500,
+      "spin_steps": 191,
+      "min_dist_to_goal_m": 0.11
+    },
+    {
+      "trial_id": "00880-Nfvxx8J5NCo__cross_anchor__0128-1__pitcher",
+      "scene": "00880-Nfvxx8J5NCo",
+      "condition": "cross_anchor",
+      "query": "pitcher",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 500,
+      "spin_steps": 69,
+      "min_dist_to_goal_m": 0.02
+    },
+    {
+      "trial_id": "00880-Nfvxx8J5NCo__cross_anchor__0128-1__scissors",
+      "scene": "00880-Nfvxx8J5NCo",
+      "condition": "cross_anchor",
+      "query": "scissors",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 500,
+      "spin_steps": 187,
+      "min_dist_to_goal_m": 0.1
+    },
+    {
+      "trial_id": "00880-Nfvxx8J5NCo__cross_anchor__0129-1__cracker_box",
+      "scene": "00880-Nfvxx8J5NCo",
+      "condition": "cross_anchor",
+      "query": "cracker box",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 453,
+      "spin_steps": 100,
+      "min_dist_to_goal_m": 0.07
+    },
+    {
+      "trial_id": "00880-Nfvxx8J5NCo__in_anchor__0116__plate",
+      "scene": "00880-Nfvxx8J5NCo",
+      "condition": "in_anchor",
+      "query": "plate",
+      "rule": "spin_at_goal",
+      "reference_success": 0,
+      "reference_steps": 500,
+      "spin_steps": 77,
+      "min_dist_to_goal_m": 0.0
+    }
+  ]
+}
