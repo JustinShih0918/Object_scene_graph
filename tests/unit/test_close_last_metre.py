@@ -108,3 +108,23 @@ def test_closing_happens_once_per_approach():
     assert action == "stop" and agent.approach.closed
     assert agent.stats["approach_close_started"] == 1
     assert agent.stats["approach_close_arrived"] == 1
+
+
+def test_arrival_by_distance_ends_a_walk_the_follower_never_would():
+    """`approach_arrival_m`: within that distance of the goal the path is
+    consumed even while the follower keeps handing out actions."""
+    cfg = make_cfg(use_habitat_navmesh=True, approach_to_viewpoint=True, approach_arrival_m=0.3)
+    cfg.verification.stop_at_stale_anchor_once = False
+    nav = _Nav(["move_forward"] * 50)  # a follower that never says "arrived"
+    agent = make_agent(cfg, target="chair", nav_fn=nav, reachable_fn=lambda *_: True)
+    agent.approach.start(np.array([3.0, 0.0]), agent_xy=np.zeros(2))
+    agent._goto_deadline = 10_000
+    goal = agent._goal_xy
+    assert agent.approach.step(_frame(goal + np.array([0.5, 0.0]))) == "move_forward"
+    # 0.12 m out: arrived. The viewpoint scan turns run first, then the stop.
+    for _ in range(20):
+        action = agent.approach.step(_frame(goal + np.array([0.12, 0.0])))
+        if action == "stop":
+            break
+    assert action == "stop" and agent.stats["approach_arrived_by_distance"] >= 1
+    assert len(nav.plan) >= 30  # the follower was not consulted for the arrival

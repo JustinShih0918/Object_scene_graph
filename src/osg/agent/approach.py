@@ -632,7 +632,18 @@ class ApproachPolicy:
         if self.nav.pointnav is not None:
             return self.nav._follow_to(frame, goal_xy)
         if self.nav._use_navmesh:
-            # navmesh drives to the object; None = arrived
+            # navmesh drives to the object; None = arrived. The follower only
+            # says so inside its 0.1 m goal radius, which 0.25 m steps can
+            # circle forever; `approach_arrival_m` calls it from farther out.
+            tol = float(getattr(self.nav.cfg.agent, "approach_arrival_m", 0.0) or 0.0)
+            if tol > 0.0:
+                agent_xy = frame.camera_position[list(PLANE)]
+                if float(np.linalg.norm(agent_xy - np.asarray(goal_xy, dtype=float))) <= tol:
+                    self.last_follow_none_reason = "arrived_within_tol"
+                    self.nav.stats["approach_arrived_by_distance"] = (
+                        self.nav.stats.get("approach_arrived_by_distance", 0) + 1
+                    )
+                    return None
             return self.nav._nav_fn(goal_xy, self.nav._goal_floor_y_cache)
         need_replan = (
             self.nav._current_path is None

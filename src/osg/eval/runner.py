@@ -154,7 +154,7 @@ def run_eval(cfg) -> dict:
             # "verify_stale_stop_at_nearest_free" "verify_failed_attempt_disables_place"
             # "verify_relook_after_stale_stop"
             # "reachable_via_nearest_free" "navmesh_snap_on_agent_island"
-            # "approach_close_last_metre_m"
+            # "approach_close_last_metre_m" "approach_arrival_m"
             # "verify_target_bypasses_bbox_gate"
             # "verify_terminal" "verify_unreachable_is_absorbing" "verify_vlm_q"
             # "verify_vlm_recall" "viewpoint_stop_m" "voronoi_goal_near_m"

@@ -126,6 +126,15 @@ class AgentConfig:
     # nearest navigable point to the centre and walks there before it stops.
     # 0 keeps the viewpoint as the stopping pose.
     approach_close_last_metre_m: float = 0.0
+    # Arrival by distance on the navmesh. The follower reports arrival only
+    # inside its 0.1 m goal radius, and an agent that moves in 0.25 m steps
+    # can circle a goal at 0.11-0.13 m for a hundred steps without ever
+    # landing in it: on DualMap's released benchmark the three 00829 cracker
+    # boxes were committed from 0.03 m, driven to within 0.13 m of the
+    # viewpoint, and spun there to the deadline. A consumed path is declared
+    # once the agent is within this distance of its approach goal. 0 leaves
+    # arrival to the follower.
+    approach_arrival_m: float = 0.0
     approach_max_steps: int = 12  # ~3 m of travel at forward_m=0.25
     # Tighter-than-default planner/controller stopping precision for the
     # final APPROACH segment only (P1f). HM3D success is a geodesic

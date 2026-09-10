@@ -1,0 +1,14 @@
+# @package _global_
+#
+# On top of the closing walk: arrival by distance. The three 00829 cracker
+# boxes were committed from 0.03 m, driven to within 0.13 m of the viewpoint
+# goal, and then spun there until the deadline or the budget, because the
+# follower reports arrival only inside its 0.1 m goal radius and 0.25 m steps
+# never land in it. Within 0.3 m of the approach goal the path is declared
+# consumed, and the closing walk and the stop follow. One change; see
+# core/config/agent.py.
+defaults:
+  - dualmap_protocol_osg_look_flat_anchor_v2_island_close
+
+agent:
+  approach_arrival_m: 0.3
