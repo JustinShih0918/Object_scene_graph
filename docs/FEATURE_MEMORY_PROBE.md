@@ -173,6 +173,58 @@ works. The 00848 mug is the same story -- its nearest track is now a `dresser`
 0.08 m away, ranked 605 / 800. Controls hold up at 10 / 15 top-5, so the
 mechanism is intact; it simply has no work to do here.
 
+## 3c. How DualMap does it, and why this probe was not a fair test of it
+
+Measured from `outputs/dualmap_official_bench/seed{12,13,14}` (its own trial
+records and per-keyframe traces) and from its source in
+`outputs/dualmap_comparison/vendor/DualMap`.
+
+**It works, on the mug, completely.** Over three seeds the mug is 20/21: 9/9
+in-anchor, 8/9 cross-anchor, 3/3 static. Twenty of the twenty-one planned a
+local path -- it genuinely re-detected the object and navigated to it -- and it
+stopped 0.33-0.94 m away. Its detector never names the mug (0.06 recall; it
+calls the blob "speaker"), so none of that comes from naming. The scissors is
+much weaker: 19/27 in-anchor, 5/27 cross-anchor, and the anchor it commits to is
+`bed` every time.
+
+**The mechanism is two stages, and neither uses a threshold.** Globally it takes
+the cosine of the query text against every prior-map anchor's own feature and
+the features of what rested on it (`related_objs`), picks the best, and walks
+there. Locally, on arrival, `filter_objects_in_global_bbox` narrows its live map
+to the objects inside that anchor's bounding box and
+`find_best_candidate_with_inquiry` returns `sorted_candidates[0]` -- the plain
+argmax. There is no admission bar to clear, so the matcher cannot fail to
+admit; it always names a best guess and goes.
+
+**What it matches are persistent objects, not frames.** A candidate needs
+`observed_num > 2`, and its feature is the renormalised running mean over every
+detection of it (`utils/object.py:367-375`), optionally 0.7 image + 0.3 the text
+of the detected label. Averaging over views denoises a feature that is very
+noisy on one 2 m crop.
+
+Against that, gate B3 above asked the wrong question. It looked for an absolute
+cosine that would admit the mug in a *single frame* without admitting any of
+~50 co-present regions, and there is none. DualMap never asks for one. It ranks
+a handful of accumulated 3D objects near a surface it has already reached and
+takes the top one. Three things differ at once -- multi-view averaging instead
+of one crop, a spatially scoped competitor set instead of the whole frame, and
+argmax instead of a bar -- and every one of them makes its problem easier than
+the one measured here.
+
+So the honest scope of this report's negative result is narrower than section 3
+implies: **threshold-based admission on single-frame crops does not work**, and
+that is measured. **Argmax ranking of accumulated tracks near a committed
+surface is untested**, and it is what DualMap actually does. Part B's own numbers
+are consistent with it being worth testing: some region covers the mug's pixel on
+85.7% of frames in the 2-3 m band and the feature already ranks the true one
+first on 38.6% of them, against ~50 competitors rather than the few that would
+survive the spatial scoping.
+
+The prior-map half of section 3b still stands on its own: for 00848 and 00880
+our map contains no scissors track under any name, so nothing global can retrieve
+it, and DualMap's own scissors numbers (5/27 cross-anchor) say its global stage
+does not solve that either.
+
 ## 4. What was built, and what was not
 
 Kept, because the measurement should be repeatable:
