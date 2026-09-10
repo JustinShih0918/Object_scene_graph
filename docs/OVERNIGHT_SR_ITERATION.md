@@ -273,3 +273,38 @@ live sighting of the target on the walk (the track is then `seen_live` and
 the rule stands down), and the failures that remain are "committed
 elsewhere" (6) and "admitted, never committed" (5), neither of which a
 second look at the stale surface addresses. Not carried forward.
+
+### 05:59 — `v2_island` on the full 107: in-anchor 30/54, cross-anchor 23/53
+
+`outputs/osg_island_full` (report `ISLAND_FULL.md`, four arms paired on 107
+ids). The two 00880 shards of this run were killed at 00:07 by a stray
+`pkill` while a waiter was being stopped; the 28 unfinished 00880 trials were
+rerun from 05:32 as four shards (the seven finished ones kept under
+`done0/`, `done1/`), and the run is the same preset and code throughout
+(commit e16f11c).
+
+| split | tight ring | previous best (`anchor2`) | **island** | DualMap measured | paper |
+|---|---:|---:|---:|---:|---:|
+| in-anchor | 24/54 = 44.4% | 24/54 | **30/54 = 55.6%** | 35/54 = 64.8% | 70 |
+| cross-anchor | 15/53 = 28.3% | 20/53 | **23/53 = 43.4%** | 16/53 = 30.2% | 50 |
+
+Against the tight ring: in-anchor +10 / -4 (p = 0.18), cross-anchor +12 / -4
+(p = 0.077). Against the previous best on the same ids: in-anchor +8 / -2,
+cross-anchor +7 / -4; every scene is ahead or level (in-anchor 11/10/9 vs
+8/8/8; cross 11/7/5 vs 11/5/4). The mechanism moved as on the subsets:
+never-in-view 6 -> 0 in-anchor and 12 -> 2 cross-anchor, target named in 35
+of 53 cross-anchor trials (was 20), own surface reached in 12 of the
+baseline's 32 no-detection cross failures (was 6), trials at budget 47 ->
+43, median steps 421 -> 371 with 9 m more travelled. The six lost trials are
+two 00880 bowls in-anchor (stopped at 258 and 231 steps, elsewhere) and four
+cross-anchor budget runs (plate x3, banana): the search now goes further and
+sometimes arrives later.
+
+Without scissors and mug, which no arm can name, the run is 25/42 in-anchor
+and 20/41 cross-anchor. **`v2_island` is the working configuration**
+(`configs/experiment/dualmap_protocol_osg_look_flat_anchor_v2_island.yaml`).
+Cross-anchor is 13 points above DualMap's measured number and 7 short of the
+paper; in-anchor is 9 below DualMap and 14 below the goal. What is left
+in-anchor is no longer reachability: the funnel is "seen, never named" 9
+(scissors/mug 7 of them), "committed elsewhere" 7, "admitted, never
+committed" 5, "committed, never arrived" 3.
