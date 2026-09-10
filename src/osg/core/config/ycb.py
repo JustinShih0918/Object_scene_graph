@@ -22,7 +22,10 @@ YCB_TARGET_LABELS: Dict[str, str] = {
     "002_master_chef_can": "coffee can",
     "003_cracker_box": "cracker box",
     "005_tomato_soup_can": "tin can",
-    "006_mustard_bottle": "mustard bottle",
+    # "mustard bottle" scored 0.31-0.39 on the asset at 0.6-2 m and 0/5 in situ
+    # on the 15-scene runs; "yellow bottle" scores 0.50-0.93 on the same frames
+    # (scripts/render_asset_views.py, render.names probe, 2026-09-10).
+    "006_mustard_bottle": "yellow bottle",
     "011_banana": "banana",
     "019_pitcher_base": "blue plastic pitcher",
     "021_bleach_cleanser": "bleach bottle",

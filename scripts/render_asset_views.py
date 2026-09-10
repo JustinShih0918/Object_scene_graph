@@ -146,7 +146,17 @@ def main(cfg: DictConfig) -> None:
             their_any = sorted(((float(c), their_names[int(k)]) for b, k, c in
                                 zip(res.boxes.xyxy.tolist(), res.boxes.cls.tolist(), res.boxes.conf.tolist())
                                 if covers(b, u, v)), reverse=True)[:3]
+            # Which name would our detector answer to? Optional `render.names`
+            # runs each as the sole vocabulary on this frame.
+            name_scores = {}
+            for name in list(cfg.render.get("names", []) or []):
+                detector.set_vocabulary([str(name)])
+                name_scores[str(name)] = round(max((float(det.score) for det in detector.detect(rgb)
+                                                    if covers(det.bbox_xyxy, u, v)), default=0.0), 3)
+            if name_scores:
+                detector.set_vocabulary(target_vocabulary(label, cfg.detector.vocabulary))
             r_px = frame.intrinsics.fx * (0.5 * EXTENT_M.get(query, 0.15)) / z
+            cv2.imwrite(str(odir / f"raw_d{d:.1f}.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
             bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             cv2.circle(bgr, (int(u), int(v)), int(max(r_px, 6)), (0, 0, 255), 2)
             tag = f"{query} @ {hz(s, target):.2f} m  ours {our_best:.2f}  DualMap {their_best:.2f}"
@@ -166,7 +176,8 @@ def main(cfg: DictConfig) -> None:
             row = {"query": query, "trial_id": ep.episode_id, "range_m": round(hz(s, target), 2),
                    "occluded": bool(occluded), "pixel": [round(u), round(v)], "object_radius_px": round(r_px, 1),
                    "ours_score": round(our_best, 3), "ours_top": our_any,
-                   "dualmap_score": round(their_best, 3), "dualmap_top": their_any}
+                   "dualmap_score": round(their_best, 3), "dualmap_top": their_any,
+                   "name_scores": name_scores}
             results.append(row)
             print("  ", json.dumps(row), flush=True)
         if tiles:
