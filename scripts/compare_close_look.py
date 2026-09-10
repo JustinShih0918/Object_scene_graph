@@ -137,6 +137,15 @@ def stat(r: Dict[str, Any], key: str) -> int:
     return int((r.get("agent_stats") or {}).get(key, 0) or 0)
 
 
+def dm(r: Dict[str, Any]) -> Dict[str, Any]:
+    """The released-benchmark block of a record: condition, attempts, success."""
+    return (r.get("authored_layout") or {}).get("dualmap") or {}
+
+
+def condition(r: Dict[str, Any]) -> str:
+    return str(dm(r).get("condition"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arm", action="append", required=True,
@@ -170,11 +179,16 @@ def main() -> None:
                      med([stat(r, "close_look_steps") / max(1, stat(r, "close_look_started"))
                           for r in rs if stat(r, "close_look_started")]),
                      str(sum(stat(r, "absence_abandon") for r in rs)),
-                     str(sum(stat(r, "glance_updates") for r in rs))])
+                     str(sum(stat(r, "glance_updates") for r in rs)),
+                     str(sum(stat(r, "approach_close_started") for r in rs)),
+                     str(sum(stat(r, "approach_close_worse") for r in rs)),
+                     str(sum(stat(r, "approach_close_no_gain") for r in rs))])
     lines += table("1. Did the knob move?",
                    ["arm", "looks started", "before absence", "opportunistic", "detected during a look",
-                    "re-approached", "drive timed out", "median steps per look", "absence_abandon", "glance updates"],
-                   rows, "If `looks started` is 0 in an arm meant to look, nothing below is evidence of anything.")
+                    "re-approached", "drive timed out", "median steps per look", "absence_abandon", "glance updates",
+                    "closing walks", "walked back", "close declined"],
+                   rows, "If `looks started` is 0 in an arm meant to look, nothing below is evidence of anything. "
+                   "`closing walks` is the last-metre walk (`agent.approach_close_last_metre_m`).")
 
     # 2. The object's own surface, cross-anchor failures without a detection in the BASELINE
     base = arms[base_name]
@@ -273,6 +287,29 @@ def main() -> None:
                      med([float(r["authored_layout"]["dualmap"].get("travelled_m") or 0) for r in rs]),
                      str(sum(stat(r, "close_look_steps") for r in rs))])
     lines += table("4. What it cost", ["arm", "median steps", "at budget", "median travelled m", "steps spent looking"], rows)
+
+    # 4b. Where the stops landed: every attempt's horizontal distance to the
+    # object, by band. A stop in (1.0, 1.6] is a near miss -- the track was
+    # usually within 0.6 m of the object and the pose was the problem.
+    bands = [("<= 1.0", 0.0, 1.0), ("1.0-1.3", 1.0, 1.3), ("1.3-1.6", 1.3, 1.6),
+             ("1.6-2.0", 1.6, 2.0), ("> 2.0", 2.0, 1e9)]
+    rows = []
+    for c in ("in_anchor", "cross_anchor"):
+        for name, recs in arms.items():
+            rs = [recs[t] for t in sorted(common) if condition(recs[t]) == c]
+            ds = [float(a.get("distance_horizontal_m", 1e9))
+                  for r in rs for a in (dm(r).get("attempts") or [])]
+            near = sum(1 for r in rs if not dm(r).get("success")
+                       and any(1.0 < float(a.get("distance_horizontal_m", 1e9)) <= 1.6
+                               for a in (dm(r).get("attempts") or [])))
+            rows.append([c, name, str(len(ds))]
+                        + [str(sum(1 for d in ds if lo < d <= hi)) if lo > 0 else str(sum(1 for d in ds if d <= hi))
+                           for _, lo, hi in bands]
+                        + [str(near), str(sum(1 for r in rs if not dm(r).get("attempts")))])
+    lines += table("4b. Where the stops landed",
+                   ["split", "arm", "stops"] + [b[0] for b in bands] + ["failed trials with a stop in (1.0, 1.6]",
+                                                                        "trials with no stop"],
+                   rows, "Every attempt's horizontal distance to the object. The 1 m rule scores the first band only.")
 
     # 5. Funnel
     def stage(r) -> str:
