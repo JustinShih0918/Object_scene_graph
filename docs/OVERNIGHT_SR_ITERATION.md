@@ -377,3 +377,43 @@ side) and one geometry-bound plate (1.05 m, best navigable 0.58 m but the
 walk was declined as no gain from that pose). The full 107 of
 `flat_anchor_v2_island_close` is in flight (`outputs/osg_close_full`, six
 shards).
+
+### 08:50 — Closing walk on the full 107: in-anchor 32/54, cross-anchor 25/53
+
+`outputs/osg_close_full` (`CLOSE_FULL.md`, `CLOSE_PAIRED.txt`), preset
+`dualmap_protocol_osg_look_flat_anchor_v2_island_close`, commit 8cb9763.
+
+| split | tight ring | island | **island + close** | DualMap measured | paper |
+|---|---:|---:|---:|---:|---:|
+| in-anchor | 24/54 = 44.4% | 30/54 | **32/54 = 59.3%** | 35/54 = 64.8% | 70 |
+| cross-anchor | 15/53 = 28.3% | 23/53 | **25/53 = 47.2%** | 16/53 = 30.2% | 50 |
+
+Against the tight ring: in-anchor +10 / -2 (sign test p = 0.039), cross-anchor
++12 / -2 (p = 0.013) -- the first arms of the night to clear p < 0.05 on
+107 trials. Against the island run on the same ids: in-anchor **+2 / -0**,
+cross-anchor **+5 / -3**. The walk started 52 times, walked back once, was
+declined 16 times; stops within a metre went 30 -> 32 in-anchor and 23 -> 25
+cross-anchor, median steps 371 -> 364, trials at budget 43 -> 41, 4 m less
+travelled. Every scene is level or ahead (in-anchor 11/10/11 vs 11/10/9;
+cross 11/9/5 vs 11/7/5). Without scissors and mug: 27/42 and 22/41.
+
+The three cross-anchor losses are not the walk failing: a 00880 pitcher
+whose track sat 0.44 m off the object, so walking to 0.61 m from the track
+put the agent 1.01 m from the object where the island run's short stop had
+been 0.74 m (a track-error case; the walk is neutral in expectation there);
+a 00848 soup can the island run found at step 282 after the same first
+attempt, which this run's later search did not (path divergence); and a
+00829 bowl that used its three attempts on the same two wrong commits in
+both runs and got a third lucky one only in the island run. The gains are
+all the near-miss shape: 1.16 -> 0.84, 1.77 -> 0.91, 1.29 -> 0.86,
+1.04 -> 0.60, 1.01 -> 0.63 m.
+
+**`island_close` is the working configuration.** Cross-anchor is 17 points
+above DualMap's measured number and 3 short of the paper; in-anchor is 5
+below DualMap and 11 below the goal. In-anchor needs +6 of the 15 attainable
+failures left (scissors and mug hold 12 of the 22): the stale-prior stops at
+1.15-1.56 m (5), "admitted, never committed" (5), and what remains of
+"committed elsewhere" (6, overlapping the first). The next question is
+whether the failed near-miss stop's own place retirement
+(`failed_attempt_disables_place`, 0.5 m) is hiding the object's new position
+from a later live detection -- in-anchor the object moved only 0.7 m.
