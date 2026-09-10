@@ -69,8 +69,19 @@ def test_a_consumed_path_a_metre_out_walks_to_the_navmesh_point_nearest_the_trac
     assert abs(agent.approach.diag["close_to_m"] - 0.4) < 1e-6
 
 
+def test_a_closing_walk_that_ends_farther_out_walks_back_to_the_viewpoint():
+    agent, nav = _arrived_agent(lambda xy, floor_y=None: np.array([2.6, 0.0]),
+                                plan=[None, "move_forward", None, "move_forward"])
+    assert agent.approach.step(_frame([1.8, 0.0])) == "move_forward"  # closing
+    # The follower gave up at (1.2, 0): 1.8 m out, farther than the 1.2 m it left.
+    assert agent.approach.step(_frame([1.2, 0.0])) == "move_forward"  # walking back
+    assert np.allclose(nav.goals[-1], [1.8, 0.0]) and agent.stats["approach_close_worse"] == 1
+    assert agent.approach.step(_frame([1.8, 0.0])) == "stop"
+    assert agent.approach.closed and agent.stats["approach_close_started"] == 1
+
+
 def test_no_closing_when_the_navmesh_point_is_no_nearer():
-    agent, nav = _arrived_agent(lambda xy, floor_y=None: np.array([1.85, 0.0]))
+    agent, nav = _arrived_agent(lambda xy, floor_y=None: np.array([1.83, 0.0]))
     action = agent.approach.step(_frame([1.8, 0.0]))
     assert action == "stop"
     assert agent.stats["approach_close_no_gain"] == 1 and "approach_close_started" not in agent.stats

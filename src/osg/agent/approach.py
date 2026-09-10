@@ -68,6 +68,8 @@ class ApproachPolicy:
         # and whether that walk has been made for this approach.
         self.closing = False
         self.closed = False
+        self.close_start_xy: Optional[np.ndarray] = None
+        self.close_retreating = False
         # Calibration data for approach_stop_bbox_px (P1c): every bbox_px
         # observed during APPROACH, plus why the episode's approach ended.
         self.bbox_log: list = []
@@ -483,12 +485,33 @@ class ApproachPolicy:
         obj_xy = self.nav._target_obj_xy
         stats = self.nav.stats
         if self.closing:
-            # The closing walk was consumed: this is the pose to stop at.
+            # The closing walk was consumed: this is the pose to stop at --
+            # unless the follower gave up short and left the agent farther
+            # from the track than the viewpoint it came from (measured twice
+            # on the near-miss subset, 1.41 -> 1.53 m and 1.49 -> 2.14 m), in
+            # which case walk back to the viewpoint and stop there.
             self.closing = False
             self.closed = True
-            if obj_xy is not None and self.diag is not None:
-                self.diag["close_to_m"] = float(np.linalg.norm(agent_xy - obj_xy))
+            here_d = float(np.linalg.norm(agent_xy - obj_xy)) if obj_xy is not None else 0.0
+            if self.diag is not None:
+                self.diag["close_to_m"] = here_d
             stats["approach_close_arrived"] = stats.get("approach_close_arrived", 0) + 1
+            if (not self.close_retreating and self.close_start_xy is not None and obj_xy is not None
+                    and here_d > float(np.linalg.norm(self.close_start_xy - obj_xy)) + 0.05):
+                stats["approach_close_worse"] = stats.get("approach_close_worse", 0) + 1
+                self.close_retreating = True
+                self.closing = True
+                self.closed = False
+                self.nav._goal_xy = self.close_start_xy.copy()
+                self.nav._current_path = None
+                self.path_goal = None
+                self.steps_left = max(int(self.steps_left), 40)
+                self.nav._goto_deadline = max(int(self.nav._goto_deadline), self.nav.step_count + 40)
+                action = self.follow_to(frame, self.nav._goal_xy)
+                if action is not None:
+                    return action
+                self.closing = False
+                self.closed = True
             return None
         fn = getattr(self.nav, "_nearest_navigable_fn", None)
         if fn is None or obj_xy is None:
@@ -500,11 +523,12 @@ class ApproachPolicy:
         if goal is None:
             return None
         goal = np.asarray(goal, dtype=float).ravel()[:2]
-        if float(np.linalg.norm(goal - obj_xy)) >= here_d - 0.15:
+        if float(np.linalg.norm(goal - obj_xy)) >= here_d - 0.05:
             stats["approach_close_no_gain"] = stats.get("approach_close_no_gain", 0) + 1
             self.closed = True
             return None
         self.closing = True
+        self.close_start_xy = np.asarray(agent_xy, dtype=float).copy()
         self.nav._goal_xy = goal.copy()
         self.nav._current_path = None
         self.path_goal = None
@@ -558,6 +582,8 @@ class ApproachPolicy:
         self.path_goal = None
         self.closing = False
         self.closed = False
+        self.close_start_xy = None
+        self.close_retreating = False
         if self.nav._use_navmesh:
             # Navmesh drives the FULL distance to the object (no viewpoint
             # pre-positioning), so the short-leg cap (approach_max_steps ~= 3 m)
