@@ -364,3 +364,16 @@ centre is the stale position and the object moved 0.7 m; the nearest floor
 to the stale centre is not nearer to the object. Those are the stale-anchor
 stops that the close look did not convert, and they are a perception
 problem at the look, not a geometry one.
+
+### 07:41 — Second cut on the same 20: 6 converted, none lost; to the full 107
+
+`outputs/osg_next_close2` (commit 8cb9763) against the island run: in-anchor
+**2/12**, cross-anchor **4/8**, no trial lost. The walk started 20 times,
+walked back once, and was declined 7 times. Converted stops: 0.70, 0.81 m
+in-anchor; 0.84, 0.86, 0.60, 0.63 m cross-anchor, at 73-401 steps where the
+island run spent 93-500. The stops that stay outside the metre are the
+prior-track stale stops (1.15-1.56 m, object moved away from the floor
+side) and one geometry-bound plate (1.05 m, best navigable 0.58 m but the
+walk was declined as no gain from that pose). The full 107 of
+`flat_anchor_v2_island_close` is in flight (`outputs/osg_close_full`, six
+shards).
