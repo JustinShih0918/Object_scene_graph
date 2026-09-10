@@ -28,18 +28,26 @@ dynamic mug and scissors trials (`data/splits/dualmap_mug_scissors.json`):
 
 ## Result
 
-| slice | base | `_feat` | `_featp` |
-|---|---:|---:|---:|
-| mug in-anchor | 3/3 | 1/3 | 1/3 |
-| mug cross-anchor | 2/3 | 3/3 | 2/3 |
-| scissors in-anchor | 2/9 | 3/9 | 0/9 |
-| scissors cross-anchor | 1/9 | 1/9 | 2/9 |
-| **total** | **8/24** | **8/24** | **5/24** |
+| slice | base | `_feat` | `_featp` | `_featsz` |
+|---|---:|---:|---:|---:|
+| mug in-anchor | 3/3 | 1/3 | 1/3 | 0/3 |
+| mug cross-anchor | 2/3 | 3/3 | 2/3 | 2/3 |
+| scissors in-anchor | 2/9 | 3/9 | 0/9 | 1/9 |
+| scissors cross-anchor | 1/9 | 1/9 | 2/9 | 1/9 |
+| **total** | **8/24** | **8/24** | **5/24** | **4/24** |
 
-The mechanism is not inert: 44 picks over 24 trials, every one committed, 835
-tracks considered. The presence fusion changed the answer 10 times and lost
-three trials doing it. `_feat` is a flat null on a subset whose noise floor is
-about three trials.
+None of the three helps. The mechanism is not inert -- 44 picks over 24 trials,
+every one committed, 835 tracks considered -- so this is a refutation and not an
+untested knob. The presence fusion changed the answer 10 times and lost three
+trials doing it. `_feat` is a flat null on a subset whose noise floor is about
+three trials; the other two are below it.
+
+The size bound did not rescue it either, and its counters say why: it rejected
+2333 tracks as too large and still chose a lamp 9 times, a pillow 8 and a bed 4.
+The bound is on the track's own mapped ellipsoid, and our ellipsoids for large
+furniture are frequently small fragments of it -- a lamp fitted from a few
+distant views is well under 0.6 m across. Filtering on mapped geometry cannot
+separate "a small object" from "a small piece of a big one".
 
 ## Why, and it is not the matcher
 
@@ -69,9 +77,9 @@ the furniture the object rests on -- on the 160 dumped mug frames a box small
 enough to BE the mug covers it on only 39, and one covering the pixel at all on
 84, the rest being cabinets and beds whose boxes happen to contain it.
 
-`_featsz` addresses the second of these with a bound from mapped geometry alone
+`_featsz` tried to address the second with a bound from mapped geometry alone
 (`local_max_extent_m: 0.6`; every movable query here is under 0.3 m across). It
-cannot address the first.
+could never address the first, and it did not manage the second either: 4/24.
 
 ## What this says about the gap
 
@@ -83,3 +91,27 @@ Our features describe the furniture, so every stage downstream inherits that.
 
 The matching method was never the difference. Adding it changes nothing on its
 own, which is what these arms measure.
+
+## Safety of the branch
+
+With `feature_memory.enabled: false` the shipped `island_close` arm reproduces
+exactly on this code -- 6 of 6 re-run trials identical in steps, success and
+final distance to the millimetre (`outputs/osg_feat_identity`). All three flags
+default off, `pytest tests/unit` is green at 920, and the flattened config diff
+is additions under `feature_memory.*` with nothing moved.
+
+## Recommendation
+
+Do not run these arms on the full 107; a mechanism that is null on the 24 trials
+it was aimed at, with its counters showing it firing 44 times and choosing
+furniture, has already answered. Keep the code behind its flags as the
+measurement, not as a configuration to adopt.
+
+The lever the evidence points at is the first link in the chain: a region
+proposal stage that emits the small object, which is what DualMap's detector
+gives it for free. The class-agnostic proposal replay in
+`scripts/offline_appearance_proposals.py` reached 98.1% plausible proposal
+recall with FastSAM-s where our detector reaches 39/160 on the mug, so the
+offline evidence for that link already exists; what is unknown is its cost in
+the live loop, which `docs/APPEARANCE_REID_AND_CANDIDATE_BUDGET_PLAN.md` never
+budgeted.
