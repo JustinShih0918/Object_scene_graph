@@ -1,0 +1,13 @@
+# @package _global_
+#
+# On top of the closing walk: DualMap's navmesh radius. The scene navmeshes
+# HM3D ships are cut for a 0.10 m agent, and DualMap drives on them; ours is
+# recut for 0.18 m, so every floor edge beside a bed or a desk sits 8 cm
+# farther from the object than DualMap's. The closing walk reaches the edge
+# and still stops at 1.09-1.14 m where DualMap stood at 0.91 m (00848 banana).
+# One change; the 0.88 m height and camera stay.
+defaults:
+  - dualmap_protocol_osg_look_flat_anchor_v2_island_close
+
+agent:
+  agent_radius: 0.1
