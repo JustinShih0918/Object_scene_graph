@@ -236,6 +236,7 @@
   "exploration.search_room_saturation_free": 0,
   "exploration.search_same_room_bonus": 4.0,
   "exploration.search_surface_mass": 1.0,
+  "exploration.search_surface_when_floor_unreachable": false,
   "exploration.search_unreached_credit": 0.25,
   "exploration.select_every": 5,
   "exploration.selector": "utility",

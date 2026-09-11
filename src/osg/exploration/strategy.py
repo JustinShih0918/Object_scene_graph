@@ -327,6 +327,23 @@ class ExplorationStrategy:
                 switched = floor_switch(None)
             if switched:
                 return None
+            if bool(getattr(self.cfg, "search_surface_when_floor_unreachable", False)):
+                # The storey we want exists in the posterior and NOT on the
+                # ground: `try_switch` found no portal to it from here. Measured
+                # on outputs/osg_authored_15, that is the usual case -- 405
+                # requests produced 12 directed attempts, so 97% of them found
+                # nothing to drive to.
+                #
+                # Left alone the round returns a frontier and `_select_surface`
+                # has already returned None, so a standing request switches the
+                # container posterior OFF for as long as it stands -- on the
+                # floor the agent is actually on, with the surfaces it can
+                # actually reach. The request is a wish about another storey; it
+                # should not also be a veto on searching this one.
+                self.stats["floor_unreachable_fallback"] = (
+                    self.stats.get("floor_unreachable_fallback", 0) + 1
+                )
+                surface = self._select_surface(world, best, stay_on_floor=True)
         if surface is not None:
             self.search_container = int(surface.ref_id)
             node = world.scene_graph.containers.get(int(surface.ref_id))
@@ -509,7 +526,7 @@ class ExplorationStrategy:
             return {}
         return {int(c.ref_id): float(c.prior) / peak for c in cands}
 
-    def _select_surface(self, world: WorldView, best_frontier):
+    def _select_surface(self, world: WorldView, best_frontier, stay_on_floor: bool = False):
         """The best mapped surface, if it beats the best frontier on b*d/c.
 
         Both sides are the same index -- `select_frontier` already returns
@@ -558,7 +575,7 @@ class ExplorationStrategy:
                 self.stats.get("cross_floor_request_held", 0) + 1
             )
             selected_floor = int(world.floor_id)
-        if int(selected_floor) != int(world.floor_id):
+        if int(selected_floor) != int(world.floor_id) and not stay_on_floor:
             self.requested_floor = int(selected_floor)
             self.stats["cross_floor_search_requests"] = (
                 self.stats.get("cross_floor_search_requests", 0) + 1
@@ -573,7 +590,8 @@ class ExplorationStrategy:
                 },
             })
             return None
-        self.requested_floor = None
+        if int(selected_floor) == int(world.floor_id):
+            self.requested_floor = None
         cands = [c for c in cands if int(c.floor_key) == int(world.floor_id)]
         # Drive to a pose you can STAND in, not to the middle of the furniture.
         # A container's centre is inside the desk; the follower ends wherever the

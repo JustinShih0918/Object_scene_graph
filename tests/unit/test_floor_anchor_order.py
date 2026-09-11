@@ -186,3 +186,55 @@ def test_holding_the_request_still_searches_this_floor(intrinsics):
     assert surface is not None, "the held round produced no same-floor surface"
     assert surface.ref_id == 1, "planned for a surface that is not on this floor"
     assert planned, "no same-floor path was ever costed"
+
+
+# -------------------------------------- a request that cannot be acted on
+
+def test_an_unreachable_storey_still_leaves_this_floor_searchable(intrinsics):
+    """`try_switch` finds no portal 97% of the time it is asked. While the
+    request stands, the container posterior must not be off on the floor the
+    agent is actually standing on."""
+    agent = _agent(anchor_gate=False)
+    agent.cfg.exploration.search_surface_when_floor_unreachable = True
+    world = _world(agent, intrinsics)
+    agent.exploration.planner = SimpleNamespace(
+        plan=lambda costmap, start, goal: SimpleNamespace(success=True, cost=2.0)
+    )
+    agent.exploration.viewpoint_planner = SimpleNamespace(
+        approach_viewpoint=lambda goal, costmap: goal
+    )
+
+    # The storey is wanted and no portal exists: the switch callback says False.
+    choice = agent.exploration.select(world, lambda cost, floor=None: False)
+
+    assert agent.stats.get("floor_unreachable_fallback", 0) >= 1
+    assert choice is not None and choice.kind == "surface"
+    assert choice.container_id == 1, "fell back to a surface off this floor"
+
+
+def test_the_fallback_is_off_by_default(intrinsics):
+    """Without the flag the standing request still suppresses the search, which
+    is the shipped behaviour."""
+    agent = _agent(anchor_gate=False)
+    world = _world(agent, intrinsics)
+    agent.exploration.planner = SimpleNamespace(
+        plan=lambda costmap, start, goal: SimpleNamespace(success=True, cost=2.0)
+    )
+    agent.exploration.viewpoint_planner = SimpleNamespace(
+        approach_viewpoint=lambda goal, costmap: goal
+    )
+
+    agent.exploration.select(world, lambda cost, floor=None: False)
+
+    assert "floor_unreachable_fallback" not in agent.stats
+
+
+def test_a_successful_switch_never_reaches_the_fallback(intrinsics):
+    """When the agent really is leaving, this floor's surfaces are not the
+    question and the round must end."""
+    agent = _agent(anchor_gate=False)
+    agent.cfg.exploration.search_surface_when_floor_unreachable = True
+    world = _world(agent, intrinsics)
+
+    assert agent.exploration.select(world, lambda cost, floor=None: True) is None
+    assert "floor_unreachable_fallback" not in agent.stats

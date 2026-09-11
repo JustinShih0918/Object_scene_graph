@@ -126,6 +126,16 @@ class ExplorationConfig:
     # track sits below `min_presence` after an absence arrival. Off by default
     # because it changes when a single-storey run may leave a floor at all.
     floor_evidence_by_presence: bool = False
+    # A storey request that cannot be executed must not veto searching this one.
+    #
+    # `_select_surface` returns None when it wants another floor, and the round
+    # then falls through to a frontier. If `try_switch` finds no portal -- 405
+    # requests produced 12 directed attempts on outputs/osg_authored_15, so 97%
+    # of them found nothing to drive to -- the container posterior is switched
+    # off for as long as the request stands, on the floor the agent is on and
+    # among the surfaces it can actually reach. With this on, a failed switch
+    # falls back to same-floor surface selection instead of to frontiers alone.
+    search_surface_when_floor_unreachable: bool = False
     # Belief carried by the single most plausible mapped surface. The candidate
     # priors are affinity x proximity normalised so the best of them equals this,
     # which separates the ORDERING (what the proximity model is for) from the
