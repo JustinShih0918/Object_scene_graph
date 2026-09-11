@@ -106,6 +106,13 @@ class FloorConfig:
     # attempts. Off by default -- it adds a goal the agent would not otherwise
     # have had.
     use_prior_stairs: bool = False
+    # Use the remembered staircase AHEAD of a detected portal, not only when no
+    # portal is visible. `find_portals` finds a patch of another storey visible
+    # from here, which over a balcony rail is a sightline and not a way up:
+    # 00821's cracker box produced 55 such goals, arrived at one, and rose
+    # 0.17 m in 500 steps. `connectivity` records where pass 1 actually changed
+    # floor, which is a staircase by construction.
+    prefer_prior_stairs: bool = False
     use_target_evidence: bool = True
     # Earliest step the evidence rule may fire (the geometric no_switch_before
     # still guards the geometry-only path).

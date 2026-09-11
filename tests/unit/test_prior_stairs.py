@@ -92,3 +92,31 @@ def test_a_prior_map_with_no_transitions_offers_nothing():
     """Pass 1 never changed floor, so there is no staircase to remember and the
     agent is back to looking for one."""
     assert _remembered(_policy(True, [])) is None
+
+
+# ------------------------------------ preferring it over a detected portal
+
+def test_a_sightline_portal_loses_to_a_staircase_we_walked():
+    """`find_portals` finds a patch of another storey VISIBLE from here. Over a
+    balcony rail that is somewhere you can see the next floor and cannot walk up
+    from. Measured on 00821's cracker box: 55 such goals, every one a real
+    2.69 m gap, the agent arrived at one and rose 0.17 m in 500 steps.
+
+    `connectivity` records where pass 1 actually changed floor, which is a
+    staircase by construction."""
+    policy = _policy(True, [StairEdge(GROUND, UPPER, entry_xy=np.array([1.9, 0.5]), step=132)])
+    policy.cfg.floor.prefer_prior_stairs = True
+    goal, other = _remembered(policy)
+    assert other == UPPER and goal == pytest.approx([1.9, 0.5])
+
+
+def test_preferring_is_off_by_default():
+    policy = _policy(True, [StairEdge(GROUND, UPPER, entry_xy=np.array([1.9, 0.5]), step=132)])
+    assert not bool(getattr(policy.cfg.floor, "prefer_prior_stairs", False))
+
+
+def test_with_no_remembered_staircase_the_portals_still_stand():
+    """Preferring something that does not exist must not veto what does."""
+    policy = _policy(True, [])
+    policy.cfg.floor.prefer_prior_stairs = True
+    assert _remembered(policy) is None

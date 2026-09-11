@@ -97,6 +97,7 @@ def _algorithm_fingerprint(cfg) -> dict:
         "cross_floor": bool(cfg.floor.cross_floor),
         "floor_stairs": bool(cfg.floor.stairs),
         "use_prior_stairs": bool(getattr(cfg.floor, "use_prior_stairs", False)),
+        "prefer_prior_stairs": bool(getattr(cfg.floor, "prefer_prior_stairs", False)),
     })
     return out
 
@@ -151,7 +152,7 @@ def run_eval(cfg) -> dict:
             # "search_floor_requires_anchor_test" "floor_evidence_by_presence"
             # "search_surface_when_floor_unreachable"
             # "floor_mass_rule" "floor_mass_margin"
-            # "cross_floor" "floor_stairs" "use_prior_stairs"
+            # "cross_floor" "floor_stairs" "use_prior_stairs" "prefer_prior_stairs"
             # "search_frontier_weight" "search_glance_detect_prob"
             # "search_glance_floor" "search_glance_range_m" "search_max_steps"
             # "search_posterior" "search_proximity_floor" "search_proximity_len_m"

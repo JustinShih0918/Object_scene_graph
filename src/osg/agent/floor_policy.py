@@ -352,8 +352,29 @@ class FloorPolicy:
             self._remembered_stair(target_floor)
             if bool(getattr(self.cfg.floor, "use_prior_stairs", False)) else None
         )
-        if not portals:
-            # Nothing visible to drive to. Measured on outputs/osg_authored_15,
+        prefer = bool(getattr(self.cfg.floor, "prefer_prior_stairs", False))
+        if not portals or (prefer and remembered is not None):
+            # Either nothing visible to drive to, or something visible that is
+            # not worth driving to.
+            #
+            # `find_portals` detects a patch of ANOTHER STOREY VISIBLE FROM HERE.
+            # Over a balcony rail or an open stairwell that is a place you can
+            # see the next floor from and cannot walk up from. Measured on
+            # 00821's cracker box: 55 portal goals, every one a real 2.69 m
+            # gap, the agent arrived at one (`portal_end_arrived`) and rose
+            # 0.17 m in 500 steps (`portal_end_no_vertical_progress`), settling
+            # into re-selecting the same 28-cell patch every five steps.
+            #
+            # The prior map holds something strictly better: `connectivity`
+            # records where pass 1 ACTUALLY CHANGED FLOOR, which is a staircase
+            # by construction rather than a sightline. `prefer_prior_stairs`
+            # uses it ahead of any detected portal; with it off this stays a
+            # fallback for when nothing is visible at all.
+            #
+            # Measured on outputs/osg_authored_15 before any of this: of 11
+            # cross-floor episodes, 4 saw no portal and never attempted a
+            # switch, and across the run 405 storey requests produced 12
+            # attempts.
             # this is the usual answer: of 11 cross-floor episodes, 4 saw no
             # portal at all and never attempted a switch, and across the run 405
             # storey requests produced 12 attempts.
@@ -389,8 +410,13 @@ class FloorPolicy:
                     self.stats.get("directed_floor_switch_attempts", 0) + 1
                 )
             self.portal_log.append((
-                step, [round(float(x), 2) for x in goal_xy], "prior_stair", 0,
+                step, [round(float(x), 2) for x in goal_xy], "prior_stair",
+                len(portals),
             ))
+            if portals:
+                self.stats["prior_stair_preferred_over_portal"] = (
+                    self.stats.get("prior_stair_preferred_over_portal", 0) + 1
+                )
             return PortalGoal(
                 goal_xy=np.asarray(goal_xy, dtype=float).copy(),
                 target_y=float(self.estimator.height_of(other_floor)),
