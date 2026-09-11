@@ -150,6 +150,7 @@ def run_eval(cfg) -> dict:
             # "search_drop_proximity_after_absence" "search_face_turns"
             # "search_floor_requires_anchor_test" "floor_evidence_by_presence"
             # "search_surface_when_floor_unreachable"
+            # "floor_mass_rule" "floor_mass_margin"
             # "cross_floor" "floor_stairs" "use_prior_stairs"
             # "search_frontier_weight" "search_glance_detect_prob"
             # "search_glance_floor" "search_glance_range_m" "search_max_steps"

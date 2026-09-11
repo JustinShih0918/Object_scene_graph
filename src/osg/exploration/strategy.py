@@ -559,11 +559,49 @@ class ExplorationStrategy:
         # Path cost is meaningful only within a floor; aggregate the remaining
         # probability mass here and delegate vertical travel to FloorPolicy.
         floor_mass: Dict[int, float] = {}
+        floor_n: Dict[int, int] = {}
         for cand in cands:
             floor_mass[cand.floor_key] = floor_mass.get(cand.floor_key, 0.0) + (
                 cand.prior * cand.detect_prob
             )
-        selected_floor = max(floor_mass, key=lambda key: (floor_mass[key], -int(key)))
+            floor_n[cand.floor_key] = floor_n.get(cand.floor_key, 0) + 1
+        # A SUM over surfaces is a count of furniture, not a belief about where
+        # the object is. Measured on 00808's prior map with the flat proximity
+        # prior this line ships with, for five different targets:
+        #
+        #     floor 0: 78 surfaces, sum 52.5, mean 0.673
+        #     floor 1: 33 surfaces, sum 22.3, mean 0.676
+        #
+        # The means agree to within half a percent -- the container priors carry
+        # essentially NO information about which storey, which is the same
+        # result docs/ARCHITECTURE.md already records for affinity ranking. The
+        # sum turns that tie into a 2.4x preference for the bigger floor, so an
+        # agent upstairs asks to go down every round whatever it is looking for.
+        #
+        # `mean` makes the score scale-free, and `floor_mass_margin` then
+        # requires another storey to be decisively better before the agent pays
+        # for the stairs. Together they let the posterior say "no opinion",
+        # which on this evidence is the honest answer -- leaving the storey to
+        # the mechanisms that do carry floor information: the stale anchor, and
+        # the LLM once that anchor has been tested.
+        rule = str(getattr(self.cfg, "floor_mass_rule", "sum"))
+        if rule == "mean":
+            score = {k: v / max(floor_n.get(k, 1), 1) for k, v in floor_mass.items()}
+        else:
+            score = dict(floor_mass)
+        selected_floor = max(score, key=lambda key: (score[key], -int(key)))
+        margin = float(getattr(self.cfg, "floor_mass_margin", 0.0))
+        if (
+            margin > 0.0
+            and int(selected_floor) != int(world.floor_id)
+            and float(score.get(int(world.floor_id), 0.0)) > 0.0
+            and float(score[selected_floor])
+            < float(score[int(world.floor_id)]) * margin
+        ):
+            self.stats["floor_mass_no_opinion"] = (
+                self.stats.get("floor_mass_no_opinion", 0) + 1
+            )
+            selected_floor = int(world.floor_id)
         self.selected_search_floor = int(selected_floor)
         self.stats["selected_search_floor"] = int(selected_floor)
         if int(selected_floor) != int(world.floor_id) and self._anchor_untested(world):

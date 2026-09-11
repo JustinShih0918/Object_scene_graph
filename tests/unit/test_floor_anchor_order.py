@@ -238,3 +238,75 @@ def test_a_successful_switch_never_reaches_the_fallback(intrinsics):
 
     assert agent.exploration.select(world, lambda cost, floor=None: True) is None
     assert "floor_unreachable_fallback" not in agent.stats
+
+
+# ------------------------------------------- what a storey's mass should mean
+
+def _two_floor_world(agent, intrinsics, n_here, n_there):
+    """A ground floor with many surfaces and an upper floor with few, all of
+    equal quality -- the shape 00808's prior map actually has."""
+    from osg.graph.scene_graph import ContainerNode
+    containers = {}
+    cid = 1
+    for _ in range(n_here):
+        containers[cid] = ContainerNode(cid, "table", [cid],
+                                        np.array([1.0 + cid * 0.5, 0.75, 2.0]),
+                                        0.75, 0.6, floor=HERE)
+        cid += 1
+    for _ in range(n_there):
+        containers[cid] = ContainerNode(cid, "table", [cid],
+                                        np.array([1.0 + cid * 0.5, 3.45, 2.0]),
+                                        3.45, 0.6, floor=AWAY)
+        cid += 1
+    agent.scene_graph.containers = containers
+    return _world(agent, intrinsics)
+
+
+def test_summing_mass_prefers_whichever_floor_has_more_furniture(intrinsics):
+    """The shipped rule. Both floors hold identical tables; one just has more."""
+    agent = _agent(anchor_gate=False)
+    world = _two_floor_world(agent, intrinsics, n_here=3, n_there=9)
+    agent.exploration._select_surface(world, None)
+    assert agent.exploration.requested_floor == AWAY
+
+
+def test_the_mean_sees_two_floors_of_equal_quality_as_equal(intrinsics):
+    """Same map, scored scale-free: identical tables are identical evidence
+    however many of them a floor happens to hold, so there is no request."""
+    agent = _agent(anchor_gate=False)
+    agent.cfg.exploration.floor_mass_rule = "mean"
+    world = _two_floor_world(agent, intrinsics, n_here=3, n_there=9)
+    agent.exploration._select_surface(world, None)
+    assert agent.exploration.requested_floor is None
+
+
+def test_the_margin_refuses_a_switch_the_rule_would_have_made(intrinsics):
+    """Nine surfaces against three is a 3x sum, and still not worth the stairs
+    if the bar is set at 5x. The counter names the decision."""
+    agent = _agent(anchor_gate=False)
+    agent.cfg.exploration.floor_mass_margin = 5.0
+    world = _two_floor_world(agent, intrinsics, n_here=3, n_there=9)
+    agent.exploration._select_surface(world, None)
+    assert agent.exploration.requested_floor is None
+    assert agent.stats.get("floor_mass_no_opinion", 0) >= 1
+
+
+def test_a_decisively_better_storey_still_wins(intrinsics):
+    """The margin must not weld the agent to its floor: with nothing at all
+    here, anywhere else is better."""
+    agent = _agent(anchor_gate=False)
+    agent.cfg.exploration.floor_mass_rule = "mean"
+    agent.cfg.exploration.floor_mass_margin = 1.15
+    world = _two_floor_world(agent, intrinsics, n_here=0, n_there=9)
+    agent.exploration._select_surface(world, None)
+    assert agent.exploration.requested_floor == AWAY
+
+
+def test_the_rule_and_margin_are_off_by_default(intrinsics):
+    agent = _agent(anchor_gate=False)
+    assert agent.cfg.exploration.floor_mass_rule == "sum"
+    assert agent.cfg.exploration.floor_mass_margin == 0.0
+    world = _two_floor_world(agent, intrinsics, n_here=3, n_there=9)
+    agent.exploration._select_surface(world, None)
+    assert agent.exploration.requested_floor == AWAY
+    assert "floor_mass_no_opinion" not in agent.stats

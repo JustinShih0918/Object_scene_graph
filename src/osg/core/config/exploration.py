@@ -136,6 +136,18 @@ class ExplorationConfig:
     # among the surfaces it can actually reach. With this on, a failed switch
     # falls back to same-floor surface selection instead of to frontiers alone.
     search_surface_when_floor_unreachable: bool = False
+    # How a storey's candidate mass is scored: "sum" (every mapped surface adds
+    # to it, the shipped behaviour) or "mean" (how good this floor's surfaces
+    # are, independent of how many there are). See the measurement in
+    # `_select_surface`: on 00808 the two floors' means agree to within half a
+    # percent while their sums differ 2.4x, purely because one floor holds more
+    # furniture.
+    floor_mass_rule: str = "sum"
+    # How much better another storey must score before the agent pays for the
+    # stairs. 0.0 disables the test, which is the shipped behaviour; 1.15 means
+    # "15% better or stay". With `floor_mass_rule: mean` this is what lets the
+    # posterior answer "no opinion" instead of breaking a tie by floor area.
+    floor_mass_margin: float = 0.0
     # Belief carried by the single most plausible mapped surface. The candidate
     # priors are affinity x proximity normalised so the best of them equals this,
     # which separates the ORDERING (what the proximity model is for) from the

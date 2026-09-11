@@ -191,6 +191,8 @@
   "exploration.floor_exp_steps": 100,
   "exploration.floor_llm": false,
   "exploration.floor_llm_boost": 5.0,
+  "exploration.floor_mass_margin": 0.0,
+  "exploration.floor_mass_rule": "sum",
   "exploration.floor_min_steps": 100,
   "exploration.frontier_commit": false,
   "exploration.frontier_cost_free_cell": false,
