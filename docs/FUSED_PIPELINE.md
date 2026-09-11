@@ -1,0 +1,164 @@
+# One pipeline for a moved object in a house with stairs
+
+The stale-map machinery and the multi-storey machinery were built separately and
+both work. Run together they are not one system: they answer the same question
+at the same time, and the one with no information answers first.
+
+This document records what was wrong, what changed, and what each change is
+worth. Every flag defaults to the previous behaviour, so the baseline stays
+reproducible and each arm is an explicit assertion.
+
+## The question each mechanism is for
+
+A dynamic episode has one shape. The agent starts with a prior map built over
+the static layout. The object has since been moved, sometimes to another storey.
+The agent has to work out that the map is stale, and then where to look instead.
+
+Three mechanisms exist to answer that, and each is competent at one part:
+
+- **Presence** answers *is it still where the map put it?* It is a log-odds Bayes
+  filter per track, tested by driving to the pose and looking.
+- **The container posterior** answers *which surface on this floor?* It ranks
+  mapped support surfaces by affinity and proximity over path cost.
+- **The floor policy** answers *which storey?* It finds portals and drives to
+  them.
+
+The ordering follows from what each one knows. Until the anchor has been tested,
+the prior map is the only evidence anyone has, and it names a floor. Once the
+anchor fails, that evidence is spent and the storey is genuinely open.
+
+## What was actually happening
+
+Measured on `outputs/osg_authored_15`, 30 episodes over two multi-storey scenes,
+with presence, the posterior and the floor stack all switched on.
+
+| observation | value |
+|---|---:|
+| first cross-floor request at step 13 | 17 of 30 episodes |
+| ... in episodes whose object never changed floor | 10 of 19 |
+| cross-floor requests raised | 405 |
+| directed switch attempts they produced | 12 |
+| episodes that reached the object's floor | 3 of 11 |
+| absence checks in the whole run | 4 |
+
+The floor argmax fired on the first selection round and kept firing. The
+presence filter, the mechanism that knows the object moved, spoke four times in
+thirty episodes.
+
+Four defects sat underneath that, none of which announced itself.
+
+**Containers did not exist above the ground floor.** `container_top_h_m` is a
+band above the floor, 0.2 to 1.4 m. `top_height` returns an absolute world
+height. On the ground floor these agree; on 00808's upper storey, at y = 2.86,
+every table top measures about 3.6 m and is rejected. That floor holds 367
+mapped tracks and produced zero containers against the ground floor's 76. So the
+dynamic search could only ever work downstairs, and the per-floor mass that
+chooses a storey had an entry for the ground floor alone.
+
+**A storey's score was a count of its furniture.** The mass is a sum over
+surfaces. With the flat proximity prior this line uses, the two floors' *mean*
+candidate mass agrees to within half a percent while their sums differ by 2.4x.
+The priors carry no information about which storey; the sum turned that tie into
+a standing preference for the bigger floor.
+
+**A request that could not be executed vetoed the current floor.** When the
+posterior wants another storey, `_select_surface` returns None and the round
+falls through to a frontier. `try_switch` needs a portal already visible, and
+97% of the time there is none, so the request simply stood, and with it the
+container posterior stayed off on the floor the agent was actually on.
+
+**The staircase was in the map and nobody read it.** `save_map` records every
+committed floor transition in `connectivity`, and `apply_map` restores it into
+`FloorStack.stair_edges`. Nothing consumed it. Of the eight cross-floor episodes
+that never reached the object's floor, four never saw a portal and never
+attempted a switch at all.
+
+One more thing was silently not happening. The nav pass runs
+`layout_types=[in_anchor,cross_anchor]`, which kept the static layout out of
+discovery, so the relocation source was `None` and every relocation field is
+null in all 30 episodes. The record could not say which floor the object came
+from, and `start_on_prior_floor` -- this benchmark's headline, "every
+deterministic start is sampled on the object's prior floor" -- had no floor to
+require. Starts were sampled anywhere, and `floor_class` was an accident of
+sampling.
+
+## The pipeline
+
+Each step is a flag, listed with the preset that first asserts it.
+
+1. **Test the anchor first** (`exploration.search_floor_requires_anchor_test`,
+   `ycb_authored_15_fused`). A cross-floor request is held while a
+   target-labelled track on this floor is still believed and unvisited. The held
+   round falls through to same-floor selection, so it is not a wasted round.
+   Released by an absence arrival, or by presence falling below the same
+   `min_presence` at which candidates stop being proposed -- the same number, so
+   the floor question and the candidate question cannot disagree about one
+   track. Releasing on decay as well as on arrival is deliberate: a belief that
+   decays below the candidate bar means the agent will never be sent there, and
+   a gate that waited for an arrival that can no longer happen would deadlock.
+
+2. **Ask presence what a mapped instance means** (`floor_evidence_by_presence`).
+   `floor_target_evidence` gives a mapped instance of the target category a
+   bonus that makes the switch gate absolute. On a stale map that instance is
+   precisely the object that moved. Context furniture stays ungated: it does not
+   move, and its presence decays from ordinary missed expectations.
+
+3. **Do not let a wish veto this floor**
+   (`search_surface_when_floor_unreachable`, `..._v2`). A failed switch falls
+   back to same-floor surface selection instead of to frontiers alone.
+
+4. **Drive to the staircase you already walked** (`floor.use_prior_stairs`,
+   `..._v3`). A remembered mouth is the fallback when no portal is visible.
+   `StairEdge` records both ends of a traversal, so an edge touching the current
+   floor names a point on this floor whichever way it was walked.
+
+5. **Give the storey question to the model** (`exploration.floor_llm`,
+   `..._v4`). See below.
+
+6. **Fix what a floor's surfaces are and what its score means**
+   (`scene_graph.containers_floor_relative`, `exploration.floor_mass_rule: mean`,
+   `floor_mass_margin`, `..._v5`).
+
+## Where the LLM fits
+
+The fused pipeline creates exactly one moment per episode at which "which storey
+is it on now?" is both open and worth a call: the agent has driven to the pose
+the stale map named, the absence sensor has said the object is gone, and the
+storey request is finally released. That is the question the model gets.
+
+It is not the question it used to get. `FloorDecisionPlanner.decide` had no
+caller outside its own tests, `_floor_goal_dir` was assigned zero once and never
+again, and `_floor_direction_boost` had no production caller at all. Its unit
+tests passed because they set `_floor_goal_dir` by hand. Four presets claiming
+`floor_llm: true` therefore measured nothing, and any conclusion drawn from them
+about whether the model helps choose floors is a null over an untested knob.
+
+The call is synchronous, happens only on a directed request, and every failure
+-- no answer, a malformed one, a storey the stack has never allocated -- leaves
+the posterior's own answer standing. Counters: `floor_llm_asks`, `_agreed`,
+`_override`, `_stay`, `_no_answer`, `_no_such_floor`.
+
+This placement matters more than the prompt. ASCENT asks every 60 steps from
+step 100, which spends calls while the agent is still walking to a pose the map
+is confident about. Here the trigger is the absence, so the model is asked when
+its answer can change what happens next.
+
+## Reading the results
+
+The benchmark's noise floor is about three trials, so a swing of that size in
+success rate says nothing on its own. Report mechanism counters first:
+
+- `cross_floor_request_held` -- the ordering fired.
+- `floor_mass_no_opinion` -- the posterior declined to choose a storey.
+- `prior_stair_switch_attempts` -- a remembered staircase was driven to.
+- `directed_floor_switch_attempts` and `traj_y_range` -- whether the agent
+  actually climbed. On the baseline these separate the outcome perfectly: every
+  episode that reached the object's floor used a directed switch, and every one
+  that did not used none.
+- `floor_llm_asks` -- the model was actually consulted.
+
+An arm whose directed count falls has probably lost the floor even if its
+success rate looks flat.
+
+`scripts/run_fusion_ab.sh` runs the arms paired, and
+`scripts/report_fusion_ab.py` compares them episode for episode.
