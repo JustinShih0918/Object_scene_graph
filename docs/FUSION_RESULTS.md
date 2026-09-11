@@ -99,6 +99,23 @@ can see right now. The fallback form costs nothing because it only runs where
 there was no alternative; the preference form discards live evidence. Keep
 `use_prior_stairs`, leave `prefer_prior_stairs` off.
 
+## 3c. All three scenes together
+
+00808, 00814 and 00800, baseline against the full fused stack, paired.
+
+| | base | v5 |
+|---|---:|---:|
+| success | 11/42 | 11/42 |
+| reached the object's floor | 39/42 | 39/42 |
+| episodes at budget | 31 | 31 |
+| **episodes whose outcome changed** | | **0** |
+
+Per scene: 00808 6 and 6, 00814 2 and 2, 00800 3 and 3.
+
+The mechanisms were live throughout: 11 storey requests held for an untested
+anchor, 13 rounds where the posterior declined to choose a storey, 31 questions
+put to the model. Not one episode ended differently.
+
 ## 4. What this says
 
 **The decision layer is sound where it is exercised; the execution layer is
