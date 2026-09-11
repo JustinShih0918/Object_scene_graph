@@ -974,6 +974,59 @@ class NavAgent:
             return True
         return float(presence.p) >= float(self.cfg.scene_graph.presence.min_presence)
 
+    def _llm_floor_choice(self, target_floor: Optional[int]):
+        """Let the text model choose the storey the posterior just asked for.
+
+        Only for a DIRECTED request, which in the fused pipeline is the point at
+        which the agent has tested the stale anchor and found the object gone.
+        That is the one moment in an episode when "which floor is it on now?" is
+        both open and worth a call -- as opposed to ASCENT's every-60-steps
+        cadence, which asks it while the agent is still walking to a pose the
+        map is confident about.
+
+        Returns the floor key to head for, None to leave the request alone, or
+        False for "the model says stay here".
+
+        Until now `FloorDecisionPlanner.decide` had no caller outside its tests,
+        `_floor_goal_dir` was assigned 0 at construction and never again, and
+        `_floor_direction_boost` was never called -- so every preset claiming
+        `floor_llm: true` measured nothing. This is that wiring.
+        """
+        if target_floor is None or self.floor_planner is None:
+            return target_floor
+        if not bool(getattr(self.cfg.exploration, "floor_llm", False)):
+            return target_floor
+        stack = self.floors.stack
+        direction = self.floor_planner.decide(
+            self.target, stack, self.scene_graph, self.step_count,
+        )
+        self.stats["floor_llm_asks"] = int(getattr(self.floor_planner, "asks", 0))
+        self.stats["floor_llm_moves"] = int(getattr(self.floor_planner, "moves", 0))
+        if direction is None:
+            self.stats["floor_llm_no_answer"] = (
+                self.stats.get("floor_llm_no_answer", 0) + 1
+            )
+            return target_floor
+        self._floor_goal_dir = int(direction)
+        if direction == 0:
+            self.stats["floor_llm_stay"] = self.stats.get("floor_llm_stay", 0) + 1
+            return False
+        chosen = stack.up() if direction > 0 else stack.down()
+        if chosen is None:
+            # The model wants a storey the stack has never allocated. Nothing to
+            # aim at, so the posterior's own answer stands.
+            self.stats["floor_llm_no_such_floor"] = (
+                self.stats.get("floor_llm_no_such_floor", 0) + 1
+            )
+            return target_floor
+        if int(chosen.key) != int(target_floor):
+            self.stats["floor_llm_override"] = (
+                self.stats.get("floor_llm_override", 0) + 1
+            )
+        else:
+            self.stats["floor_llm_agreed"] = self.stats.get("floor_llm_agreed", 0) + 1
+        return int(chosen.key)
+
     def _try_floor_switch(
         self, frame: FrameData, best_path_cost, target_floor: Optional[int] = None
     ) -> bool:
@@ -985,6 +1038,9 @@ class NavAgent:
         thing here is 12 m away" is exactly ASCENT's condition for reasoning
         about storeys.
         """
+        target_floor = self._llm_floor_choice(target_floor)
+        if target_floor is False:
+            return False  # the model said stay; this round is settled
         portal = self.floors.try_switch(
             frame, self.step_count, best_path_cost,
             self.scene_graph, self.target, self._reachable_fn,
