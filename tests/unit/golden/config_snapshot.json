@@ -354,6 +354,7 @@
     0.2,
     1.4
   ],
+  "scene_graph.containers_floor_relative": false,
   "scene_graph.foveate_active_only": false,
   "scene_graph.foveate_containers": false,
   "scene_graph.foveate_max_range_m": 3.0,

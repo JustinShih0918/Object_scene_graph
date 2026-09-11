@@ -113,6 +113,7 @@ class SceneGraph:
         container_min_obs: int = 1,
         container_min_score: float = 0.0,
         container_merge_m: float = 0.0,
+        containers_floor_relative: bool = False,
     ) -> None:
         self.rooms: Dict[int, RoomNode] = {}
         self.objects: List[ObjectNodeView] = []
@@ -124,6 +125,8 @@ class SceneGraph:
         self._container_min_obs = int(container_min_obs)
         self._container_min_score = float(container_min_score)
         self._container_merge_m = float(container_merge_m)
+        # Measure a support surface's height from ITS OWN floor, not from y=0.
+        self._containers_floor_relative = bool(containers_floor_relative)
 
     def rebuild(
         self,
@@ -225,7 +228,8 @@ class SceneGraph:
             )
 
         self._rebuild_containers(
-            object_layer, room_labels, costmap, floor_key=floor_key
+            object_layer, room_labels, costmap, floor_key=floor_key,
+            floor_height=float(floor_height),
         )
         self.floors[floor_key] = FloorNode(
             id=floor_key,
@@ -249,7 +253,7 @@ class SceneGraph:
 
     def _rebuild_containers(
         self, object_layer: ObjectLayer, room_labels: np.ndarray, costmap: Costmap2D,
-        floor_key: Optional[int] = 0,
+        floor_key: Optional[int] = 0, floor_height: float = 0.0,
     ) -> None:
         """Attach the container layer between rooms and objects.
 
@@ -320,9 +324,26 @@ class SceneGraph:
             # area is the SUM (both halves of the sofa hold things).
             top = max(containers_mod.top_height(views[i].center, e) for i, e in geoms)
             area = sum(containers_mod.footprint_area(e) for _, e in geoms)
+            # `container_top_h_m` is a band ABOVE THE FLOOR -- 0.2 to 1.4 m, the
+            # height range a thing can be set down on -- while `top_height` is an
+            # absolute world height. On the ground floor the two coincide and
+            # nobody noticed. On any storey above it they do not: 00808's upper
+            # floor sits at y=2.86, so every table top there measures ~3.6 and
+            # fails a 1.4 m ceiling. Measured on that scene's prior map, 367
+            # tracks on floor 1 produced ZERO containers against floor 0's 76.
+            #
+            # The consequences run through the whole multi-storey line. The
+            # container posterior can propose no surface on an upper floor, and
+            # `_select_surface`'s per-floor mass -- the thing that chooses a
+            # storey -- has an entry only for the ground floor, so an agent
+            # standing upstairs computes floor_mass {'0': 48.2} and asks to go
+            # down, every round, whatever it is looking for.
+            #
+            # `ContainerNode.top_h` stays absolute: `build_container_candidates`
+            # subtracts the floor height itself, and the two must not both do it.
             if not containers_mod.qualifies(
                 rep.label,
-                top,
+                top - float(floor_height) if self._containers_floor_relative else top,
                 area,
                 top_h_m=self._container_top_h_m,
                 min_area_m2=self._container_min_area_m2,

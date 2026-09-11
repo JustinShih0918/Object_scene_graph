@@ -249,6 +249,8 @@ class NavAgent:
             container_min_obs=cfg.scene_graph.container_min_obs,
             container_min_score=cfg.scene_graph.container_min_score,
             container_merge_m=cfg.scene_graph.container_merge_m,
+            containers_floor_relative=bool(getattr(
+                cfg.scene_graph, "containers_floor_relative", False)),
         )
         self.keyframes = KeyframeStore(save_dir=keyframe_dir)
         self.kf_selector = KeyframeSelector(

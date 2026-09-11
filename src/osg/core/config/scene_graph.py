@@ -211,6 +211,13 @@ class SceneGraphConfig:
     # half is what a DualMap-style word list alone cannot do: reject the
     # mis-segmented sliver labelled "table", and the "shelf" whose top lands
     # at 1.9 m where nothing is ever put down.
+    # Measure a container's top from its OWN floor rather than from y=0.
+    # `container_top_h_m` is a band above the floor; `top_height` returns an
+    # absolute world height. They coincide on the ground floor and diverge on
+    # every storey above it, where the band then rejects everything -- 00808's
+    # upper floor holds 367 mapped tracks and produced zero containers. Off by
+    # default because it changes which surfaces exist on a multi-storey map.
+    containers_floor_relative: bool = False
     container_top_h_m: Tuple[float, float] = (0.2, 1.4)
     container_min_area_m2: float = 0.06
     # How far an object's underside may sit from a surface and still count as

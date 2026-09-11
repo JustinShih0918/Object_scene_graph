@@ -1,0 +1,9 @@
+# @package _global_
+#
+# Everything: the ordering, the fallback, the remembered staircase, the LLM's
+# storey choice, and containers measured from their own floor.
+defaults:
+  - ycb_authored_15_fused_v4
+
+scene_graph:
+  containers_floor_relative: true
