@@ -138,22 +138,27 @@ coverage re-routing exploration rather than the phantom's removal.
 
 ## Where the ceiling actually is
 
-In-anchor is 29/54 against the 38/54 goal. The residue is **not** mostly the
-documented detector wall:
+In-anchor is 29/54 against the 38/54 goal. The bucket table above reads the
+residue as 13 "committed elsewhere" on pitcher and plate, and an earlier
+version of this section called that search order. It is not. Measured after
+the fact (`scripts/analyze_reachability_ceiling.py`,
+`docs/REACHABILITY_CEILING.md`): 10 of the 54 in-anchor objects and 5 of the
+53 cross-anchor objects have **no navmesh point within 1.0 m** for our agent
+(radius 0.18, height 0.88, the mesh habitat-lab builds). Nine of the thirteen
+"committed elsewhere" in-anchor failures are those trials; each had committed
+to the true track at 0.02-0.10 m and stopped 0.00-0.06 m from the nearest
+point the agent can occupy. The closing walk works; the object is mid-bed.
 
-    committed_elsewhere  13    search order, on objects the detector names fine
-    perception_wall       5    the shared wall
-    perception_close      3    seen inside a metre, still unnamed
-    never_in_view         3    coverage
-    near_miss             1    the 1.0-1.6 m ring
+DualMap fails 13 of those 15 too. Its released runner moves the agent with
+`set_agent_state` along its own occupancy grid, so it is not held to the
+navmesh at all; the two it scores there are that.
 
-Across both conditions, committed-elsewhere is 19 failures and it is
-concentrated on objects with no perception problem at all: pitcher 7, plate 5,
-cracker box 3. Scissors and mug together are 17 of 51 remaining failures, a
-third, not the majority.
+On the reachable subset: in-anchor ours 29/44 (65.9%) vs DualMap seed 12
+34/44 (77.3%); cross-anchor ours 27/48 (56.2%) vs 15/48 (31.2%).
 
-That redirects the next question. The substitution benchmark and the
-report-the-ceiling route were the honest options while the residue looked like
-unseeable assets; it does not. The largest movable bucket is the search
-committing to the wrong place for the pitcher and the plate, which are named
-reliably whenever they are in view.
+What is genuinely left, over all 51 failures: 15 unreachable under the rule,
+18 perception (11 beyond a metre, 7 inside it), 10 never in view (all at the
+500-step budget), 8 other (two stops 2-3 cm over the bar, one 200-step
+approach oscillation, one budget-end commit, three wrong-instance commits,
+one cabinet cracker box). The full paired reading against DualMap's three
+seeds is in `docs/RESIDUE_AFTER_RELEASED_MAPS.md`.
