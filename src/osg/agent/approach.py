@@ -70,6 +70,17 @@ class ApproachPolicy:
         self.closed = False
         self.close_start_xy: Optional[np.ndarray] = None
         self.close_retreating = False
+        # The closest the agent has actually stood to the committed track during
+        # this approach, and whether it has been walked back to. The pose an
+        # approach ENDS in is not the closest one it reached: measured over 81
+        # trials the agent gives up a median 0.18 m between the two, and on the
+        # trials it loses, 0.04-1.72 m. Ten of sixteen losses had come inside
+        # 1.0 m and every one of them stopped outside it.
+        self.best_xy: Optional[np.ndarray] = None
+        self.best_d = float("inf")
+        self.returning = False
+        self.returned = False
+        self._return_from_d = float("inf")
         # Calibration data for approach_stop_bbox_px (P1c): every bbox_px
         # observed during APPROACH, plus why the episode's approach ended.
         self.bbox_log: list = []
@@ -103,6 +114,7 @@ class ApproachPolicy:
           the deadline.
         """
         agent_xy = frame.camera_position[list(PLANE)]
+        self._note_best(agent_xy)
         # Track how close the agent gets to its approach goal this episode.
         if self.diag and self.nav._goal_xy is not None:
             dg = float(np.linalg.norm(agent_xy - self.nav._goal_xy))
@@ -173,6 +185,9 @@ class ApproachPolicy:
                         self.nav._target_obj_xy = None
                         self.nav.state = State.EXPLORE
                         return TURN_ACTION
+                back = self._return_to_best(frame, agent_xy)
+                if back is not None:
+                    return back
                 self.nav.state = State.DONE
                 self.stop_reason = stop_reason
                 return STOP_ACTION
@@ -191,6 +206,9 @@ class ApproachPolicy:
             abandon = self.nav._absence_at_arrival(frame, "retreat")
             if abandon is not None:
                 return abandon
+            back = self._return_to_best(frame, agent_xy)
+            if back is not None:
+                return back
             self.nav.state = State.DONE  # retreat path consumed/unreachable: stop here
             self.stop_reason = "retreat"
             return STOP_ACTION
@@ -202,6 +220,9 @@ class ApproachPolicy:
             abandon = self.nav._absence_at_arrival(frame, "deadline")
             if abandon is not None:
                 return abandon
+            back = self._return_to_best(frame, agent_xy)
+            if back is not None:
+                return back
             self.nav.state = State.DONE
             self.stop_reason = "deadline"
             return STOP_ACTION
@@ -261,6 +282,9 @@ class ApproachPolicy:
             abandon = self.nav._absence_at_arrival(frame, "path_consumed")
             if abandon is not None:
                 return abandon
+            back = self._return_to_best(frame, agent_xy)
+            if back is not None:
+                return back
             self.nav.state = State.DONE
             self.stop_reason = "path_consumed"
             if self.diag is not None:
@@ -471,6 +495,73 @@ class ApproachPolicy:
             self.nav._goal_xy = nearest_free_xy(self.nav.costmap, obj_xy)
         self.nav._target_obj_xy = obj_xy.copy()
 
+    def _note_best(self, agent_xy: np.ndarray) -> None:
+        """Remember the closest the agent has stood to the committed track.
+
+        Distance is to `_target_obj_xy`, the agent's OWN estimate of the track
+        centre, so this needs nothing from the simulator.
+        """
+        obj_xy = self.nav._target_obj_xy
+        if obj_xy is None:
+            return
+        d = float(np.linalg.norm(np.asarray(agent_xy, dtype=float) - obj_xy))
+        if d < self.best_d:
+            self.best_d = d
+            self.best_xy = np.asarray(agent_xy, dtype=float).copy()
+
+    def _return_to_best(self, frame: FrameData, agent_xy: np.ndarray) -> Optional[str]:
+        """About to stop: if a closer pose was reached earlier, go back to it.
+
+        The approach stops wherever it happens to be when its terminal rule
+        fires, and that is routinely farther from the object than somewhere it
+        already stood -- the mover overshoots, or turns to face and drifts, or
+        the creep presses past the tangent point. The closing walk already
+        implements this for its own walk (`approach_close_worse`); this is the
+        same idea for the approach as a whole.
+
+        Returns an action while walking back, None when there is nothing to do
+        (off, already done, or this pose is no worse than the best by the
+        configured margin). `agent.approach_stop_at_best_m` is that margin; 0
+        disables it and is what every arm measured before this ran on.
+        """
+        margin = float(getattr(self.nav.cfg.agent, "approach_stop_at_best_m", 0.0) or 0.0)
+        if margin <= 0.0 or self.returned:
+            return None
+        stats = self.nav.stats
+        if self.returning:
+            # The walk back is consumed; stop here whether or not it arrived.
+            self.returning = False
+            self.returned = True
+            obj_xy = self.nav._target_obj_xy
+            if obj_xy is not None:
+                here = float(np.linalg.norm(np.asarray(agent_xy, dtype=float) - obj_xy))
+                stats["approach_best_pose_gain_cm"] = (
+                    stats.get("approach_best_pose_gain_cm", 0)
+                    + int(round(100.0 * max(0.0, self._return_from_d - here)))
+                )
+            return None
+        obj_xy = self.nav._target_obj_xy
+        if obj_xy is None or self.best_xy is None:
+            return None
+        here = float(np.linalg.norm(np.asarray(agent_xy, dtype=float) - obj_xy))
+        if here <= self.best_d + margin:
+            self.returned = True
+            return None
+        self.returning = True
+        self._return_from_d = here
+        self.nav._goal_xy = self.best_xy.copy()
+        self.nav._current_path = None
+        self.path_goal = None
+        self.steps_left = max(int(self.steps_left), 40)
+        self.nav._goto_deadline = max(int(self.nav._goto_deadline), self.nav.step_count + 40)
+        stats["approach_best_pose_returns"] = stats.get("approach_best_pose_returns", 0) + 1
+        action = self.follow_to(frame, self.nav._goal_xy)
+        if action is not None:
+            return action
+        self.returning = False
+        self.returned = True
+        return None
+
     def _close_last_metre(self, frame: FrameData, agent_xy: np.ndarray) -> Optional[str]:
         """The viewpoint is reached; walk the rest of the way before stopping.
 
@@ -523,13 +614,34 @@ class ApproachPolicy:
                 self.closing = False
                 self.closed = True
             return None
-        fn = getattr(self.nav, "_nearest_navigable_fn", None)
-        if fn is None or obj_xy is None:
+        # Where to get "the nearest point to the object I can stand on".
+        #
+        #   navmesh  ask the pathfinder -- ground-truth floor geometry, and so
+        #            privileged in a sensor-only arm
+        #   costmap  ask the agent's own depth-built grid for the nearest cell
+        #            with agent-radius clearance. Same question, no oracle.
+        #
+        # The walk's entire advantage is that its goal is standable BY
+        # CONSTRUCTION, which is exactly the property the stranded approach
+        # goals lacked; that property does not require the mesh.
+        source = str(getattr(self.nav.cfg.agent, "approach_close_source", "navmesh"))
+        if obj_xy is None:
             return None
         here_d = float(np.linalg.norm(agent_xy - obj_xy))
         if here_d <= close_m or here_d > 3.0:
             return None  # near enough already, or this was no arrival at all
-        goal = fn(obj_xy, self.nav._goal_floor_y_cache)
+        if source == "costmap":
+            from ..verification.viewpoint import nearest_clear_xy
+
+            clear = float(getattr(self.nav.cfg.agent, "approach_close_clearance_m", 0.0) or 0.0)
+            if clear <= 0.0:
+                clear = float(self.nav.cfg.agent.agent_radius) + 0.05
+            goal = nearest_clear_xy(self.nav.costmap, obj_xy, clear)
+        else:
+            fn = getattr(self.nav, "_nearest_navigable_fn", None)
+            if fn is None:
+                return None
+            goal = fn(obj_xy, self.nav._goal_floor_y_cache)
         if goal is None:
             return None
         goal = np.asarray(goal, dtype=float).ravel()[:2]

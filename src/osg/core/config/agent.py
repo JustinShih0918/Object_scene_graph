@@ -126,6 +126,23 @@ class AgentConfig:
     # nearest navigable point to the centre and walks there before it stops.
     # 0 keeps the viewpoint as the stopping pose.
     approach_close_last_metre_m: float = 0.0
+    # Stop at the CLOSEST pose the approach reached, not the pose it happens to
+    # be in when its terminal rule fires. Measured over 81 trials the agent
+    # gives up a median 0.18 m between the two; on the trials it loses, 0.04 to
+    # 1.72 m, and ten of sixteen losses had already come inside 1.0 m and then
+    # stopped outside it. When the current pose is worse than the best by more
+    # than this, the approach walks back before stopping. Distance is to the
+    # agent's own estimate of the track centre, so nothing is asked of the
+    # simulator. 0 disables it.
+    approach_stop_at_best_m: float = 0.0
+    # Where the closing walk gets its goal. `navmesh` asks the pathfinder, which
+    # is ground-truth geometry and privileged in a sensor-only arm; `costmap`
+    # asks the agent's own depth-built grid for the nearest cell to the object
+    # with `approach_close_clearance_m` of clearance (0 = agent_radius + 0.05).
+    # The walk's advantage is a goal that is standable by construction, and that
+    # does not require the mesh.
+    approach_close_source: str = "navmesh"
+    approach_close_clearance_m: float = 0.0
     # Arrival by distance on the navmesh. The follower reports arrival only
     # inside its 0.1 m goal radius, and an agent that moves in 0.25 m steps
     # can circle a goal at 0.11-0.13 m for a hundred steps without ever

@@ -13,6 +13,44 @@ from ..core.geometry import bresenham
 from ..mapping.costmap import FREE, OCCUPIED, Costmap2D
 
 
+def nearest_clear_xy(costmap: Costmap2D, obj_xy: np.ndarray, min_clearance_m: float,
+                     max_radius_m: float = 2.0) -> Optional[np.ndarray]:
+    """Nearest cell to `obj_xy` the agent actually fits in, from the costmap alone.
+
+    The sensor-only answer to the question the closing walk asks the pathfinder:
+    where is the nearest point to this object that I could stand on? The
+    navmesh answers it from ground-truth floor geometry; this answers it from
+    the agent's own depth-built occupancy grid, by requiring `min_clearance_m`
+    of distance to the nearest OCCUPIED cell.
+
+    Returns None when nothing within `max_radius_m` qualifies -- an honest
+    answer, and the caller then simply does not walk.
+    """
+    clearance = ndimage.distance_transform_edt(costmap.grid != OCCUPIED) * costmap.resolution
+    best, best_d = None, float("inf")
+    step = max(costmap.resolution, 0.05)
+    r = step
+    while r <= max_radius_m + 1e-9:
+        n = max(8, int(round(2.0 * np.pi * r / step)))
+        for k in range(n):
+            ang = 2.0 * np.pi * k / n
+            cand = obj_xy + r * np.array([np.cos(ang), np.sin(ang)])
+            rc = costmap.world_to_grid(cand)
+            if not costmap.in_bounds(rc):
+                continue
+            if costmap.grid[rc[0], rc[1]] != FREE:
+                continue
+            if float(clearance[rc[0], rc[1]]) < min_clearance_m:
+                continue
+            d = float(np.linalg.norm(cand - obj_xy))
+            if d < best_d:
+                best, best_d = cand, d
+        if best is not None:
+            return best  # rings grow outward, so the first hit is the nearest
+        r += step
+    return None
+
+
 class ViewpointPlanner:
     def __init__(self, ring_radii_m: Optional[List[float]] = None, n_samples: int = 16,
                  min_clearance_m: float = 0.0) -> None:

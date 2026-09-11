@@ -1,0 +1,19 @@
+# @package _global_
+#
+# Fix 2 of 4: the closing walk, asked of the agent's own costmap instead of the
+# navmesh.
+#
+# The walk's entire advantage is that its goal is standable BY CONSTRUCTION --
+# exactly the property the stranded approach goals lacked. The navmesh answers
+# that from ground-truth floor geometry; `nearest_clear_xy` answers the same
+# question from the depth-built occupancy grid by requiring agent-radius
+# clearance. If this recovers most of the navmesh walk's 22/44, the privilege
+# was never load-bearing.
+
+defaults:
+  - dualmap_protocol_osg_sensor_r10_best
+
+agent:
+  approach_close_last_metre_m: 0.8
+  approach_close_source: costmap
+  approach_close_clearance_m: 0.15
