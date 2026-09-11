@@ -76,6 +76,29 @@ Where the seven are lost:
   right floor, saw the target for 20 frames at 0.43 m with a detector score of
   0.94, and never issued STOP before the budget ran out.
 
+## 3b. A seventh arm, and a clear regression
+
+`v6` adds `floor.prefer_prior_stairs`: use the staircase the prior map recorded
+*ahead of* any portal the agent can currently see, rather than only when it sees
+none. The mechanism fired 106 times over the same eight episodes and made things
+worse.
+
+| | base | v5 | v6 |
+|---|---:|---:|---:|
+| success, cross-floor only | 0/7 | 0/7 | 0/7 |
+| reached the object's floor | 2/8 | 2/8 | **1/8** |
+| remembered staircase preferred over a portal | 0 | 0 | 106 |
+
+The episode it changed, it broke. 00808's yellow bottle climbed 3.2 m and reached
+the right floor under base and v5, and rose 1.377 m and did not under v6.
+00821's cracker box went from 0.17 m of ascent to none.
+
+A remembered mouth is one point from one pass-1 traversal. Driving to it from
+wherever the agent happens to be can be far worse than driving to a staircase it
+can see right now. The fallback form costs nothing because it only runs where
+there was no alternative; the preference form discards live evidence. Keep
+`use_prior_stairs`, leave `prefer_prior_stairs` off.
+
 ## 4. What this says
 
 **The decision layer is sound where it is exercised; the execution layer is
