@@ -34,3 +34,19 @@ dualmap:
   scenes: ["*"]
   conditions: [static, in_anchor, cross_anchor]
   start_yaw_seed: 12
+
+agent:
+  # The mover has to be able to say "I am there".
+  #
+  # `_follow_to` passes this as the driver's stop radius, and the default is
+  # 0.0 -- an arrival test that can never fire. With `pointnav_approach_creep_m`
+  # at 1.0 m the approach then force-forwards inside a metre for ever and ends
+  # only on the deadline: measured here on four 00829 in-anchor trials, every
+  # approach ran the full `navmesh_approach_steps` and three of four burned the
+  # 500-step budget having reached the object.
+  #
+  # 0.3 m rather than the navmesh follower's 0.1: at a 0.25 m step a tighter
+  # radius is not reliably reachable. This is upstream's own S40 finding
+  # (`+experiment=ascent_sensor_arrival`), where the navmesh arm produced 46
+  # `path_consumed` terminations out of 100 and the pointnav arm produced 0.
+  pointnav_arrival_m: 0.3
