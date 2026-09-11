@@ -52,7 +52,7 @@ def context_categories(target: str) -> Set[str]:
 
 
 def floor_target_evidence(
-    scene_graph, floor_id: int, target: str
+    scene_graph, floor_id: int, target: str, presence_of=None
 ) -> tuple:
     """(evidence, n_objects) for one storey.
 
@@ -60,6 +60,17 @@ def floor_target_evidence(
     mapped on this floor, plus a large bonus if the target category itself is
     there. `n_objects` is how much has been mapped at all -- the caller needs it
     to know whether zero evidence means "not here" or merely "not looked yet".
+
+    `presence_of` maps a track id to "is this instance still believed", and when
+    given it gates the target bonus alone. The bonus is what makes the switch
+    gate absolute -- never leave a floor that has the target on it -- and on a
+    stale prior map the instance carrying it is precisely the object that has
+    since been moved. The context categories are furniture and are deliberately
+    NOT gated: they do not move, and their presence decays from ordinary missed
+    expectations while the agent merely walks past (the defect that made a first
+    attempt at proximity-dropping fire on 56% of in_anchor episodes).
+
+    Left None the arithmetic is unchanged, term for term.
     """
     tgt = normalize_label(target)
     ctx = context_categories(target)
@@ -78,7 +89,8 @@ def floor_target_evidence(
         n += 1
         label = normalize_label(obj.label)
         if label == tgt:
-            has_target = True
+            if presence_of is None or presence_of(int(obj.track_id)):
+                has_target = True
         if label in ctx:
             seen.add(label)
 

@@ -107,6 +107,14 @@ class ExplorationStrategy:
                  stats: dict, profiler) -> None:
         # `cfg` is the exploration group alone: nothing here reads any other.
         self.cfg = cfg.exploration
+        # The one exception, read once at construction rather than held: the bar
+        # candidates are proposed at. `_anchor_untested` has to agree with
+        # ObjectLayer.candidates about whether a track is still believed, and a
+        # second threshold of its own would be a way for them to disagree.
+        self._anchor_min_presence = float(
+            getattr(getattr(getattr(cfg, "scene_graph", None), "presence", None),
+                    "min_presence", 0.45)
+        )
         self.planner = planner
         self.scorer = scorer
         self.viewpoint_planner = viewpoint_planner
@@ -541,6 +549,15 @@ class ExplorationStrategy:
         selected_floor = max(floor_mass, key=lambda key: (floor_mass[key], -int(key)))
         self.selected_search_floor = int(selected_floor)
         self.stats["selected_search_floor"] = int(selected_floor)
+        if int(selected_floor) != int(world.floor_id) and self._anchor_untested(world):
+            # The map still says the object is on THIS floor and nothing has
+            # tested that. Leaving now abandons the one hypothesis the prior map
+            # actually supports, in favour of an argmax over how many surfaces
+            # each storey happens to have. Hold the request and search here.
+            self.stats["cross_floor_request_held"] = (
+                self.stats.get("cross_floor_request_held", 0) + 1
+            )
+            selected_floor = int(world.floor_id)
         if int(selected_floor) != int(world.floor_id):
             self.requested_floor = int(selected_floor)
             self.stats["cross_floor_search_requests"] = (
@@ -605,6 +622,36 @@ class ExplorationStrategy:
             if frontier_util >= surface.utility:
                 return None
         return surface
+
+    def _anchor_untested(self, world: WorldView) -> bool:
+        """Is a target-labelled track on THIS floor still believed and unvisited?
+
+        The condition under which leaving the storey is premature. "Untested"
+        means the agent has not been to that pose (`absence_arrivals == 0`) and
+        the belief is still above the bar candidates are proposed at -- exactly
+        the two signals the rest of the pipeline already uses, so the floor
+        question and the candidate question cannot disagree about one track.
+
+        False whenever the feature is off, when nothing target-labelled is
+        mapped on this floor, or when there is no presence filter to ask: in all
+        three the storey argmax is the only opinion available and it should
+        stand.
+        """
+        if not bool(getattr(self.cfg, "search_floor_requires_anchor_test", False)):
+            return False
+        layer = world.object_layer
+        min_presence = float(self._anchor_min_presence)
+        for track in layer.tracks(include_blacklisted=True):
+            if not same_label(getattr(track, "label", ""), world.target):
+                continue
+            if int(getattr(track, "floor_key", world.floor_id)) != int(world.floor_id):
+                continue
+            if int(getattr(track, "absence_arrivals", 0)) > 0:
+                continue
+            presence = getattr(track, "presence", None)
+            if presence is None or float(presence.p) >= min_presence:
+                return True
+        return False
 
     def _last_known_target_xy(self, world: WorldView):
         """Where the target was last believed to be -- while it is still believed.

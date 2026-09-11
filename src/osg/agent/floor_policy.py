@@ -283,20 +283,24 @@ class FloorPolicy:
 
     def try_switch(
         self, frame, step: int, best_path_cost, scene_graph, target: str, reachable_fn,
-        target_floor: Optional[int] = None,
+        target_floor: Optional[int] = None, presence_of=None,
     ) -> Optional[PortalGoal]:
         """Head for another storey when this one has nothing near left.
 
         Returns the portal to drive to, or None to stay. The caller applies it:
         deciding to leave a floor is this policy's business, and moving the
         agent is the FSM's.
+
+        `presence_of` is passed straight to `floor_target_evidence`, where it
+        gates the target bonus on the instance still being believed. The caller
+        supplies it only when `exploration.floor_evidence_by_presence` is set.
         """
         if self.switch_policy is None:
             return None
         if target_floor is not None and int(target_floor) == self.stack.current_id:
             return None
         evidence, n_objects = floor_target_evidence(
-            scene_graph, self.stack.current_id, target
+            scene_graph, self.stack.current_id, target, presence_of=presence_of,
         )
         directed = target_floor is not None
         if not directed and not self.switch_policy.may_switch(

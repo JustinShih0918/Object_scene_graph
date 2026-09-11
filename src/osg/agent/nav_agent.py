@@ -956,6 +956,24 @@ class NavAgent:
         self.exploration.note_progress(world)
         self.state = State.GOTO_FRONTIER
 
+    def _track_still_believed(self, track_id: int) -> bool:
+        """Is this mapped instance still believed to be where the map put it?
+
+        The floor gate's question, answered by the presence filter rather than
+        by the label alone. A track the agent has already walked to and not
+        found (`absence_arrivals`) is not believed however high its log-odds
+        happens to sit, because that arrival is the direct test.
+        """
+        track = self.object_layer.get(int(track_id))
+        if track is None:
+            return False
+        if int(getattr(track, "absence_arrivals", 0)) > 0:
+            return False
+        presence = getattr(track, "presence", None)
+        if presence is None:
+            return True
+        return float(presence.p) >= float(self.cfg.scene_graph.presence.min_presence)
+
     def _try_floor_switch(
         self, frame: FrameData, best_path_cost, target_floor: Optional[int] = None
     ) -> bool:
@@ -971,6 +989,9 @@ class NavAgent:
             frame, self.step_count, best_path_cost,
             self.scene_graph, self.target, self._reachable_fn,
             target_floor=target_floor,
+            presence_of=self._track_still_believed
+            if bool(getattr(self.cfg.exploration, "floor_evidence_by_presence", False))
+            else None,
         )
         if portal is None:
             return False

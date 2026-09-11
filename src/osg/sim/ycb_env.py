@@ -574,6 +574,29 @@ def prepare_ycb_benchmark(cfg, *, force: bool = False) -> PreparedYCB:
         for layout in discovery.layouts
         if layout.layout_type == "static"
     }
+    # The static layout is the RELOCATION SOURCE, not only an episode type. The
+    # nav pass runs `layout_types=[in_anchor,cross_anchor]`, which kept static
+    # out of discovery entirely -- so `source_layout` was None, and with it
+    # every relocation field: `prior_position`, `prior_floor_y` and
+    # `relocation_direction` are null in all 30 episodes of
+    # outputs/osg_authored_15. Two things silently did not happen. The record
+    # could not say which floor the object came FROM, and `start_on_prior_floor`
+    # -- the combined preset's headline, "every deterministic start is sampled
+    # on the object's prior floor" -- had no floor to require, so starts were
+    # sampled anywhere and `floor_class` was an accident of sampling.
+    #
+    # Discover the static layouts separately when the episode types exclude
+    # them. This changes the manifest cache key, and therefore the sampled
+    # starts, for any run that relocates: that is the point.
+    if "static" not in set(discovery_kwargs["layout_types"]):
+        source_kwargs = dict(discovery_kwargs, layout_types=["static"])
+        try:
+            for layout in discover_authored_layouts(**source_kwargs).layouts:
+                static_by_scene.setdefault(layout.scene_name, layout)
+        except YCBLayoutError:
+            # A root with no static layout at all is a valid static-only or
+            # legacy corpus; the fields simply stay null, as before.
+            pass
     if bool(getattr(cfg.ycb, "cross_floor_relocations_only", False)):
         missing = sorted({
             layout.scene_name for layout in discovery.layouts

@@ -100,6 +100,32 @@ class ExplorationConfig:
     # the first scene. `ObjectTrack.absence_arrivals` counts only "I went to
     # look and it was gone".
     search_drop_proximity_after_absence: bool = False
+    # ---------------------------------------------------------------- fusion
+    # Order the two systems: test the stale anchor BEFORE choosing a storey.
+    #
+    # `_select_surface` aggregates container mass per floor and asks FloorPolicy
+    # for the argmax. With a flat proximity prior that mass is just "which floor
+    # has more mapped surfaces", so on a two-storey prior map it fires on the
+    # FIRST selection round -- measured on outputs/osg_authored_15, the first
+    # cross-floor request came at step 13 in 17 of 30 episodes, including 10 of
+    # the 19 whose object never left the start floor. The agent leaves before it
+    # has been anywhere, and the presence filter -- the mechanism that knows the
+    # object moved -- never gets to speak: 4 absence checks in 30 episodes.
+    #
+    # With this on, a cross-floor request is held while a target-labelled track
+    # on THIS floor is still believed, i.e. no absence arrival yet and presence
+    # still above the candidate gate. The held round falls through to same-floor
+    # selection, so the agent searches where the map says the object is, and the
+    # storey question is asked once that belief has actually been tested.
+    search_floor_requires_anchor_test: bool = False
+    # Weight `graph.priors.floor_target_evidence` by presence instead of
+    # counting labels. A mapped instance of the target category scores +10 and
+    # closes the switch gate for good ("never leave a floor that has the thing
+    # we are looking for on it") -- but on a stale prior map that instance is
+    # exactly the object that has since been moved. Presence already knows: the
+    # track sits below `min_presence` after an absence arrival. Off by default
+    # because it changes when a single-storey run may leave a floor at all.
+    floor_evidence_by_presence: bool = False
     # Belief carried by the single most plausible mapped surface. The candidate
     # priors are affinity x proximity normalised so the best of them equals this,
     # which separates the ORDERING (what the proximity model is for) from the
