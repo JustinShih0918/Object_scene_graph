@@ -53,6 +53,8 @@
   "agent.passive_stair_entry": true,
   "agent.pointnav_approach_creep_m": 1.0,
   "agent.pointnav_arrival_m": 0.0,
+  "agent.pointnav_creep_stall_eps": 0.05,
+  "agent.pointnav_creep_stall_steps": 0,
   "agent.pointnav_depth_shape": [
     224,
     224

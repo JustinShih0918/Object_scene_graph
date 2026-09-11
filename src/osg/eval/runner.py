@@ -132,6 +132,7 @@ def run_eval(cfg) -> dict:
             # "los_visibility_penalty" "multi_floor" "navigation" "navmesh_3d_goals"
             # "nearby_distance_m" "pointnav_approach_creep_m" "pointnav_arrival_m"
             # "pointnav_depth_shape" "pointnav_stop_means_blocked"
+            # "pointnav_creep_stall_eps" "pointnav_creep_stall_steps"
             # "pointnav_stop_radius" "pointnav_weights" "policy" "ranker"
             # "ranker_every_steps" "ranker_topk" "reachable_via_viewpoint"
             # "rednet_stairs" "reselect_every" "room_classifier" "room_erode_iters"

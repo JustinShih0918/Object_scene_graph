@@ -1589,8 +1589,16 @@ class NavAgent:
                 float(self.cfg.agent.pointnav_approach_creep_m)
                 if self.state is State.APPROACH else 0.0
             )
-            return self.pointnav(
+            # `.step` rather than `__call__`: the action is the same, but the
+            # REASON is the only way to tell "I am there" from "the network gave
+            # up" from "I stopped closing", and an arm whose whole question is
+            # why approaches do not terminate cannot be read without it.
+            step = self.pointnav.step(
                 goal_xy, creep_below=creep,
                 stop_radius=float(self.cfg.agent.pointnav_arrival_m),
             )
+            self.stats[f"pointnav_{step.reason}"] = (
+                self.stats.get(f"pointnav_{step.reason}", 0) + 1
+            )
+            return step.action
         return self.approach.follow_to(frame, goal_xy)

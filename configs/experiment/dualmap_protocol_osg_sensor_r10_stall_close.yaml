@@ -1,0 +1,15 @@
+# @package _global_
+#
+# The stall arm with the closing walk put back, to price what turning it off cost.
+#
+# The closing walk replaces the approach goal with the navigable point nearest
+# the object, which is by construction a point the agent can stand on -- exactly
+# the property the stranded goals lacked. It is navmesh-derived and so is
+# privileged in a sensor-only claim; this arm exists to measure the size of that
+# privilege on this benchmark, not to be the headline configuration.
+
+defaults:
+  - dualmap_protocol_osg_sensor_r10_stall
+
+agent:
+  approach_close_last_metre_m: 0.8

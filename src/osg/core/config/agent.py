@@ -234,6 +234,19 @@ class AgentConfig:
     pointnav_depth_shape: List[int] = field(default_factory=lambda: [224, 224])
     pointnav_approach_creep_m: float = 1.0
     pointnav_arrival_m: float = 0.0
+    # The creep (`pointnav_approach_creep_m`) is a blind forward with no
+    # obstacle test. It assumes the goal is walkable; an approach goal is a free
+    # cell in a DEPTH-BUILT costmap, and on the sensor arm 27 of 44 stranded
+    # approaches had a goal the navmesh calls non-navigable. Habitat refuses the
+    # forward, rho never falls, and the press runs to the budget -- a median 262
+    # approach steps, ending 33 of those episodes.
+    #
+    # With this many consecutive creep steps that fail to beat the closest
+    # approach so far by `pointnav_creep_stall_eps`, the driver reports arrival:
+    # the agent is as close to the goal as the geometry allows. 0 keeps the
+    # unconditional press, which is what every measured ascent arm ran on.
+    pointnav_creep_stall_steps: int = 0
+    pointnav_creep_stall_eps: float = 0.05
     pointnav_stop_means_blocked: bool = True
 
     # Navigation/termination controls imported with the ASCENT behavior

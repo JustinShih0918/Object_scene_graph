@@ -32,6 +32,9 @@ class NavStep(NamedTuple):
       arrived      inside the goal radius -- the pursuit succeeded
       policy_stop  the network emitted STOP while still short of the goal
       creep        forced forward inside the terminal creep radius
+      creep_stalled the creep stopped making progress: the agent is as close to
+                   the goal as the geometry allows, which for an unreachable
+                   goal is the only "arrived" there will ever be
       moving       an ordinary action
 
     Collapsing `arrived` and `policy_stop` into a bare None is what made the
@@ -90,9 +93,15 @@ class PointNavDriver:
         depth_min_m: float = 0.5,
         depth_max_m: float = 5.0,
         goal_change_m: float = 0.1,
+        creep_stall_steps: int = 0,
+        creep_stall_eps: float = 0.05,
         device: Optional[str] = None,
     ) -> None:
         self.stop_radius = float(stop_radius)
+        # 0 disables the stall test, leaving the unconditional creep every
+        # measured ascent/ascentnav arm ran on.
+        self.creep_stall_steps = int(creep_stall_steps)
+        self.creep_stall_eps = float(creep_stall_eps)
         self.depth_shape = (int(depth_shape[0]), int(depth_shape[1]))
         self.depth_min_m = float(depth_min_m)
         self.depth_max_m = float(depth_max_m)
@@ -105,6 +114,8 @@ class PointNavDriver:
         # Diagnostics, read by the debug video / episode log.
         self.last_rho: Optional[float] = None
         self.last_theta: Optional[float] = None
+        # Cumulative, read as a mechanism counter by the agent.
+        self.n_creep_stalls = 0
         self._depth: Optional[torch.Tensor] = None
         self._pos_ccw: Optional[np.ndarray] = None
         self._heading_ccw: float = 0.0
@@ -122,6 +133,17 @@ class PointNavDriver:
         # is standing in.
         self.n_resets = 0
         self._started = False
+        self._reset_creep()
+
+    def _reset_creep(self) -> None:
+        """Forget how close this goal has been approached.
+
+        Per GOAL, not per episode: the stall test asks "has this pursuit stopped
+        closing", and a new goal is a new pursuit. Leaking the previous goal's
+        best distance would declare an instant stall on the next one.
+        """
+        self._creep_best_rho: Optional[float] = None
+        self._creep_stalled_steps = 0
 
     def _reset_recurrent(self) -> None:
         """Goal changed: the LSTM's memory is about a route to somewhere else.
@@ -186,6 +208,7 @@ class PointNavDriver:
         goal = to_ccw_frame(np.asarray(goal_xy, dtype=float))
         if self._last_goal is None or np.linalg.norm(goal - self._last_goal) > self.goal_change_m:
             self._reset_recurrent()
+            self._reset_creep()
             self.n_resets += 1
         self._last_goal = goal
 
@@ -202,6 +225,30 @@ class PointNavDriver:
         if rho < radius:
             return NavStep(None, "arrived")
         if creep_below > 0.0 and rho < creep_below:
+            # The creep is a BLIND forward: no network, no obstacle test. That is
+            # deliberate (the network's own stop radius is far outside the success
+            # distance), but it assumes the goal can be walked to. Ours often
+            # cannot -- an approach goal is a free cell in a depth-built costmap,
+            # and 27 of 44 stranded approaches had a goal the navmesh calls
+            # non-navigable, i.e. inside the furniture. Habitat then refuses the
+            # forward, `rho` never falls, and the press runs to the budget: those
+            # 44 burned a median 262 approach steps and 33 of them ended the
+            # episode (docs/WHY_THE_SENSOR_ARM_LOSES.md).
+            #
+            # So: if the pursuit stops closing, it has arrived at whatever the
+            # geometry allows. Measured on those trials, how far the goal sits
+            # off the navmesh predicts how close the agent gets almost exactly
+            # (0.59 -> 0.59, 0.57 -> 0.57), which is what "as close as possible"
+            # looks like. `window <= 0` keeps the old unconditional press.
+            if self.creep_stall_steps > 0:
+                if self._creep_best_rho is None or rho < self._creep_best_rho - self.creep_stall_eps:
+                    self._creep_best_rho = rho
+                    self._creep_stalled_steps = 0
+                else:
+                    self._creep_stalled_steps += 1
+                    if self._creep_stalled_steps >= self.creep_stall_steps:
+                        self.n_creep_stalls += 1
+                        return NavStep(None, "creep_stalled")
             return NavStep("move_forward", "creep")
 
         obs = {
@@ -260,6 +307,8 @@ def build_pointnav(cfg) -> PointNavDriver:
     return PointNavDriver(
         str(cfg.agent.pointnav_weights),
         stop_radius=float(cfg.agent.pointnav_stop_radius),
+        creep_stall_steps=int(getattr(cfg.agent, "pointnav_creep_stall_steps", 0) or 0),
+        creep_stall_eps=float(getattr(cfg.agent, "pointnav_creep_stall_eps", 0.05)),
         depth_shape=tuple(cfg.agent.pointnav_depth_shape),
         depth_min_m=float(getattr(cfg.eval, "depth_min_m", 0.5)),
         depth_max_m=float(getattr(cfg.eval, "depth_max_m", 5.0)),

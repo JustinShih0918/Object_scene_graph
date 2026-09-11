@@ -346,8 +346,16 @@ def test_approach_creep_does_not_leak_into_climb(monkeypatch):
             pass
 
         def __call__(self, goal_xy, *, stop_radius=None, creep_below=0.0):
+            return self.step(goal_xy, stop_radius=stop_radius,
+                             creep_below=creep_below).action
+
+        def step(self, goal_xy, *, stop_radius=None, creep_below=0.0):
+            # `_follow_to` reads the REASON, not just the action, so the fake has
+            # to answer the same contract the real driver does.
+            from osg.planning.pointnav_driver import NavStep
+
             calls.append(creep_below)
-            return None
+            return NavStep(None, "arrived")
 
     cfg = make_cfg(navigation="pointnav", pointnav_approach_creep_m=1.0)
     agent = make_agent(cfg, pointnav=_Driver())
