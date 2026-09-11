@@ -33,6 +33,7 @@ preset_for() {
     v3)         echo ycb_authored_15_fused_v3 ;;
     v4)         echo ycb_authored_15_fused_v4 ;;
     v5)         echo ycb_authored_15_fused_v5 ;;
+    v6)         echo ycb_authored_15_fused_v6 ;;
     *)          echo "$1" ;;
   esac
 }
