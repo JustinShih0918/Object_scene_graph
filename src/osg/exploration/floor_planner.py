@@ -94,6 +94,9 @@ class FloorDecisionPlanner:
         self.blocked_one_floor = 0
         self.blocked_throttle = 0
         self.blocked_too_soon = 0
+        # The model's own justification for the last decision, so an arm can be
+        # audited on WHY it chose a storey rather than only on whether it did.
+        self.last_reason = ""
 
     def reset(self) -> None:
         self._last_ask = -10_000
@@ -183,6 +186,7 @@ class FloorDecisionPlanner:
         try:
             self.asks += 1
             resp = self.client.chat(prompts.FLOOR_DECISION_SYSTEM, user)
+            self.last_reason = str(resp.get("Reason", ""))[:200]
             idx = int(str(resp.get("Index", "0")).strip()) - 1  # 1-based
         except Exception as e:  # noqa: BLE001
             log.warning("floor planner failed, staying on this floor: %s", e)

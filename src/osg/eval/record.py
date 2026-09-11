@@ -306,4 +306,5 @@ def build_episode_record(
             getattr(getattr(agent, "floors", None), "transitions", [])
         ),
         "portal_log": getattr(agent, "portal_log", []),
+        "floor_llm_log": getattr(agent, "floor_llm_log", []),
     }

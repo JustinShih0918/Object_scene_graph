@@ -44,7 +44,7 @@ EXPECTED_KEYS = {
     "gt_kf_far_centred_detected", "gt_kf_far_peripheral",
     "gt_frames_within_3m", "gt_kf_far_peripheral_detected", "gt_kf_in_view",
     "gt_mean_visible_fraction", "gt_min_range_any_m", "gt_min_range_m", "llm_calls", "llm_errors",
-    "llm_last_error", "n_floors_seen", "n_stair_tracks", "portal_log",
+    "llm_last_error", "n_floors_seen", "n_stair_tracks", "portal_log", "floor_llm_log",
     "presence_events", "prior_map", "scene", "search_log_events", "spl",
     "stair_tracks", "start_y", "state_log", "steps", "success", "target",
     "target_obj_xy", "target_tracks", "traj_y_range", "verify_calls",

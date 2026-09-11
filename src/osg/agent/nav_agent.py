@@ -422,6 +422,7 @@ class NavAgent:
         # committed to a goal. Belief latency and stale-goal rate are computed
         # from these two logs plus the relocation step the env records.
         self.presence_events: List[dict] = []
+        self.floor_llm_log: list = []
         self._disbelieved: set = set()
         self._stale_stop_used = False
         self._stale_stop_pending = False
@@ -999,15 +1000,25 @@ class NavAgent:
         if not bool(getattr(self.cfg.exploration, "floor_llm", False)):
             return target_floor
         stack = self.floors.stack
+        asked_before = int(getattr(self.floor_planner, "asks", 0))
         direction = self.floor_planner.decide(
             self.target, stack, self.scene_graph, self.step_count,
         )
         self.stats["floor_llm_asks"] = int(getattr(self.floor_planner, "asks", 0))
         self.stats["floor_llm_moves"] = int(getattr(self.floor_planner, "moves", 0))
+        self.stats["floor_llm_blocked_throttle"] = int(
+            getattr(self.floor_planner, "blocked_throttle", 0))
+        self.stats["floor_llm_blocked_too_soon"] = int(
+            getattr(self.floor_planner, "blocked_too_soon", 0))
+        self.stats["floor_llm_blocked_one_floor"] = int(
+            getattr(self.floor_planner, "blocked_one_floor", 0))
         if direction is None:
-            self.stats["floor_llm_no_answer"] = (
-                self.stats.get("floor_llm_no_answer", 0) + 1
-            )
+            # Two very different things: the gate refused to spend a call, or a
+            # call was made and its answer was unusable. `asks` only moves in
+            # the second case, so the difference is recoverable.
+            key = ("floor_llm_no_answer" if asked_before < self.stats["floor_llm_asks"]
+                   else "floor_llm_not_asked")
+            self.stats[key] = self.stats.get(key, 0) + 1
             return target_floor
         self._floor_goal_dir = int(direction)
         if direction == 0:
@@ -1021,6 +1032,14 @@ class NavAgent:
                 self.stats.get("floor_llm_no_such_floor", 0) + 1
             )
             return target_floor
+        self.floor_llm_log.append({
+            "step": int(self.step_count),
+            "from_floor": int(stack.current_id),
+            "posterior": int(target_floor),
+            "direction": int(direction),
+            "chosen": int(chosen.key),
+            "reason": str(getattr(self.floor_planner, "last_reason", ""))[:200],
+        })
         if int(chosen.key) != int(target_floor):
             self.stats["floor_llm_override"] = (
                 self.stats.get("floor_llm_override", 0) + 1
