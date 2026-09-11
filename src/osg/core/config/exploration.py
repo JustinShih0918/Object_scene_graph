@@ -244,7 +244,27 @@ class ExplorationConfig:
     stair_min_cells: int = 25
     stair_retire_cells: bool = False
     value_map: bool = False
-    value_model: str = "clip"  # clip | constant
+    # ASCENT constructs its ValueMap with `use_max_confidence=False`
+    # (`map_controller.py:79-83`): a confidence-weighted running average. The
+    # vendored default is True (single most-confident view wins). Read by
+    # ascentnav only.
+    value_use_max_confidence: bool = False
+    # Fail loud on the value model, see `osg/perception/ascent_models.py`.
+    value_strict: bool = False
+    # RAM++ per-step scene tags for the LLM prompt (`map_controller.py:800-813`).
+    ram_url: str = "http://localhost:13185/ram"
+    ram_tags: bool = False
+    # ASCENT's multi-floor prompt is dead in the reference run: `_explore`
+    # never passes `floor_num`, so the `> 1` branch never fires. Kept behind a
+    # flag so the reference-effective behaviour is the default.
+    llm_multi_floor: bool = False
+    # clip | constant | blip2itm. `blip2itm` is ASCENT's own value model,
+    # reached over HTTP because lavis cannot be installed in this environment;
+    # see `perception/image_text.py::Blip2ItmScorer` and
+    # `scripts/serve_blip2itm.sh`.
+    value_model: str = "clip"
+    value_blip2_url: str = "http://localhost:13182/blip2itm"
+    value_blip2_timeout_s: float = 10.0
     value_clip_name: str = "ViT-B/32"
     value_clip_root: str = "data/clip"
     value_stride: int = 1

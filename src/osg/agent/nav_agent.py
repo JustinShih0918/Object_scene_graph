@@ -101,6 +101,7 @@ class NavAgent:
         room_classifier=None,
         image_text=None,
         feature_memory=None,
+        gate_itm=None,
         stair_segmenter=None,
     ) -> None:
         self.cfg = cfg
@@ -131,6 +132,7 @@ class NavAgent:
         self._floor_goal_dir = 0
         self.room_classifier = room_classifier
         self.image_text = image_text
+        self.gate_itm = gate_itm
         self.stair_segmenter = stair_segmenter
         self.stair_detector = None
         self._down_look_every = int(getattr(cfg.agent, "down_look_every", 0))

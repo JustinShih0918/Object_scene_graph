@@ -53,6 +53,30 @@ def build_detector(cfg):
             half=cfg.detector.half,
             device=cfg.detector.device,
         )
+    if cfg.detector.name == "yolo_coco":
+        from ..perception.detector import YoloDetector
+
+        return YoloDetector(
+            weights=cfg.detector.weights,
+            conf=cfg.detector.conf,
+            class_conf=dict(cfg.detector.class_conf or {}),
+            imgsz=cfg.detector.imgsz,
+            half=cfg.detector.half,
+            device=cfg.detector.device,
+        )
+    if cfg.detector.name == "dfine":
+        from ..perception.detector import DFineDetector
+
+        return DFineDetector(
+            url=str(getattr(cfg.detector, "url", "http://localhost:13186/dfine")),
+            sam_url=str(getattr(cfg.detector, "sam_url",
+                                "http://localhost:13183/mobile_sam")),
+            conf=cfg.detector.conf,
+            class_conf=dict(cfg.detector.class_conf or {}),
+            use_sam=bool(getattr(cfg.detector, "use_sam", True)),
+            timeout_s=float(getattr(cfg.detector, "timeout_s", 15.0)),
+            strict=bool(getattr(cfg.detector, "strict", False)),
+        )
     if cfg.detector.name == "stub":
         from ..perception.detector import StubDetector
 
@@ -148,7 +172,62 @@ def build_run_components(cfg) -> dict:
         "image_text": build_image_text_scorer(cfg),
         "feature_memory": build_feature_memory(cfg),
         "stair_segmenter": build_stair_segmenter(cfg),
+        "stair_detector": build_stair_detector(cfg),
+        "ram": build_ram_tagger(cfg),
     }
+
+
+def build_stair_detector(cfg):
+    """GroundingDINO `stair` boxes + MobileSAM masks -- the detector half of
+    ASCENT's stair fusion. Only under the strict fusion; the union does not
+    read it."""
+    if str(getattr(cfg.agent, "policy", "")) != "ascentnav":
+        return None
+    if str(getattr(cfg.agent, "stair_up_mode", "ascent")) != "ascent":
+        return None
+    from ..perception.ascent_models import GroundingDinoStairDetector
+
+    return GroundingDinoStairDetector(
+        url=str(getattr(cfg.detector, "gdino_url", "http://localhost:13184/gdino")),
+        sam_url=str(getattr(cfg.detector, "sam_url", "http://localhost:13183/mobile_sam")),
+        conf=float(getattr(cfg.detector, "gdino_stair_conf", 0.60)),
+        timeout_s=float(getattr(cfg.detector, "timeout_s", 15.0)),
+        strict=bool(getattr(cfg.detector, "strict", False)),
+    )
+
+
+def build_ram_tagger(cfg):
+    if not bool(getattr(cfg.exploration, "ram_tags", False)):
+        return None
+    from ..perception.ascent_models import RamTagger
+
+    return RamTagger(
+        url=str(getattr(cfg.exploration, "ram_url", "http://localhost:13185/ram")),
+        timeout_s=float(getattr(cfg.detector, "timeout_s", 15.0)),
+        strict=bool(getattr(cfg.detector, "strict", False)),
+    )
+
+
+def probe_served_models(cfg) -> None:
+    """Fail before Habitat loads if a served model the run depends on is down.
+    An unreachable BLIP-2 is not a degraded run: under ASCENT's gate it is an
+    agent that can never STOP."""
+    from ..perception.ascent_models import probe_perception_servers
+
+    endpoints = {}
+    if str(cfg.detector.name) == "dfine":
+        endpoints["dfine"] = str(cfg.detector.url)
+        if bool(getattr(cfg.detector, "use_sam", True)):
+            endpoints["mobile_sam"] = str(cfg.detector.sam_url)
+    if str(getattr(cfg.exploration, "value_model", "clip")) == "blip2itm" and bool(cfg.exploration.value_map):
+        endpoints["blip2itm"] = str(getattr(cfg.exploration, "value_blip2_url", "http://localhost:13182/blip2itm"))
+    if (str(getattr(cfg.agent, "policy", "")) == "ascentnav"
+            and str(getattr(cfg.agent, "stair_up_mode", "ascent")) == "ascent"):
+        endpoints["gdino"] = str(getattr(cfg.detector, "gdino_url", "http://localhost:13184/gdino"))
+    if bool(getattr(cfg.exploration, "ram_tags", False)):
+        endpoints["ram"] = str(getattr(cfg.exploration, "ram_url", "http://localhost:13185/ram"))
+    if endpoints and bool(getattr(cfg.detector, "strict", False)):
+        probe_perception_servers(endpoints)
 
 
 def build_agent(
@@ -181,6 +260,8 @@ def build_agent(
         image_text=components["image_text"],
         feature_memory=components.get("feature_memory"),
         stair_segmenter=components["stair_segmenter"],
+        stair_detector=components.get("stair_detector"),
+        ram=components.get("ram"),
     )
 
 
@@ -206,7 +287,9 @@ def build_verifier(cfg):
     from ..verification.verifier import VLMVerifier
 
     client = ChatClient(
-        cfg.llm.base_url, cfg.verification.vlm_model, cfg.llm.api_key,
+        (getattr(cfg.verification, "base_url", "") or cfg.llm.base_url),
+        cfg.verification.vlm_model,
+        (getattr(cfg.verification, "api_key", "") or cfg.llm.api_key),
         cfg.llm.timeout_s, cfg.llm.max_image_px, cfg.llm.send_response_format,
     )
     return VLMVerifier(

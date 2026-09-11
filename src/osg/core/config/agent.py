@@ -239,10 +239,24 @@ class AgentConfig:
     # Navigation/termination controls imported with the ASCENT behavior
     # snapshot.  Defaults are intentionally inert for legacy presets.
     approach_abandon_steps: int = 0
-    frontier_stick_m: float = 0.2
-    frontier_stick_steps: int = 15
     frontier_stick_rule: str = "displacement"  # displacement | closing
     escape_window: int = 0
+    # --- ASCENT control-flow port (S71) ------------------------------------
+    # `_double_check_goal` latches when the value map's BLIP-2 cosine clears
+    # this (`map_controller.py:774`). Read by ascentnav only.
+    blip_gate_threshold: float = 0.15
+    # `_detect_passive_stair_entry` (`map_controller.py:626-672`). Only valid
+    # with the strict stair mask (`stair_up_mode: ascent`); the constructor
+    # refuses the union.
+    passive_stair_entry: bool = True
+    # ASCENT's `_initialize` returns TURN_LEFT until `_initialize_step > 11`,
+    # which is 13 calls (`ascent_policy.py:689-697`).
+    initialize_turns: int = 13
+    # `ascent` = REF's mirrored-depth down-stair trigger
+    # (`obstacle_map.py:549-562`); `lip` = OSG's rewritten "missing floor lip"
+    # test. The flag sets `_look_for_downstair_flag`, and every frame it is up
+    # is spent tilting at a possible phantom drop-off.
+    downstair_detector: str = "ascent"
     terminal_requires_detection: bool = True
     frontier_reachability_gate: bool = True
     check_candidates_all_states: bool = False
@@ -299,7 +313,7 @@ class AgentConfig:
     # enabled by an imported or combined multi-floor preset.
     ascent_min_obstacle_h: float = 0.61
     ascent_max_obstacle_h: float = 0.88
-    stair_up_mode: str = "detector"  # detector | ascent | rednet
+    stair_up_mode: str = "detector"  # detector | ascent | rednet; `ascentnav` sets `ascent` (the strict RedNet AND GroundingDINO fusion), `rednet` (the union) is its A/B
     rednet_stairs: bool = False
     rednet_weights: str = "data/weights/rednet_semmap_mp3d_40.pth"
     stair_reach_m: float = 0.6
