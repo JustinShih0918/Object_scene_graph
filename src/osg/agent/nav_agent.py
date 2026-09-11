@@ -103,6 +103,8 @@ class NavAgent:
         feature_memory=None,
         gate_itm=None,
         stair_segmenter=None,
+        stair_detector=None,
+        ram=None,
     ) -> None:
         self.cfg = cfg
         self.detector = detector
@@ -134,7 +136,14 @@ class NavAgent:
         self.image_text = image_text
         self.gate_itm = gate_itm
         self.stair_segmenter = stair_segmenter
-        self.stair_detector = None
+        # `build_agent` hands every policy the same components. The served
+        # GroundingDINO stair detector is built only for ascentnav, so this is
+        # None on the nav_agent line and the cfg-driven StairDetector below is
+        # what runs; an injected one wins because it is the stronger sensor.
+        self.stair_detector = stair_detector
+        # RAM++ tags are an ascentnav prompt input; accepted so the common
+        # construction contract holds, unused here.
+        self.ram = ram
         self._down_look_every = int(getattr(cfg.agent, "down_look_every", 0))
         ascent_selector = str(getattr(cfg.exploration, "selector", "utility")) == "ascent"
         self.commit_state = (
@@ -196,7 +205,7 @@ class NavAgent:
         self.floors = FloorPolicy(
             cfg, self.stats, value_map_factory=value_map_factory
         )
-        if bool(getattr(cfg.mapping, "multi_floor", False)):
+        if self.stair_detector is None and bool(getattr(cfg.mapping, "multi_floor", False)):
             from ..mapping.stairs import StairDetector
 
             self.stair_detector = StairDetector(

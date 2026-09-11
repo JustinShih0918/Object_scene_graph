@@ -716,7 +716,12 @@ def _unreachable_agent(**agent_overrides):
     # the first strike blacklists and there is no second one to guard against.
     cfg.verification.unreachable_is_absorbing = False
     agent = make_agent(cfg, target="chair")
+    # The direct commit path is gated on having a mover that owns the path
+    # (`_direct_approach`), and the island oracle inside it on the navmesh; a
+    # navmesh agent has both, so the fake sets both. Faking `_use_navmesh`
+    # alone stopped exercising the branch when the gate was corrected.
     agent._use_navmesh = True
+    agent._direct_approach = True
     agent._reachable_fn = lambda xy, floor_y=None: False
     track = ObjectTrack(
         id=1, label="chair",

@@ -100,10 +100,19 @@ class CandidatePolicy:
         obj_center = self.nav.object_layer.center_of(track)
         obj_xy = obj_center[list(PLANE)]
 
-        # Navmesh alignment (old stack): navigate straight to the object
-        # position and let Habitat's navmesh drive there, then STOP on arrival
-        # -- like publishing /goal_object. No viewpoint pre-positioning.
-        if self.nav._use_navmesh:
+        # Direct commit: hand the goal to the mover and let it drive there,
+        # then STOP on arrival -- like publishing /goal_object. No viewpoint
+        # pre-positioning, and no VERIFYING state.
+        #
+        # The predicate is "is there a driver that owns the path", not "is it
+        # the navmesh". It was `_use_navmesh`, so when the line switched to
+        # `navigation: pointnav` this whole branch -- the commit log and
+        # `_start_approach` with it -- went dead and every episode fell through
+        # to the GOTO_VERIFY_VIEW machine below. The island/reachability oracle
+        # inside is the one genuinely navmesh-dependent part and keeps its own
+        # `_reachable_fn is not None` guard, so it simply does not run without
+        # the mesh.
+        if self.nav._direct_approach:
             # Don't commit to a target on a disconnected navmesh island (a
             # visible-but-unreachable object, e.g. in a sealed bathroom): the
             # agent can never get there, so blacklist it and keep exploring for

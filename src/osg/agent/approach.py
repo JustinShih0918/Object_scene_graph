@@ -177,10 +177,11 @@ class ApproachPolicy:
                 self.stop_reason = stop_reason
                 return STOP_ACTION
         elif (
-            not self.nav._use_navmesh  # navmesh knows the path; a momentary FOV loss
-            # while turning along it must NOT trigger a retreat, or the agent
-            # oscillates (approach -> lose detection -> retreat -> re-detect ...)
-            # until the deadline. Costmap mode keeps the LOS-occlusion retreat.
+            not self.nav._direct_approach  # a driver that owns the path (navmesh
+            # or pointnav) knows it; a momentary FOV loss while turning along it
+            # must NOT trigger a retreat, or the agent oscillates (approach ->
+            # lose detection -> retreat -> re-detect ...) until the deadline.
+            # Costmap mode keeps the LOS-occlusion retreat.
             and self.last_good_xy is not None
             and np.linalg.norm(agent_xy - self.last_good_xy) > 0.1
         ):
@@ -400,7 +401,7 @@ class ApproachPolicy:
         to keep in step with `ViewpointPlanner`.
         """
         self.at_viewpoint = False
-        if self.nav._use_navmesh and self.nav.cfg.agent.approach_to_viewpoint:
+        if self.nav._direct_approach and self.nav.cfg.agent.approach_to_viewpoint:
             # HM3D scores success as the distance from the final pose to the
             # nearest GOAL VIEW POINT, and those are sampled on rings at fixed
             # radii around the object. Stopping when the target's depth reaches
@@ -458,9 +459,11 @@ class ApproachPolicy:
                 self.nav.stats["approach_goal_nearest_free"] = (
                     self.nav.stats.get("approach_goal_nearest_free", 0) + 1
                 )
-        elif self.nav._use_navmesh:
-            # Navigate to the object itself; the navmesh snaps to the nearest
-            # standable point (effectively a viewpoint), like old /goal_object.
+        elif self.nav._direct_approach:
+            # Navigate to the object itself. The navmesh snaps to the nearest
+            # standable point (effectively a viewpoint), like old /goal_object;
+            # pointnav walks at it under `pointnav_approach_creep_m`. Either way
+            # the mover owns the last stretch, so the goal is the object.
             self.nav._goal_xy = obj_xy.copy()
         elif self.nav.cfg.agent.approach_navigable_goal and agent_xy is not None:
             self.nav._goal_xy = self._standoff_goal(obj_xy, agent_xy)
@@ -480,8 +483,15 @@ class ApproachPolicy:
         already near, or the navmesh point is no nearer than this pose).
         """
         close_m = float(getattr(self.nav.cfg.agent, "approach_close_last_metre_m", 0.0) or 0.0)
-        if close_m <= 0.0 or self.closed or not self.nav._use_navmesh:
+        if close_m <= 0.0 or self.closed:
             return None
+        # NOTE: this walk asks the pathfinder for the navigable point nearest the
+        # track (`_nearest_navigable_fn`), which is navmesh-derived and therefore
+        # privileged in a sensor-only arm -- it chooses the GOAL, the mover still
+        # has to reach it from depth alone. It was gated on `_use_navmesh` and so
+        # went silently dead when the line switched to pointnav; the honest gate
+        # is whether the query exists, which the caller checks below. Set
+        # `agent.approach_close_last_metre_m: 0` for a navmesh-free arm.
         obj_xy = self.nav._target_obj_xy
         stats = self.nav.stats
         if self.closing:
@@ -584,10 +594,10 @@ class ApproachPolicy:
         self.closed = False
         self.close_start_xy = None
         self.close_retreating = False
-        if self.nav._use_navmesh:
-            # Navmesh drives the FULL distance to the object (no viewpoint
-            # pre-positioning), so the short-leg cap (approach_max_steps ~= 3 m)
-            # cuts the approach off while the target is still in view. Let it
+        if self.nav._direct_approach:
+            # A driver (navmesh or pointnav) covers the FULL distance to the
+            # object, so the short-leg cap (approach_max_steps ~= 3 m) would cut
+            # the approach off while the target is still in view. Let it
             # navigate to the object, bounded only by a generous deadline.
             self.nav._goto_deadline = (
                 self.nav.step_count + self.nav.cfg.agent.navmesh_approach_steps
