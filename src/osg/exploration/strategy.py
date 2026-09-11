@@ -676,6 +676,20 @@ class ExplorationStrategy:
             frontier_util = beta * (best_frontier.score or 0.0) / best_frontier.path_cost
             self._last_frontier_util = float(frontier_util)
             if frontier_util >= surface.utility:
+                # A surface WAS found, costed, and beaten. Distinguishable in
+                # the record from "there was nothing to hand back to", which is
+                # the other way `_select_surface` returns None and looks the
+                # same from outside. On 00808 the posterior selected zero
+                # surfaces in 16 episodes and this says whether that is because
+                # no candidate survived or because exploration outbid them all.
+                self.stats["search_surface_outbid"] = (
+                    self.stats.get("search_surface_outbid", 0) + 1
+                )
+                margin = float(frontier_util) / max(float(surface.utility), 1e-9)
+                self.stats["search_surface_outbid_margin_x100"] = max(
+                    int(self.stats.get("search_surface_outbid_margin_x100", 0)),
+                    int(round(margin * 100)),
+                )
                 return None
         return surface
 
