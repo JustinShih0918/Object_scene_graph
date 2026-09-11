@@ -1023,6 +1023,18 @@ class NavAgent:
         self._floor_goal_dir = int(direction)
         if direction == 0:
             self.stats["floor_llm_stay"] = self.stats.get("floor_llm_stay", 0) + 1
+            # Log the refusal too. "Stay" is the interesting answer: it is the
+            # one that overrides the posterior by doing nothing, and without it
+            # in the record an arm that talked the agent out of every correct
+            # floor change looks identical to one that was never asked.
+            self.floor_llm_log.append({
+                "step": int(self.step_count),
+                "from_floor": int(stack.current_id),
+                "posterior": int(target_floor),
+                "direction": 0,
+                "chosen": int(stack.current_id),
+                "reason": str(getattr(self.floor_planner, "last_reason", ""))[:200],
+            })
             return False
         chosen = stack.up() if direction > 0 else stack.down()
         if chosen is None:
