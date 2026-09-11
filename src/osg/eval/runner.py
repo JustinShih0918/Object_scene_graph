@@ -229,8 +229,13 @@ def run_eval(cfg) -> dict:
             profiler=profiler,
             nav_fn=(env.action_to_goal if components["navigation"] == "navmesh" else None),
             reachable_fn=(env.is_reachable if components["navigation"] == "navmesh" else None),
-            nearest_navigable_fn=(getattr(env, "nearest_navigable_xy", None)
-                                  if components["navigation"] == "navmesh" else None),
+            # NOT gated on the mover. Its only consumer is the closing walk
+            # (`approach.py:_close_last_metre`), which is switched by
+            # `agent.approach_close_last_metre_m` and is 0 by default. Gating it
+            # on navmesh mode made the flag silently dead under pointnav -- an
+            # arm built to price what the closing walk is worth ran bit-identical
+            # to the arm without it, which is how this was found.
+            nearest_navigable_fn=getattr(env, "nearest_navigable_xy", None),
         )
         debug = DebugVideo(cfg, out_dir, ep_tag) if cfg.eval.debug_frames else None
         outcome = run_episode(cfg, env, agent, episode, target, frame, detector, debug)
