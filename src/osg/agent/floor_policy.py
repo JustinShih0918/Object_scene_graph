@@ -281,6 +281,37 @@ class FloorPolicy:
         self.pursuing = False
         self.stats[f"portal_end_{reason}"] = self.stats.get(f"portal_end_{reason}", 0) + 1
 
+    def _remembered_stair(self, target_floor: Optional[int]):
+        """A staircase the prior map already walked, as (goal_xy, other_floor).
+
+        `StairEdge` records both mouths of one traversal: `entry_xy` is where
+        the agent stood when it committed to the new storey -- the mouth on the
+        floor it LEFT -- and `exit_xy` is its landing point on the floor it
+        reached. So an edge touching the current floor names a point on THIS
+        floor from which the other storey is reachable, whichever way it was
+        walked.
+
+        Prefers the most-traversed edge, then the most recent, because a
+        staircase pass 1 used repeatedly is the one that works.
+        """
+        current = int(self.stack.current_id)
+        best = None
+        for edge in getattr(self.stack, "stair_edges", []) or []:
+            if int(edge.from_floor) == current:
+                other, xy = int(edge.to_floor), edge.entry_xy
+            elif int(edge.to_floor) == current:
+                other, xy = int(edge.from_floor), edge.exit_xy
+            else:
+                continue
+            if xy is None or other == current:
+                continue
+            if target_floor is not None and other != int(target_floor):
+                continue
+            rank = (int(edge.n_traversals), int(edge.step))
+            if best is None or rank > best[0]:
+                best = (rank, np.asarray(xy, dtype=float), other)
+        return None if best is None else (best[1], best[2])
+
     def try_switch(
         self, frame, step: int, best_path_cost, scene_graph, target: str, reachable_fn,
         target_floor: Optional[int] = None, presence_of=None,
@@ -317,8 +348,54 @@ class FloorPolicy:
             min_cells=self.cfg.floor.portal_min_cells,
         )
         self.stats["portals_seen"] = max(self.stats.get("portals_seen", 0), len(portals))
+        remembered = (
+            self._remembered_stair(target_floor)
+            if bool(getattr(self.cfg.floor, "use_prior_stairs", False)) else None
+        )
         if not portals:
-            return None
+            # Nothing visible to drive to. Measured on outputs/osg_authored_15,
+            # this is the usual answer: of 11 cross-floor episodes, 4 saw no
+            # portal at all and never attempted a switch, and across the run 405
+            # storey requests produced 12 attempts.
+            #
+            # But the agent is not ignorant of the staircase -- the prior map
+            # RECORDED the one pass 1 walked, in `connectivity`, and `apply_map`
+            # restores it into `stack.stair_edges`. Nothing ever read it back.
+            # A remembered mouth is also better evidence than a live portal
+            # here: the undirected portal search picks the nearest height
+            # artifact, and its 24 attempts moved the agent a median 0.13 m.
+            if remembered is None:
+                return None
+            goal_xy, other_floor = remembered
+            if reachable_fn is not None and not reachable_fn(
+                goal_xy, self.estimator.height_of(other_floor)
+            ):
+                self.stats["prior_stair_unreachable"] = (
+                    self.stats.get("prior_stair_unreachable", 0) + 1
+                )
+                return None
+            self.pursuing = True
+            self._portal_start_y = float(frame.camera_position[1])
+            self._portal_step = step
+            self.switch_policy.note_switch(step)
+            self.stats["floor_switch_attempts"] = (
+                self.stats.get("floor_switch_attempts", 0) + 1
+            )
+            self.stats["prior_stair_switch_attempts"] = (
+                self.stats.get("prior_stair_switch_attempts", 0) + 1
+            )
+            if directed:
+                self.stats["directed_floor_switch_attempts"] = (
+                    self.stats.get("directed_floor_switch_attempts", 0) + 1
+                )
+            self.portal_log.append((
+                step, [round(float(x), 2) for x in goal_xy], "prior_stair", 0,
+            ))
+            return PortalGoal(
+                goal_xy=np.asarray(goal_xy, dtype=float).copy(),
+                target_y=float(self.estimator.height_of(other_floor)),
+                deadline_steps=self.cfg.floor.portal_deadline_steps,
+            )
 
         agent_xy = frame.camera_position[list(PLANE)]
         # Prefer a storey we have NOT searched, then the nearest. Nearest-only

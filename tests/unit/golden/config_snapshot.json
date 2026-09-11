@@ -317,6 +317,7 @@
   "floor.stairs": false,
   "floor.strong_evidence": 2,
   "floor.switch_min_interval": 50,
+  "floor.use_prior_stairs": false,
   "floor.use_target_evidence": true,
   "llm.api_key": "ollama",
   "llm.base_url": "${oc.env:OLLAMA_HOST,http://localhost:11434}/v1",

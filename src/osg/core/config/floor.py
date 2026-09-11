@@ -96,6 +96,16 @@ class FloorConfig:
     # of the target's usual companions on a floor that HAS been mapped is
     # evidence to leave early; seeing several is reason to stay.
     # LLM-free -- a fixed co-occurrence table, see graph/priors.py.
+    # Drive to the staircase the PRIOR MAP already walked when no portal is
+    # visible. `save_map` records every committed transition in `connectivity`
+    # and `apply_map` restores it into `FloorStack.stair_edges`; until now
+    # nothing read it back, so an agent that knew exactly where the stairs were
+    # still had to rediscover them by chance. Measured on
+    # outputs/osg_authored_15: 4 of 11 cross-floor episodes never saw a portal
+    # and never attempted a switch, and 405 storey requests produced 12
+    # attempts. Off by default -- it adds a goal the agent would not otherwise
+    # have had.
+    use_prior_stairs: bool = False
     use_target_evidence: bool = True
     # Earliest step the evidence rule may fire (the geometric no_switch_before
     # still guards the geometry-only path).

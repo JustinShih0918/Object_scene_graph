@@ -89,6 +89,14 @@ def _algorithm_fingerprint(cfg) -> dict:
         "room_classifier": str(cfg.scene_graph.room_classifier),
         "room_erode_iters": int(cfg.scene_graph.room_erode_iters),
         "fp_retraction": bool(cfg.scene_graph.fp_retraction),
+        # FloorConfig is not otherwise fingerprinted. These three are the
+        # load-bearing multi-storey switches an A/B here varies, and a flag that
+        # cannot be seen in the algorithm diff is a flag an arm can change
+        # silently -- the failure that let earlier runs report results about
+        # mechanisms that had never run.
+        "cross_floor": bool(cfg.floor.cross_floor),
+        "floor_stairs": bool(cfg.floor.stairs),
+        "use_prior_stairs": bool(getattr(cfg.floor, "use_prior_stairs", False)),
     })
     return out
 
@@ -142,6 +150,7 @@ def run_eval(cfg) -> dict:
             # "search_drop_proximity_after_absence" "search_face_turns"
             # "search_floor_requires_anchor_test" "floor_evidence_by_presence"
             # "search_surface_when_floor_unreachable"
+            # "cross_floor" "floor_stairs" "use_prior_stairs"
             # "search_frontier_weight" "search_glance_detect_prob"
             # "search_glance_floor" "search_glance_range_m" "search_max_steps"
             # "search_posterior" "search_proximity_floor" "search_proximity_len_m"
