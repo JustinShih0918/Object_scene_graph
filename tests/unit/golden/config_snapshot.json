@@ -435,6 +435,7 @@
   "verification.target_bypasses_bbox_gate": false,
   "verification.terminal": false,
   "verification.unreachable_is_absorbing": true,
+  "verification.viewpoint_min_clearance_m": 0.0,
   "verification.vlm_model": "qwen2.5vl:7b",
   "verification.vlm_q": 0.2,
   "verification.vlm_recall": 0.9,

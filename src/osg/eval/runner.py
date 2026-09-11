@@ -146,6 +146,7 @@ def run_eval(cfg) -> dict:
             # "search_surface_mass" "search_unreached_credit"
             # "value_blip2_timeout_s" "value_blip2_url"
             # "verify_api_key" "verify_base_url"
+            # "verify_viewpoint_min_clearance_m"
             # "select_every"
             # "selector" "stair_explored_rule" "stair_min_cells" "stair_prior"
             # "stair_up_mode" "terminal_percentile" "terminal_requires_detection"

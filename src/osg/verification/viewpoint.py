@@ -14,9 +14,26 @@ from ..mapping.costmap import FREE, OCCUPIED, Costmap2D
 
 
 class ViewpointPlanner:
-    def __init__(self, ring_radii_m: Optional[List[float]] = None, n_samples: int = 16) -> None:
+    def __init__(self, ring_radii_m: Optional[List[float]] = None, n_samples: int = 16,
+                 min_clearance_m: float = 0.0) -> None:
         self.ring_radii = ring_radii_m or [0.8, 1.2, 1.5, 2.0]
         self.n_samples = n_samples
+        # A cell marked FREE is not a cell the agent fits in. `clearance` (the
+        # distance transform below) was computed and then used only to SCORE
+        # candidates, so a pose 5 cm from an occupied cell could win a ring and
+        # become the approach goal. Habitat's navmesh excludes such a pose, and
+        # measuring the sensor arm's stranded approaches against it, 27 of 44
+        # goals were non-navigable against 17 of 17 navigable among those that
+        # arrived (docs/WHY_THE_SENSOR_ARM_LOSES.md).
+        #
+        # The navmesh follower hid this: it SNAPPED the goal to the mesh, so an
+        # unstandable goal silently became a standable one. The PointNav mover
+        # takes the goal as a bearing and walks into it.
+        #
+        # Requiring clearance is the sensor-only half of that snap: the costmap
+        # is the agent's own depth map, so this asks nothing of the simulator.
+        # 0.0 keeps the old behaviour, which every measured arm ran on.
+        self.min_clearance_m = float(min_clearance_m)
 
     def approach_viewpoint(
         self,
@@ -70,6 +87,9 @@ class ViewpointPlanner:
                 cell = costmap.grid[rc[0], rc[1]]
                 if cell == OCCUPIED or (cell != FREE and not allow_unknown):
                     continue
+                if (self.min_clearance_m > 0.0
+                        and float(clearance[rc[0], rc[1]]) < self.min_clearance_m):
+                    continue  # the agent does not fit here
                 if require_line_of_sight and not self._line_of_sight(costmap, cand, obj_xy):
                     continue
                 # Prefer clearance and a mid-range viewing distance (~1.2 m)

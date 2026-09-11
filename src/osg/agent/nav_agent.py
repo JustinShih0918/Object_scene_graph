@@ -255,7 +255,10 @@ class NavAgent:
             cfg.scene_graph.keyframe_trans_m, cfg.scene_graph.keyframe_rot_deg
         )
         self.controller = WaypointController(forward_m=cfg.agent.forward_m)
-        self.viewpoint_planner = ViewpointPlanner(list(cfg.verification.ring_radii_m))
+        self.viewpoint_planner = ViewpointPlanner(
+            list(cfg.verification.ring_radii_m),
+            min_clearance_m=float(getattr(cfg.verification, "viewpoint_min_clearance_m", 0.0) or 0.0),
+        )
         # "I walked there and it was not there" as evidence, from two sensors
         # with different error rates. See verification/absence.py.
         self.absence = AbsenceSensor(cfg, verifier, self.profiler, self.stats)

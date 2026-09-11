@@ -161,6 +161,15 @@ class VerificationConfig:
     # under the candidate p10 (sacrificing only ~6-7% of genuine candidates,
     # erring toward not rejecting real targets over aggressively filtering).
     min_evidence: float = 1.0
+    # Reject a viewpoint whose distance to the nearest OCCUPIED costmap cell is
+    # under this. The planner already computes that clearance and used it only
+    # to rank candidates, so it could hand back a pose the agent does not
+    # physically fit in: on the sensor arm 27 of 44 stranded approach goals were
+    # non-navigable, against 17 of 17 navigable among approaches that arrived.
+    # The navmesh follower hid it by snapping the goal to the mesh; the PointNav
+    # mover walks into it instead. Set to roughly the agent radius plus a cell.
+    # 0.0 keeps the old behaviour.
+    viewpoint_min_clearance_m: float = 0.0
     ring_radii_m: List[float] = field(default_factory=lambda: [0.8, 1.2, 1.5, 2.0])
     # Measure the rings from the object's estimated surface rather than its
     # centre. The radii above were tuned against HM3D ObjectNav, which scores
