@@ -20,9 +20,15 @@ import json
 import os
 from collections import Counter, defaultdict
 
-ARMS = ("base", "fused")
+ARMS = ("base", "containers", "fused", "v3", "v4", "v5")
 COUNTERS = [
     "cross_floor_request_held",
+    "floor_mass_no_opinion",
+    "prior_stair_switch_attempts",
+    "floor_unreachable_fallback",
+    "floor_llm_asks",
+    "floor_llm_override",
+    "floor_llm_stay",
     "cross_floor_search_requests",
     "directed_floor_switch_attempts",
     "floor_switch_attempts",
@@ -113,14 +119,18 @@ def main() -> None:
     args = parser.parse_args()
 
     arms = {arm: load(args.run, arm) for arm in ARMS}
-    shared = sorted(set(arms["base"]) & set(arms["fused"]))
-    only = {arm: sorted(set(arms[arm]) - set(shared)) for arm in ARMS}
+    arms = {a: e for a, e in arms.items() if e}
+    if "base" not in arms:
+        print("no base arm under", args.run)
+        return
+    others = [a for a in arms if a != "base"]
+    shared = sorted(set.intersection(*(set(arms[a]) for a in arms)))
     print(f"# Fused pipeline A/B -- `{args.run}`\n")
-    print(f"Paired episodes: {len(shared)}"
-          + (f" (base-only {len(only['base'])}, fused-only {len(only['fused'])})"
-             if only["base"] or only["fused"] else ""))
+    print("Episodes per arm: "
+          + ", ".join(f"{a} {len(arms[a])}" for a in ["base"] + others))
+    print(f"\nPaired across every arm: {len(shared)}")
     if not shared:
-        print("\nNo paired episodes yet.")
+        print("\nNo episodes common to all arms yet.")
         return
 
     groups = defaultdict(list)
@@ -130,43 +140,47 @@ def main() -> None:
     groups["all", ""] = shared
 
     print("\n## 1. Outcome, paired\n")
-    print("| split | episodes | base SR | fused SR | base SPL | fused SPL | base reached goal floor | fused |")
-    print("|---|---:|---:|---:|---:|---:|---:|---:|")
+    print("| split | episodes | " + " | ".join(f"{a} SR" for a in ["base"] + others)
+          + " | " + " | ".join(f"{a} floor" for a in ["base"] + others) + " |")
+    print("|---|---:|" + "---:|" * (2 * len(arms)))
+    groups = defaultdict(list)
+    for key in shared:
+        episode = arms["base"][key]
+        groups[(episode.get("floor_class") or "?", layout_of(episode))].append(key)
+    groups["all", ""] = shared
     for name in sorted(groups, key=lambda g: (g[0] == "all", g)):
         keys = groups[name]
-        b, f = summarise(arms["base"], keys), summarise(arms["fused"], keys)
-        if not b or not f:
+        summaries = {a: summarise(arms[a], keys) for a in ["base"] + others}
+        if not all(summaries.values()):
             continue
         label = " ".join(x for x in name if x) or "all"
-        print(f"| {label} | {b['episodes']} | {pct(b['success'], b['episodes'])} | "
-              f"{pct(f['success'], f['episodes'])} | {b['spl']:.3f} | {f['spl']:.3f} | "
-              f"{b['goal_floor_reached']} | {f['goal_floor_reached']} |")
+        n = summaries["base"]["episodes"]
+        srs = " | ".join(pct(summaries[a]["success"], n) for a in ["base"] + others)
+        fl = " | ".join(str(summaries[a]["goal_floor_reached"]) for a in ["base"] + others)
+        print(f"| {label} | {n} | {srs} | {fl} |")
 
-    print("\n## 2. Mechanism counters (sum over paired episodes; episodes>0 in brackets)\n")
-    b, f = summarise(arms["base"], shared), summarise(arms["fused"], shared)
-    print("| counter | base | fused |")
-    print("|---|---:|---:|")
+    print("\n## 2. Mechanism counters (sum over paired episodes)\n")
+    summaries = {a: summarise(arms[a], shared) for a in ["base"] + others}
+    print("| counter | " + " | ".join(["base"] + others) + " |")
+    print("|---|" + "---:|" * len(arms))
     for name in COUNTERS:
-        print(f"| {name} | {b['counters'][name]} [{b['fired'][name]}] | "
-              f"{f['counters'][name]} [{f['fired'][name]}] |")
-    print(f"| **storey request before any absence test** | {b['premature_floor_request']} | "
-          f"{f['premature_floor_request']} |")
-    print(f"| median steps | {b['steps']} | {f['steps']} |")
-    print(f"| episodes at budget | {b['at_budget']} | {f['at_budget']} |")
+        row = " | ".join(str(summaries[a]["counters"][name]) for a in ["base"] + others)
+        print(f"| {name} | {row} |")
+    for label, field in (("storey request before any absence test", "premature_floor_request"),
+                         ("median steps", "steps"),
+                         ("episodes at budget", "at_budget")):
+        row = " | ".join(str(summaries[a][field]) for a in ["base"] + others)
+        print(f"| {label} | {row} |")
 
-    print("\n## 3. Episodes whose outcome changed\n")
-    flipped = [(k, int(bool(arms['base'][k].get('success'))),
-                int(bool(arms['fused'][k].get('success')))) for k in shared]
-    flipped = [x for x in flipped if x[1] != x[2]]
-    if not flipped:
-        print("None.")
-    else:
-        print("| episode | floor class | base | fused |")
-        print("|---|---|---:|---:|")
-        for key, base_ok, fused_ok in flipped:
-            print(f"| {key} | {arms['base'][key].get('floor_class')} | {base_ok} | {fused_ok} |")
+    print("\n## 3. Episodes whose outcome changed against base\n")
+    for arm in others:
+        flipped = [(k, int(bool(arms["base"][k].get("success"))),
+                    int(bool(arms[arm][k].get("success")))) for k in shared]
+        flipped = [x for x in flipped if x[1] != x[2]]
         gained = sum(1 for x in flipped if x[2] > x[1])
-        print(f"\nGained {gained}, lost {len(flipped) - gained}.")
+        print(f"- **{arm}**: +{gained} / -{len(flipped) - gained}"
+              + ("" if not flipped else "  ("
+                 + "; ".join(f"{k.split('__', 1)[-1]} {b}->{f}" for k, b, f in flipped) + ")"))
 
 
 if __name__ == "__main__":
