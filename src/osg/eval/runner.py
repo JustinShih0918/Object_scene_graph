@@ -174,6 +174,9 @@ def run_eval(cfg) -> dict:
             # "value_blip2_timeout_s" "value_blip2_url"
             # "verify_api_key" "verify_base_url"
             # "verify_viewpoint_min_clearance_m"
+            # region_proposal.*: enabled, weights, backbone, tau, admit_score,
+            # pad_frac, min_area_px, max_area_frac, max_regions,
+            # only_when_unnamed, max_per_episode
             # "select_every"
             # "selector" "stair_explored_rule" "stair_min_cells" "stair_prior"
             # "stair_up_mode" "terminal_percentile" "terminal_requires_detection"

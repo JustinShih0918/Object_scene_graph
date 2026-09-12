@@ -101,6 +101,7 @@ class NavAgent:
         room_classifier=None,
         image_text=None,
         feature_memory=None,
+        region_proposer=None,
         gate_itm=None,
         stair_segmenter=None,
         stair_detector=None,
@@ -180,6 +181,13 @@ class NavAgent:
         # from `image_text`: any non-None value THERE turns the semantic value
         # map on for every frame, which is a different mechanism entirely.
         self.feature_memory = feature_memory
+        # Class-agnostic proposals for the objects the detector never names
+        # (perception/region_proposer.py). None unless region_proposal.enabled.
+        self.region_proposer = region_proposer
+        self._region_admits = 0
+        self._region_cache = None
+        self._region_kf = 0          # keyframes seen this episode
+        self._region_named = False   # has the LABEL path ever named the target
         # One entry per appearance commit: which surface, which track, how
         # much it looked like the query, and how many it beat.
         self.feature_pick_log: list = []
@@ -251,6 +259,9 @@ class NavAgent:
             container_merge_m=cfg.scene_graph.container_merge_m,
             containers_floor_relative=bool(getattr(
                 cfg.scene_graph, "containers_floor_relative", False)),
+            container_merge_sigma=float(
+                getattr(cfg.scene_graph, "container_merge_sigma", 0.0) or 0.0
+            ),
         )
         self.keyframes = KeyframeStore(save_dir=keyframe_dir)
         self.kf_selector = KeyframeSelector(
@@ -474,6 +485,12 @@ class NavAgent:
         self.detector.set_vocabulary(
             target_vocabulary(self.target, self.cfg.detector.vocabulary)
         )
+        if self.region_proposer is not None:
+            self.region_proposer.set_target(self.target)
+            self._region_admits = 0
+            self._region_cache = None
+            self._region_kf = 0
+            self._region_named = False
         if self.feature_memory is not None:
             # The prompt changes once an episode, so the text encoder runs once
             # an episode. Centres come from the object layer, which resolves a
@@ -830,6 +847,7 @@ class NavAgent:
                 frame.camera_position[list(PLANE)].copy(),
                 self.room_classifier.classify(frame.rgb),
             ))
+        dets = self._propose_regions(frame, dets)
         if self.on_keyframe_detections is not None:
             self.on_keyframe_detections(frame, dets)
         with self.profiler.timeit("object_layer"):
@@ -1268,8 +1286,20 @@ class NavAgent:
     # ---------------------------------------------------------------- helpers
 
     def _best_target_detection(self, frame: FrameData) -> Optional[Detection]:
-        """Runs the detector on the current frame and returns its highest-
-        confidence detection matching the target category, or None."""
+        """The detector's best detection of the target on this frame, or None.
+
+        This is the choke point the approach stop, the close look and the
+        exploration check all ask, and -- through the close look -- it is what
+        decides that a committed track is ABSENT. Asking only the label path
+        there is circular for exactly the objects the proposal stage exists
+        for: the detector that could not name the object is re-asked whether
+        the object is present, says no, and the track is retired.
+
+        Measured on in_anchor__0117__banana: the agent walked to the banana,
+        looked from 1.5 m, was told "not detected", dropped the track's belief
+        from 0.95 to 0.433 and committed elsewhere -- in an episode where the
+        proposal stage had already admitted 16 regions.
+        """
         target = normalize_label(self.target)
         with self.profiler.timeit("detector"):
             dets = self.detector.detect(frame.rgb)
@@ -1277,7 +1307,55 @@ class NavAgent:
             d for d in dets
             if normalize_label(d.label) == target and d.score > 0.25
         ]
-        return max(matches, key=lambda d: d.score) if matches else None
+        if matches:
+            return max(matches, key=lambda d: d.score)
+        return self._region_detection(frame)
+
+    def _region_active(self) -> bool:
+        """Is the proposal stage a fallback for THIS episode?
+
+        Per-frame gating was the defect: on a trial where the detector works the
+        target is absent from most individual frames, so a per-frame test fires
+        on nearly all of them. Measured on the full 107, that took the 21
+        perception trials from 0 to 6 and the other 86 from 57 to 41, with 13 of
+        the 18 lost trials exhausting all three attempts on regions the stage
+        had admitted.
+
+        Episode-level instead: once the label path has named the target even
+        once, the detector can see this object and the stage stays off.
+        """
+        rp = self.region_proposer
+        if rp is None:
+            return False
+        cfg = rp.cfg
+        if self._region_admits >= int(cfg.max_per_episode):
+            return False
+        if bool(getattr(cfg, "require_never_named", False)) and self._region_named:
+            return False
+        return self._region_kf >= int(getattr(cfg, "unnamed_keyframes", 0) or 0)
+
+    def _region_detection(self, frame: FrameData) -> Optional[Detection]:
+        """The proposal stage's answer for this frame, computed at most once.
+
+        Cached on the frame id because this is called several times per step --
+        the approach stop, the close look and the absence sensor each ask -- and
+        a segment-plus-encode per call would multiply the stage's cost by the
+        number of askers rather than by the number of frames.
+        """
+        rp = self.region_proposer
+        if rp is None or self.target is None or not bool(rp.cfg.use_for_absence):
+            return None
+        if not self._region_active():
+            return None
+        key = int(getattr(frame, "frame_id", -1))
+        cached = getattr(self, "_region_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        with self.profiler.timeit("region_proposal"):
+            det = rp.propose(frame.rgb)
+        self._region_cache = (key, det)
+        self.stats.update(rp.counters)
+        return det
 
     def _target_visible(self, frame: FrameData) -> bool:
         """Does the detector see the target category in the current view?"""
@@ -1829,6 +1907,51 @@ class NavAgent:
         if self._climb_paused_steps > 15:
             self._carrot_disable_end = True
         return self._climb_paused_steps > 30
+
+    def _propose_regions(self, frame: FrameData, dets):
+        """Add a class-agnostic proposal for the target, when one is warranted.
+
+        The stage returns an ordinary `Detection` under the target label, so
+        admission, the presence filter, the identity channel, the candidate
+        gate, the VLM and the attempt protocol all judge it exactly as they
+        judge the detector's own output. Nothing here can stop an approach or
+        score a trial by itself.
+
+        It runs only when the detector produced nothing for the target on this
+        keyframe -- the case it exists for -- and at most
+        `max_per_episode` times, because at the measured 85% precision an
+        unbounded stage would write a lot of wrong tracks.
+        """
+        rp = self.region_proposer
+        if rp is None or self.target is None:
+            return dets
+        cfg = rp.cfg
+        self._region_kf += 1
+        want = normalize_label(self.target)
+        named_now = any(normalize_label(d.label) == want for d in dets or [])
+        if named_now:
+            # The detector can see this object. Whatever else is true of the
+            # episode, it does not need a fallback -- and a fallback that runs
+            # anyway competes with a detector that was about to succeed.
+            self._region_named = True
+        if not self._region_active():
+            return dets
+        if bool(cfg.only_when_unnamed) and named_now:
+            return dets
+        key = int(getattr(frame, "frame_id", -1))
+        cached = getattr(self, "_region_cache", None)
+        if cached is not None and cached[0] == key:
+            det = cached[1]
+        else:
+            with self.profiler.timeit("region_proposal"):
+                det = rp.propose(frame.rgb)
+            self._region_cache = (key, det)
+        self.stats.update(rp.counters)
+        if det is None:
+            return dets
+        self._region_admits += 1
+        self.stats["region_admits"] = self._region_admits
+        return list(dets or []) + [det]
 
     def _update_value_map(self, frame: FrameData, layer) -> None:
         """Score the current view and fuse it into the active floor map.

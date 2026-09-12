@@ -26,6 +26,7 @@ from .feature_memory import FeatureMemoryConfig
 from .floor import FloorConfig
 from .llm import LLMConfig
 from .mapping import MappingConfig
+from .region_proposal import RegionProposalConfig
 from .scene_graph import PresenceConfig, SceneGraphConfig
 from .verification import VerificationConfig
 from .ycb import YCB_TARGET_LABELS, YCBAuthoredConfig
@@ -34,6 +35,7 @@ __all__ = [
     "AgentConfig", "DetectorConfig", "DualMapProtocolConfig", "EvalConfig",
     "ExplorationConfig", "FeatureMemoryConfig",
     "FloorConfig", "LLMConfig", "MappingConfig", "OSGConfig", "PresenceConfig",
+    "RegionProposalConfig",
     "SceneGraphConfig", "VerificationConfig", "YCBAuthoredConfig",
     "DEFAULT_VOCABULARY", "YCB_TARGET_LABELS", "NAVIGATION_MODES",
     "POLICY_MODES", "resolve_navigation", "resolve_policy", "register_configs",
@@ -80,6 +82,7 @@ class OSGConfig:
     agent: AgentConfig = field(default_factory=AgentConfig)
     detector: DetectorConfig = field(default_factory=DetectorConfig)
     scene_graph: SceneGraphConfig = field(default_factory=SceneGraphConfig)
+    region_proposal: RegionProposalConfig = field(default_factory=RegionProposalConfig)
     exploration: ExplorationConfig = field(default_factory=ExplorationConfig)
     feature_memory: FeatureMemoryConfig = field(default_factory=FeatureMemoryConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -99,6 +102,7 @@ def register_configs() -> None:
     cs.store(group="agent", name="base_default", node=AgentConfig)
     cs.store(group="detector", name="base_yoloe", node=DetectorConfig)
     cs.store(group="scene_graph", name="base_default", node=SceneGraphConfig)
+    cs.store(group="region_proposal", name="base_default", node=RegionProposalConfig)
     cs.store(group="exploration", name="base_vlm", node=ExplorationConfig)
     cs.store(group="feature_memory", name="base_default", node=FeatureMemoryConfig)
     cs.store(group="llm", name="base_ollama", node=LLMConfig)
