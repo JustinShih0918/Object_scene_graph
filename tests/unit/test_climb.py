@@ -345,3 +345,54 @@ def test_a_run_of_blocked_forwards_becomes_a_turn(intrinsics):
     assert actions[:2] == ["move_forward", "move_forward"]
     assert actions[2] == "turn_left"
     assert agent.stats.get("climb_blocked_turn") == 1
+
+
+# ------------------------------------------------- v13: the flight carrot
+
+def _flight(agent, heights, xs, z=2.0):
+    from osg.mapping.stairs import Flight
+    cm = agent.costmap
+    rc = np.stack([cm.world_to_grid(np.array([x, z], dtype=float)) for x in xs]).astype(int)
+    return Flight(kind="up", cells_rc=rc, heights=np.asarray(heights, float),
+                  foot_xy=np.array([xs[0], z]), top_xy=np.array([xs[-1], z]), span_m=float(max(heights) - min(heights)))
+
+
+def test_the_flight_carrot_aims_at_the_next_tread(intrinsics):
+    agent = _agent()
+    agent.cfg.agent.climb_flight_carrot = True
+    agent.cfg.agent.camera_height = 0.88
+    xs = [1.0, 1.3, 1.6, 1.9, 2.2, 2.5]
+    heights = [0.17, 0.34, 0.51, 0.68, 0.85, 1.02]
+    _pursuit(agent, goal_xy=(1.0, 2.0))
+    agent.floors.pursuit_flight = _flight(agent, heights, xs)
+    frame = _frame(intrinsics, (1.0, 2.0), y=0.88)  # standing at floor level
+    agent._start_climb(frame)
+    goal = agent._flight_carrot(frame, np.array([1.0, 2.0]))
+    assert goal is not None
+    # 0.35-1.0 m above standing height 0.0: treads at 0.51..1.02; nearest is x=1.6
+    assert abs(goal[0] - 1.6) < 0.06
+    assert agent.stats.get("climb_flight_carrot") == 1
+
+
+def test_at_the_top_the_highest_tread_is_the_goal(intrinsics):
+    agent = _agent()
+    agent.cfg.agent.climb_flight_carrot = True
+    agent.cfg.agent.camera_height = 0.88
+    xs = [1.0, 1.3, 1.6]
+    heights = [0.17, 0.34, 0.51]
+    _pursuit(agent, goal_xy=(1.0, 2.0))
+    agent.floors.pursuit_flight = _flight(agent, heights, xs)
+    frame = _frame(intrinsics, (1.3, 2.0), y=0.88 + 0.34)  # standing on the second tread
+    agent._start_climb(frame)
+    goal = agent._flight_carrot(frame, np.array([1.3, 2.0]))
+    assert goal is not None and abs(goal[0] - 1.6) < 0.06
+    assert agent.stats.get("climb_flight_carrot_top") == 1
+
+
+def test_without_a_flight_the_carrot_declines(intrinsics):
+    agent = _agent()
+    agent.cfg.agent.climb_flight_carrot = True
+    _pursuit(agent)
+    frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
+    agent._start_climb(frame)
+    assert agent._flight_carrot(frame, np.array([1.0, 2.0])) is None

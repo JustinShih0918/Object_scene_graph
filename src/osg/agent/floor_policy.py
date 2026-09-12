@@ -31,7 +31,7 @@ from ..mapping.costmap import PLANE, Costmap2D
 from ..mapping.floor_stack import FloorStack
 from ..mapping.floors import FloorEstimator
 from ..mapping.portals import FloorSwitchPolicy, find_portals
-from ..mapping.stairs import apply_stair_mask, detect_stairs, stair_tracks
+from ..mapping.stairs import StairRegion, apply_stair_mask, detect_stairs, find_flights, stair_tracks
 from ..planning.voronoi_planner import HybridVoronoiPlanner
 
 
@@ -125,6 +125,9 @@ class FloorPolicy:
         # 28-cell patch at (1.19, -7.96), for 0.17 m of ascent in 500 steps.
         self._pursuit_goal_xy = None
         self._failed_portals: list = []
+        # The flight a pursuit is heading for, when the target came from the
+        # height layer; the agent's climb carrot walks up its treads.
+        self.pursuit_flight = None
         self.estimator.reset()
         self.stack.reset()
 
@@ -300,6 +303,7 @@ class FloorPolicy:
             self._failed_portals.append(np.asarray(self._pursuit_goal_xy, dtype=float))
             self.stats["portal_failures_remembered"] = len(self._failed_portals)
         self._pursuit_goal_xy = None
+        self.pursuit_flight = None
 
     def _portal_failed_here(self, xy) -> bool:
         """Has a pursuit already failed from this place?"""
@@ -412,6 +416,69 @@ class FloorPolicy:
             self._remembered_stair(target_floor)
             if bool(getattr(self.cfg.floor, "use_prior_stairs", False)) else None
         )
+        # A flight read off the height layer is the most direct target there is:
+        # its lowest tread is the foot, and a goal ON the treads is what the
+        # PointNav mover will climb, slowly. Tried first, ahead of the detector's
+        # `stairs` tracks (2.7 m beside the foot on 00821) and ahead of portals
+        # (a sightline). A flight that failed once is out, via the same memory.
+        if str(getattr(self.cfg.floor, "climb_targets", "portals")) == "flights_first":
+            want = None
+            if directed and self.stack.by_key(int(target_floor)) is not None:
+                want = "up" if float(self.stack.by_key(int(target_floor)).floor_y) > float(floor_y) else "down"
+            flights = find_flights(
+                self.costmap, float(floor_y),
+                new_level_m=float(self.cfg.floor.new_level_m),
+                min_span_m=float(getattr(self.cfg.floor, "flight_min_span_m", 1.0)),
+                min_cells=int(getattr(self.cfg.floor, "flight_min_cells", 150)),
+            )
+            self.stats["flights_seen"] = max(self.stats.get("flights_seen", 0), len(flights))
+            agent_xy = frame.camera_position[list(PLANE)]
+            usable = [
+                f for f in flights
+                if (want is None or f.kind == want) and not self._portal_failed_here(f.foot_xy)
+            ]
+            if usable:
+                flight = min(usable, key=lambda f: float(np.linalg.norm(f.foot_xy - agent_xy)))
+                # Make the treads traversable on this floor's grid, so the planner
+                # and the frontier extractor stop reading the flight as a wall.
+                apply_stair_mask(self.costmap, [StairRegion(
+                    cells_rc=flight.cells_rc, centroid_xy=flight.foot_xy,
+                    n_cells=flight.n_cells, mean_dh=0.0,
+                    low_y=float(flight.heights.min()), high_y=float(flight.heights.max()),
+                )], max_area_frac=float(self.cfg.floor.stair_max_area_frac))
+                goal_xy = np.asarray(flight.foot_xy, dtype=float)
+                if want is not None:
+                    target_y = float(self.stack.by_key(int(target_floor)).floor_y)
+                else:
+                    others = [h for k, h in self.estimator.levels.items() if k != self.stack.current_id]
+                    if flight.kind == "up":
+                        above = [h for h in others if h > float(floor_y)]
+                        target_y = min(above) if above else float(floor_y) + float(self.cfg.floor.new_level_m)
+                    else:
+                        below = [h for h in others if h < float(floor_y)]
+                        target_y = max(below) if below else float(floor_y) - float(self.cfg.floor.new_level_m)
+                if reachable_fn is None or reachable_fn(goal_xy, float(floor_y)):
+                    self.pursuing = True
+                    self.pursuit_flight = flight
+                    self._pursuit_goal_xy = goal_xy.copy()
+                    self._portal_start_y = float(frame.camera_position[1])
+                    self._portal_step = step
+                    self.switch_policy.note_switch(step)
+                    self.stats["floor_switch_attempts"] = self.stats.get("floor_switch_attempts", 0) + 1
+                    self.stats["flight_switch_attempts"] = self.stats.get("flight_switch_attempts", 0) + 1
+                    self.stats[f"flight_switch_{flight.kind}"] = self.stats.get(f"flight_switch_{flight.kind}", 0) + 1
+                    if directed:
+                        self.stats["directed_floor_switch_attempts"] = (
+                            self.stats.get("directed_floor_switch_attempts", 0) + 1
+                        )
+                    self.portal_log.append((
+                        step, [round(float(x), 2) for x in goal_xy], f"flight_{flight.kind}",
+                        flight.n_cells,
+                    ))
+                    return PortalGoal(
+                        goal_xy=goal_xy.copy(), target_y=float(target_y),
+                        deadline_steps=self.cfg.floor.portal_deadline_steps,
+                    )
         # A staircase the detector has SEEN is a place you can climb from. A
         # portal is a place you can see the next floor from, which over a
         # balcony rail is not the same thing: measured on 00821, the portal the

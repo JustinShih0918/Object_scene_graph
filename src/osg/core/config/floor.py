@@ -131,7 +131,13 @@ class FloorConfig:
     # detector has actually seen on this storey, nearest first, and only then a
     # portal. Measured on 00821, the portal the agent chased 55 times sat about
     # 10 m from the flight the navmesh uses.
+    # "flights_first": a run of intermediate-height cells in the height layer
+    # whose heights span at least `flight_min_span_m` -- a staircase, read
+    # geometrically; its lowest tread is the foot. Tried before stairs tracks
+    # and portals. See mapping.stairs.find_flights.
     climb_targets: str = "portals"
+    flight_min_span_m: float = 1.0
+    flight_min_cells: int = 150
     # Do not re-issue a floor pursuit that is still in flight. A directed
     # request recurs every selection round and each one restarted the pursuit,
     # resetting its progress clock, so a pursuit never ended, no failure was

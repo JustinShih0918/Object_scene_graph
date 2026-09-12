@@ -369,6 +369,11 @@ class AgentConfig:
     # The depth ray is ASCENT's carrot and works from ON the flight; ours starts
     # within reach of a target that is often beside it -- on 00821 seven climbs
     # pushed forward 238 times and rose 0.00 m.
+    # Steer the climb at the next tread of the flight the pursuit chose, from
+    # the height layer. Keeps the goal ON the flight, which is what the PointNav
+    # mover climbs (slowly). Falls through to the other carrots when the target
+    # was not a flight.
+    climb_flight_carrot: bool = False
     climb_cell_carrot: bool = False
     # After this many consecutive mover STOPs with no height gained, turn to
     # re-aim instead of pressing into the wall again. 0 disables.

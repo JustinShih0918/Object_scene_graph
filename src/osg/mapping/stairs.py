@@ -147,6 +147,92 @@ def detect_stairs(
     return regions
 
 
+@dataclass
+class Flight:
+    """A run of treads between this storey and the next, read off the height
+    layer rather than a detector mask.
+
+    `cells_rc` index the costmap grid; `heights` are absolute world y per cell.
+    `foot_xy` is the lowest tread (the mouth on this floor for an ascent),
+    `top_xy` the highest. `kind` is "up" or "down" relative to `floor_y`.
+    """
+
+    kind: str
+    cells_rc: np.ndarray
+    heights: np.ndarray
+    foot_xy: np.ndarray
+    top_xy: np.ndarray
+    span_m: float
+
+    @property
+    def n_cells(self) -> int:
+        return int(self.cells_rc.shape[0])
+
+
+def find_flights(
+    costmap: Costmap2D,
+    floor_y: float,
+    new_level_m: float = 1.8,
+    min_span_m: float = 1.0,
+    min_cells: int = 150,
+    max_cells: int = 4000,
+    margin_m: float = 0.2,
+) -> List[Flight]:
+    """Staircases as connected runs of INTERMEDIATE-height cells.
+
+    Stage 4's detector looked for steppable cells by their local height step
+    and failed structurally: a tread's interior is flat, fell below its
+    `min_dh`, and the flight fragmented into riser edges. This asks a different
+    question. The height layer keeps the lowest surface seen per cell within a
+    storey of the floor, so every tread of a flight is a cell whose height sits
+    strictly BETWEEN this floor and the next -- and those cells are contiguous,
+    because treads touch. Connect them, and keep a component only if its
+    heights SPAN at least `min_span_m`: a table is a plateau and spans nothing,
+    a sloped floor is large and is capped by `max_cells`, and a flight that
+    joins two storeys spans a metre or more by construction.
+
+    The detector's `stairs` mask, seen from below, stamps cells under the upper
+    flight: on 00821 its target sat 2.7 m beside the true foot. The lowest cell
+    of an intermediate-height component IS the foot, whatever the mask thinks.
+    """
+    from scipy import ndimage
+
+    if costmap.height is None:
+        return []
+    rel = costmap.height - float(floor_y)
+    seen = np.isfinite(rel)
+    lo, hi = float(margin_m), float(new_level_m) - float(margin_m)
+    out: List[Flight] = []
+    for kind, mask in (
+        ("up", seen & (rel > lo) & (rel < hi)),
+        ("down", seen & (rel < -lo) & (rel > -hi)),
+    ):
+        if not mask.any():
+            continue
+        labels, n = ndimage.label(mask, structure=np.ones((3, 3)))
+        for label in range(1, n + 1):
+            rc = np.argwhere(labels == label)
+            if rc.shape[0] < min_cells or rc.shape[0] > max_cells:
+                continue
+            h = costmap.height[rc[:, 0], rc[:, 1]]
+            span = float(h.max() - h.min())
+            if span < min_span_m:
+                continue
+            lowest, highest = int(np.argmin(h)), int(np.argmax(h))
+            if kind == "up":
+                foot, top = rc[lowest], rc[highest]
+            else:
+                # Descending, the mouth on THIS floor is the highest tread.
+                foot, top = rc[highest], rc[lowest]
+            out.append(Flight(
+                kind=kind, cells_rc=rc, heights=h,
+                foot_xy=costmap.grid_to_world(foot.astype(float)),
+                top_xy=costmap.grid_to_world(top.astype(float)),
+                span_m=span,
+            ))
+    return out
+
+
 def apply_stair_mask(
     costmap: Costmap2D, regions: Sequence[StairRegion], max_area_frac: float = 0.05
 ) -> int:

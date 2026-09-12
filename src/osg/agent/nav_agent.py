@@ -1693,8 +1693,40 @@ class NavAgent:
         self.stats["climb_cell_carrot"] = self.stats.get("climb_cell_carrot", 0) + 1
         return xy[pick]
 
+    def _flight_carrot(self, frame: FrameData, agent_xy: np.ndarray) -> Optional[np.ndarray]:
+        """The next tread. Keeps the goal ON the flight, which is what the
+        PointNav mover will climb.
+
+        From the flight the pursuit chose (`FloorPolicy.pursuit_flight`), aim at
+        the tread 0.35-1.0 m above the agent's standing height (below it on a
+        descent), nearest in the plane; at the top, where none is left, at the
+        highest tread; with no flight at all, None and the older carrots apply.
+        """
+        if not bool(getattr(self.cfg.agent, "climb_flight_carrot", False)):
+            return None
+        flight = getattr(self.floors, "pursuit_flight", None)
+        if flight is None or not flight.n_cells:
+            return None
+        standing = float(frame.camera_position[1]) - float(self.cfg.agent.camera_height)
+        xy = np.stack([self.costmap.grid_to_world(rc.astype(float)) for rc in flight.cells_rc])
+        h = np.asarray(flight.heights, dtype=float)
+        sign = 1.0 if self._climb_direction >= 0 else -1.0
+        ahead = (h - standing) * sign
+        band = (ahead >= 0.35) & (ahead <= 1.0)
+        if band.any():
+            d = np.linalg.norm(xy[band] - agent_xy, axis=1)
+            self.stats["climb_flight_carrot"] = self.stats.get("climb_flight_carrot", 0) + 1
+            return xy[band][int(np.argmin(d))]
+        above = ahead > 0.1
+        if above.any():
+            self.stats["climb_flight_carrot_top"] = self.stats.get("climb_flight_carrot_top", 0) + 1
+            return xy[above][int(np.argmax(ahead[above]))]
+        return None
+
     def _carrot_action(self, frame: FrameData, agent_xy: np.ndarray) -> str:
-        goal = self._stair_cell_carrot(agent_xy)
+        goal = self._flight_carrot(frame, agent_xy)
+        if goal is None:
+            goal = self._stair_cell_carrot(agent_xy)
         if goal is None:
             goal = self._update_carrot(frame, agent_xy)
         if goal is None:
