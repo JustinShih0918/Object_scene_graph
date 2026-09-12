@@ -110,6 +110,35 @@ def footprint_area(ellipsoid) -> float:
     return float(np.pi * np.sqrt(max(np.linalg.det(cov), 0.0)))
 
 
+def shadows_overlap(a: Sequence, b: Sequence, sigma: float) -> bool:
+    """Do two containers' ground shadows describe the same piece of furniture?
+
+    A shadow is the (centre, inverse covariance) of a 2D Gaussian, so the
+    Mahalanobis distance of one shadow's centre measured in the other's metric
+    is "how many of ITS OWN radii away the neighbour sits" -- a test that scales
+    itself to the object. A bed half a bed-length from another bed half is about
+    one radius away; two nightstands a metre and a half apart are six.
+
+    That self-scaling is the point. The flat `container_merge_m` cannot be right
+    for both: measured on the released maps it leaves same-label neighbours
+    1.0-2.0 m apart, which is exactly one bed-half, while any threshold wide
+    enough to catch those would fuse genuinely separate small furniture.
+
+    Directionally minimal: the SMALLER shadow reaching into the larger is enough,
+    because a fragment of a bed is small and the bed is not.
+    """
+    if sigma <= 0.0:
+        return False
+    for mu_a, inv_a in a:
+        for mu_b, inv_b in b:
+            d = np.asarray(mu_b, dtype=float) - np.asarray(mu_a, dtype=float)
+            m_ab = float(d @ inv_a @ d)
+            m_ba = float(d @ inv_b @ d)
+            if min(m_ab, m_ba) <= sigma * sigma:
+                return True
+    return False
+
+
 def point_in_footprint(center_xy: np.ndarray, inv_cov_xy: np.ndarray, p_xy: np.ndarray) -> bool:
     """Mahalanobis test against the shadow ellipse: inside iff d^2 <= 1."""
     d = np.asarray(p_xy, dtype=float) - np.asarray(center_xy, dtype=float)

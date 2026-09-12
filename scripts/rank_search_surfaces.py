@@ -103,6 +103,7 @@ def load_scene_graph(map_path: Path, sg_cfg=None):
                 container_min_obs=int(cfg.container_min_obs),
                 container_min_score=float(cfg.container_min_score),
                 container_merge_m=float(cfg.container_merge_m),
+                container_merge_sigma=float(getattr(cfg, "container_merge_sigma", 0.0) or 0.0),
             )
             self.floors = None
             self._room_labels = None

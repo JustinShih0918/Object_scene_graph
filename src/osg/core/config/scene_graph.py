@@ -228,5 +228,20 @@ class SceneGraphConfig:
     # merge them because it requires co-observation -- right for an object and
     # its ghost, wrong for a bed seen on two different passes.
     container_merge_m: float = 1.0
+    # Extent-aware companion to `container_merge_m`, in shadow sigmas. Two
+    # same-label containers merge when one ground shadow's centre lies within
+    # this many of the other's radii -- a test that scales itself to the object,
+    # which a flat radius cannot: it has to serve a 2 m bed and a 0.5 m
+    # nightstand at the same time.
+    #
+    # Measured against HM3D's own semantic annotations, the flat 1.0 m leaves
+    # 00829 with 16 `bed` container nodes in a house that has ONE bed. Single-
+    # link clustering at 2 m collapses those to 7 in 5 rooms, so over half the
+    # inflation is neighbouring fragments -- what this catches -- and the rest is
+    # the detector calling sofas and benches `bed` across the house, which no
+    # merge rule should touch.
+    #
+    # 0 keeps the flat-only behaviour every measured arm ran on.
+    container_merge_sigma: float = 0.0
     presence: PresenceConfig = field(default_factory=PresenceConfig)
 

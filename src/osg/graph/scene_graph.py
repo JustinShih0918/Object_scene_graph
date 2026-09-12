@@ -113,6 +113,7 @@ class SceneGraph:
         container_min_obs: int = 1,
         container_min_score: float = 0.0,
         container_merge_m: float = 0.0,
+        container_merge_sigma: float = 0.0,
     ) -> None:
         self.rooms: Dict[int, RoomNode] = {}
         self.objects: List[ObjectNodeView] = []
@@ -124,6 +125,7 @@ class SceneGraph:
         self._container_min_obs = int(container_min_obs)
         self._container_min_score = float(container_min_score)
         self._container_merge_m = float(container_merge_m)
+        self._container_merge_sigma = float(container_merge_sigma)
 
     def rebuild(
         self,
@@ -236,6 +238,61 @@ class SceneGraph:
                 if room.floor_id == floor_key
             ),
         )
+
+    def _merge_pass(self, ids, footprints, merge_m: float, merge_sigma: float):
+        """One sweep of duplicate-container merging; returns the survivors.
+
+        Widest first, so the node that survives is the best-supported one. Two
+        tests, either sufficient: the flat `container_merge_m` radius that every
+        measured arm ran on, and -- when enabled -- the extent-aware shadow
+        overlap, which scales itself to the object instead of asking one radius
+        to serve a 2 m bed and a 0.5 m nightstand.
+        """
+        order = sorted(ids, key=lambda c: -self.containers[c].area_m2)
+        keep: List[int] = []
+        for cid in order:
+            node = self.containers.get(cid)
+            if node is None:
+                continue
+            dup = None
+            for kid in keep:
+                other = self.containers[kid]
+                if other.label != node.label:
+                    continue
+                if merge_m > 0.0 and float(
+                    np.linalg.norm(other.center - node.center)
+                ) <= merge_m:
+                    dup = kid
+                    break
+                # Extent-aware. Measured against HM3D's own semantic
+                # annotations, the flat 1.0 m leaves 00829 with 16 `bed` nodes
+                # in a house that has ONE bed; clustering those at 2 m collapses
+                # them to 7, so over half the inflation is neighbouring
+                # fragments this catches and the rest is the detector calling
+                # sofas and benches `bed`, which no merge rule should touch.
+                if merge_sigma > 0.0 and containers_mod.shadows_overlap(
+                    footprints.get(kid, ()), footprints.get(cid, ()), merge_sigma
+                ):
+                    dup = kid
+                    break
+            if dup is None:
+                keep.append(cid)
+            else:
+                merged = self.containers[dup]
+                merged.track_ids = sorted(set(merged.track_ids) | set(node.track_ids))
+                merged.top_h = max(merged.top_h, node.top_h)
+                if merge_sigma > 0.0:
+                    # The union's geometry, not the widest member's. Two halves
+                    # of a bed merged under the old rule left the anchor on one
+                    # half, which is what the search walks to and what the
+                    # proximity term measures from.
+                    wa, wb = max(merged.area_m2, 1e-9), max(node.area_m2, 1e-9)
+                    merged.center = (merged.center * wa + node.center * wb) / (wa + wb)
+                    merged.area_m2 = merged.area_m2 + node.area_m2
+                footprints[dup] = list(footprints.get(dup, ())) + list(footprints.get(cid, ()))
+                self.containers.pop(cid, None)
+                footprints.pop(cid, None)
+        return keep
 
     def _room_at(
         self, xy: np.ndarray, room_labels: np.ndarray, costmap: Costmap2D,
@@ -358,38 +415,19 @@ class SceneGraph:
         # different passes. Containers are the stable layer -- a bed does not
         # move -- so proximity and label are enough.
         merge_m = float(self._container_merge_m)
+        merge_sigma = float(self._container_merge_sigma)
         current_container_ids = [
             cid for cid, node in self.containers.items()
             if floor_key is None or node.floor_id == floor_key
         ]
-        if merge_m > 0.0 and len(current_container_ids) > 1:
-            # Widest first, so the surviving node is the best-supported one.
-            order = sorted(
-                current_container_ids,
-                key=lambda c: -self.containers[c].area_m2,
-            )
-            keep: List[int] = []
-            for cid in order:
-                node = self.containers[cid]
-                dup = None
-                for kid in keep:
-                    other = self.containers[kid]
-                    if other.label != node.label:
-                        continue
-                    if float(np.linalg.norm(other.center - node.center)) <= merge_m:
-                        dup = kid
-                        break
-                if dup is None:
-                    keep.append(cid)
-                else:
-                    merged = self.containers[dup]
-                    merged.track_ids = sorted(set(merged.track_ids) | set(node.track_ids))
-                    merged.top_h = max(merged.top_h, node.top_h)
-                    footprints[dup] = footprints[dup] + footprints[cid]
-            dropped = [c for c in current_container_ids if c not in keep]
-            for cid in dropped:
-                self.containers.pop(cid, None)
-                footprints.pop(cid, None)
+        if (merge_m > 0.0 or merge_sigma > 0.0) and len(current_container_ids) > 1:
+            for _ in range(8):
+                before = len(current_container_ids)
+                current_container_ids = self._merge_pass(
+                    current_container_ids, footprints, merge_m, merge_sigma
+                )
+                if len(current_container_ids) == before:
+                    break
 
         current_container_ids = [
             cid for cid, node in self.containers.items()
