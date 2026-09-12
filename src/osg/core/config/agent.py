@@ -217,6 +217,13 @@ class AgentConfig:
     # test. The flag sets `_look_for_downstair_flag`, and every frame it is up
     # is spent tilting at a possible phantom drop-off.
     downstair_detector: str = "ascent"
+    # S75: run OSG's VLM verifier on the frame at the arrival STOP and take the
+    # give-up path when it refuses. An ADDITION -- the reference has no
+    # verifier -- so it is off by default and the default arm is unaffected.
+    # Needs `verification.enabled=true`; the verifier fails open on a transport
+    # error, so check `verify_errors` against `verify_calls` before believing a
+    # null.
+    verify_on_stop: bool = False
     terminal_requires_detection: bool = True
     frontier_reachability_gate: bool = True
     check_candidates_all_states: bool = False

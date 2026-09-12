@@ -118,6 +118,75 @@ def test_the_abandon_counter_is_cumulative_and_checked_after_the_policy():
     assert a._state == "explore"
 
 
+class _Verifier:
+    def __init__(self, verdict=True, boom=False):
+        self.verdict, self.boom, self.calls = verdict, boom, []
+
+    def verify_bbox(self, rgb, bbox, target):
+        self.calls.append((None if rgb is None else rgb.shape, tuple(bbox), target))
+        if self.boom:
+            raise RuntimeError("nim down")
+        return self.verdict
+
+
+def _at_stop(verifier=None, **over):
+    """An agent one step from a gated arrival STOP, with a detection in hand."""
+    import numpy as np
+    a = _committed(**over)
+    a._double_check_goal = True
+    a.cur_dis_to_goal = 0.5
+    a.verifier = verifier
+    a._last_dets = [_det(score=0.9)]
+    a._last_rgb = np.zeros((480, 640, 3), np.uint8)
+    a.obstacle_map.frontiers = np.array([[3.0, 0.0]])
+    return a
+
+
+def test_the_stop_verifier_is_off_unless_asked_for():
+    """S75 is an ADDITION -- the reference has no verifier. The default arm must
+    not call one even when a verifier object is handed to the agent."""
+    v = _Verifier(verdict=False)
+    a = _agent()                                    # verify_on_stop defaults False
+    assert a.verifier is None
+    a = _at_stop(verifier=None)
+    assert a._navigate(np.zeros(2), 0.0, np.array([0.5, 0.0])) == "stop"
+    assert v.calls == []
+
+
+def test_a_refused_stop_becomes_a_give_up_and_the_agent_keeps_exploring():
+    v = _Verifier(verdict=False)
+    a = _at_stop(verifier=v, verify_on_stop=True)
+    action = a._navigate(np.zeros(2), 0.0, np.array([0.5, 0.0]))
+    assert action != "stop", "the refusal must not end the episode"
+    assert a.stats["verify_refused"] == 1 and a.stats["verify_calls"] == 1
+    assert a.stats["give_up_vlm_refused"] == 1
+    assert a._try_to_navigate is False and a.object_map.clouds == {}
+    assert len(v.calls) == 1 and v.calls[0][2] == a.target
+
+
+def test_a_confirmed_stop_still_stops():
+    v = _Verifier(verdict=True)
+    a = _at_stop(verifier=v, verify_on_stop=True)
+    assert a._navigate(np.zeros(2), 0.0, np.array([0.5, 0.0])) == "stop"
+    assert a.stats["verify_calls"] == 1 and "verify_refused" not in a.stats
+
+
+def test_a_broken_verifier_fails_open_and_says_so():
+    """An unreachable VLM must degrade to the unverified behaviour, not refuse
+    every stop -- but the counter has to show it, or the arm measures nothing."""
+    v = _Verifier(boom=True)
+    a = _at_stop(verifier=v, verify_on_stop=True)
+    assert a._navigate(np.zeros(2), 0.0, np.array([0.5, 0.0])) == "stop"
+    assert a.stats["verify_errors"] == 1
+
+
+def test_no_detection_in_hand_means_no_call_and_no_block():
+    a = _at_stop(verifier=_Verifier(verdict=False), verify_on_stop=True)
+    a._last_dets = []
+    assert a._navigate(np.zeros(2), 0.0, np.array([0.5, 0.0])) == "stop"
+    assert a.stats["verify_no_view"] == 1 and "verify_calls" not in a.stats
+
+
 def test_the_gate_latches_only_on_a_step_after_navigation_began():
     """`map_controller.py:771-776`: the latch needs `try_to_navigate` set on a
     PRIOR dispatch, a target detection this frame, and the PREVIOUS step's

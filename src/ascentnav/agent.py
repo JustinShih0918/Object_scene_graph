@@ -40,6 +40,7 @@ runner reads.
 from __future__ import annotations
 
 import json
+import logging
 from typing import List, Optional
 
 import numpy as np
@@ -62,6 +63,8 @@ from .geometry import (
 )
 from .mapping.object_point_cloud_map import ObjectPointCloudMap
 from .mapping.obstacle_map import ObstacleMap
+
+log = logging.getLogger(__name__)
 from .mapping.value_map import ValueMap
 from .perception import tag_scene
 from .planner import GO_DOWN, GO_UP, AscentLLMPlanner, KnowledgeGraph
@@ -162,6 +165,15 @@ class AscentNavAgent:
         self.stop_radius = float(getattr(a, "pointnav_stop_radius", 0.9))
         self.abandon_steps = int(getattr(a, "approach_abandon_steps", 100) or 100)
         self.gate_threshold = float(getattr(a, "blip_gate_threshold", 0.15))
+        # S75: an OSG-only VLM check at the STOP moment. The reference has no
+        # verifier and the faithful port dropped the one this repo had, so this
+        # is an ADDITION, off by default. Placed at the stop rather than at
+        # commit because that is where the evidence points: 17 of the 37 S71
+        # failures are stops on a look-alike, and the BLIP-2 gate that is meant
+        # to catch them separates good stops from bad at AUC 0.53 -- it is a
+        # latch, not a check.
+        self.verify_on_stop = bool(getattr(a, "verify_on_stop", False))
+        self.verifier = verifier if self.verify_on_stop else None
         self.downstair_detector = str(getattr(a, "downstair_detector", "ascent"))
         if self.downstair_detector not in ("ascent", "lip"):
             raise ValueError(f"agent.downstair_detector must be 'ascent' or 'lip', got {self.downstair_detector!r}")
@@ -254,6 +266,7 @@ class AscentNavAgent:
         self.min_distance_xy = float("inf")
         self.cur_frontier: Optional[np.ndarray] = None
         self._last_dets: List[Detection] = []
+        self._last_rgb = None
         self._selected_frontier: Optional[np.ndarray] = None
         self._pn_goal: Optional[np.ndarray] = None
         self._nav_goal: Optional[np.ndarray] = None
@@ -377,6 +390,7 @@ class AscentNavAgent:
             raw = self.detector.detect(frame.rgb)
             dets = self._filter_target(raw)
             self._last_dets = dets
+            self._last_rgb = frame.rgb
             if self.ram is not None or self.room_classifier is not None:   # `:751`
                 tag_scene(frame.rgb, om._floor_num_steps, self.object_map,
                           self.ram, self.room_classifier, stats=self.stats)
@@ -673,6 +687,32 @@ class AscentNavAgent:
 
     # ------------------------------------------------------------- approach
 
+    def _vlm_confirms_stop(self) -> bool:
+        """Ask the VLM whether the boxed detection really is the target.
+
+        Off unless `agent.verify_on_stop`. FAILS OPEN: `VLMVerifier` returns
+        True on a transport error, so an unreachable endpoint degrades to the
+        unverified behaviour rather than refusing every stop. `verify_errors`
+        makes that visible instead of silent -- a run whose errors match its
+        calls measured nothing.
+        """
+        if self.verifier is None:
+            return True
+        best = max(self._last_dets, key=lambda d: d.score, default=None)
+        if best is None or self._last_rgb is None:
+            self.stats["verify_no_view"] = self.stats.get("verify_no_view", 0) + 1
+            return True                                   # nothing to show it
+        self.stats["verify_calls"] = self.stats.get("verify_calls", 0) + 1
+        try:
+            ok = bool(self.verifier.verify_bbox(self._last_rgb, best.bbox_xyxy, self.target))
+        except Exception as exc:  # noqa: BLE001 - never let the gate end a run
+            log.warning("stop verifier failed, allowing the stop: %s", exc)
+            self.stats["verify_errors"] = self.stats.get("verify_errors", 0) + 1
+            return True
+        if not ok:
+            self.stats["verify_refused"] = self.stats.get("verify_refused", 0) + 1
+        return ok
+
     def _navigate(self, robot_xy, heading, goal) -> str:
         """`ascent_policy.py:927-990`."""
         self._nav_goal = np.asarray(goal, dtype=float)
@@ -681,6 +721,8 @@ class AscentNavAgent:
         if d < 1.0:                                            # `:961`
             if d <= 0.6 or abs(d - self.min_distance_xy) < 0.1:  # `:962`, previous-step value
                 if self._double_check_goal:                    # `:963-966`
+                    if not self._vlm_confirms_stop():
+                        return self._give_up_target("vlm_refused", robot_xy, heading)
                     self._state = "done"
                     self.approach_stop_reason = "nearest_point"
                     return STOP
