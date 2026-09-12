@@ -296,3 +296,14 @@ def test_proposal_tracks_take_no_draws_and_no_ids_from_the_named_map():
     layer.update(_frame(1), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
     (t,) = layer.tracks(include_proposals=True)
     assert t.id >= PROPOSAL_ID_BASE
+
+
+def test_proposal_only_tracks_rank_by_their_mean_feature():
+    layer = _layer()
+    layer.set_proposal_text(_unit(1, 0, 0))
+    for i in range(1, 5):                                            # weaker track first
+        layer.update(_frame(i), [_det("bowl", (40, 40, 120, 120), 0.5, "proposal", _unit(1, 0.6, 0))])
+    for i in range(5, 9):
+        layer.update(_frame(i), [_det("bowl", (400, 300, 480, 380), 0.5, "proposal", _unit(1, 0.1, 0))])
+    out = layer.candidates("bowl", min_obs=1, rank_by_presence=True)
+    assert [round(t.proposal_sim, 2) for t in out] == [0.99, 0.86]

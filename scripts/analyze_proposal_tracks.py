@@ -39,15 +39,20 @@ def main():
     run = load(a.run)
     rows = []
     for k, d in run.items():
-        gt = d.get("target_obj_xy")
-        if not gt:
+        # Ground truth is the authored layout's object position(s), horizontal
+        # (x, z). NOT `target_obj_xy`, which is the agent's own committed
+        # goal -- measuring "true" against that would grade phantoms by
+        # whether the agent believed them.
+        lay = d.get("authored_layout") or {}
+        gts = lay.get("target_positions") or ([lay["target_position"]] if lay.get("target_position") else [])
+        if not gts:
             continue
         for t in d.get("target_tracks") or []:
             n_p = int(t.get("n_proposal_obs", 0))
             if n_p <= 0 or n_p < int(t["n_obs"]):
                 continue                       # named at least once: not this question
             c = t["center"]
-            dist = math.hypot(c[0] - gt[0], c[2] - gt[1])
+            dist = min(math.hypot(c[0] - g[0], c[2] - g[2]) for g in gts)
             rows.append(dict(ep=k, q=k.rsplit("__", 1)[-1], n=n_p,
                              sim=float(t.get("proposal_sim", -1.0)), dist=dist,
                              true=dist <= a.true_m))

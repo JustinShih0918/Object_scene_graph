@@ -557,11 +557,18 @@ class ObjectLayer:
         # own kind. The tier is 0 for every track the detector (or the prior
         # map) has named, so with no proposals in the map the order is exactly
         # what it was.
+        # Within the proposal tier the order is the appearance itself: a
+        # proposal track has no detector evidence and a constant score, so
+        # the named keys would tie and fall back to insertion order. Measured
+        # on the observation runs, a trial can hold a true track at 0.325 and
+        # a phantom at 0.286 that both clear the bar; this puts the true one
+        # first.
         tier = lambda t: 1 if t.proposal_only else 0
+        prop_key = lambda t: (-float(t.proposal_sim), -int(t.n_proposal_obs)) if t.proposal_only else (0.0, 0)
         if rank_by_presence:
-            out.sort(key=lambda t: (tier(t), -t.presence.p, -t.evidence))
+            out.sort(key=lambda t: (tier(t), *prop_key(t), -t.presence.p, -t.evidence))
         else:
-            out.sort(key=lambda t: (tier(t), -(t.best_score * t.presence.p)))
+            out.sort(key=lambda t: (tier(t), *prop_key(t), -(t.best_score * t.presence.p)))
         return out
 
     @staticmethod
