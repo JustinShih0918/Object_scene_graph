@@ -248,3 +248,46 @@ So the ascent primitive exists and is the right shape, and the remaining loss is
 that one flight is not one storey. The next change is in the estimator, not the
 climb: do not commit a level while the agent is standing on cells that belong to
 a flight, and continue the climb through the landing to the next flight's foot.
+
+## Not stopping in the middle of the stair
+
+v13-v15 climbed and stopped on a half-landing: 2.3 m of a 3.2 m storey, the
+agent standing at y = 0.946 with the object at y = 0.06. Two independent
+mechanisms put it there, and both had to go.
+
+**A landing became a storey.** It is off every known level, and roomy enough to
+walk 2.5 m across, so `FloorEstimator`'s horizontal-run route created a level
+there. `floor.no_level_on_flight` refuses to create a new level while the agent
+is on a staircase. Standing on treads turned out not to be enough, because a
+landing is flat ground *between* two flights: the flag is now set for the
+duration of the climb. Arriving on a storey the stack already knows is
+deliberately untouched, so a real arrival still commits.
+
+**A landing redefined the floor below.** With new levels suppressed the climb
+still ended, because `_refine` pulls each level toward the heights actually
+stood on and a landing 0.89 m above floor 0 sits inside its capture radius.
+Floor 0's estimate drifted *up to meet the agent*, which then "arrived" on a
+storey it was not standing on. `_refine` is now skipped while the same flag is
+set. Treads and landings are not floor and must not define where floor is.
+
+With both, and `agent.climb_relink_flights` picking up the next flight when the
+treads run out, the descent completes:
+
+| 00808, yellow bottle | v13 | v15 | v16 |
+|---|---:|---:|---:|
+| descended | 2.37 m | 2.32 m | **3.20 m** |
+| ended at | y 2.861 | y 0.946 | **y 0.061** |
+| reached the object's floor | no | no | **yes** |
+| distance to goal | 7.28 m | 6.56 m | **0.25 m** |
+| target in view | 0 frames | 0 frames | **22 frames** |
+
+Across the twelve genuine storey changes, v16 relinks flights 4 times and
+suppresses 27 landing levels. Its remaining loss on that episode is not the
+climb: it ends 0.25 m from the object with the target in view for 22 frames and
+does not stop, which is the approach-termination problem, not a floor one.
+
+Cross-floor success is still 0/12. Nine of the twelve never start a climb at
+all, because the storey question is only asked in exploration rounds and those
+episodes spend their budget in approach and surface states chasing a live false
+positive on the start floor. That is the next thing to fix, and it is in the
+decision layer rather than in the stairs.
