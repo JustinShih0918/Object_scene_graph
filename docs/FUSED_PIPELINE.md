@@ -162,3 +162,54 @@ success rate looks flat.
 
 `scripts/run_fusion_ab.sh` runs the arms paired, and
 `scripts/report_fusion_ab.py` compares them episode for episode.
+
+## The merged perception layer (b94fa81)
+
+`experiment/sr-70-50` brought seven commits: a class-agnostic FastSAM +
+MobileCLIP proposal stage for objects the detector will not name, an
+extent-aware container merge, and a fix stopping the absence sensor re-asking
+the detector that failed. Both features default off, so every arm above is
+unchanged; `build_region_proposer` returns None when disabled and FastSAM is
+never imported, so there is no VRAM cost either.
+
+### The two container fixes are complementary
+
+`containers_floor_relative` (ours) makes upstairs containers exist at all;
+`container_merge_sigma` (theirs) collapses several fragments of one physical
+surface into one anchor. Rebuilt from the prior maps:
+
+| scene | absolute band (old) | floor-relative | + sigma 2.5 |
+|---|---|---|---|
+| 00808 | 132, all f0 | 197 = f0 135 + f1 62 | 145 = f0 97 + f1 48 |
+| 00800 | 62, **all f1** | 149 = f0 84 + f1 65 | 115 = f0 63 + f1 52 |
+| 00810 | 74 = f0 72 + f1 2 | 85 = f0 74 + f1 11 | 71 = f0 60 + f1 11 |
+| 00821 | 136, all f0 | 138, all f0 | 106, all f0 |
+
+The merge removes about a quarter of the nodes while the floor-1 *share* barely
+moves (00808 31.5% -> 33.1%, 00800 43.6% -> 45.2%), so it shortens the surface
+queue without disturbing the container-mass floor argmax that `_select_surface`
+depends on. 00800 is the sharpest evidence for the original bug: under the
+absolute band every container landed on floor 1 and the ground floor had none.
+
+The merge runs per storey -- candidates are filtered by `floor_key` before
+`_merge_pass` -- so it cannot fuse a table on floor 0 with the one directly
+above it.
+
+`scripts/render_scene_graph_multifloor.py` had independently worked around the
+same bug at the figure level, shifting `container_top_h_m` per storey by hand.
+Running both implementations over four scenes gives identical containers -- same
+ids, centres, heights and labels, 569 of them -- which is a useful check on the
+pipeline fix. That workaround is now redundant.
+
+### A caution before enabling the proposal stage here
+
+The absence fix makes the agent *less* willing to retire a track: the close look
+falls through to the proposal stage instead of trusting a detector that could
+not name the object. On the perception subset that is worth +1 trial and cuts
+silent close looks from 13 to 8.
+
+The cross-floor blocker is the opposite failure. Nine of twelve episodes never
+start a climb because they spend the budget chasing a live false positive on the
+start floor, and a stage that makes false positives harder to disbelieve could
+deepen that. If `region_proposal` is ever switched on in a cross-floor arm, read
+`region_admits` and the directed-switch counters before reading SR.
