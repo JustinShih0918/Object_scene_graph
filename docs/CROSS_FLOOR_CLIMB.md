@@ -186,3 +186,65 @@ they are masked out, not used); a stair-following controller that keeps the
 agent square to the risers and pushes; or stair evidence taken from the height
 layer's rising-tread signature rather than from the detector's mask, so the
 target is the foot and not the balustrade.
+
+## The structural change: flights, not portals
+
+The target was the problem all along. A portal is a place another storey is
+*visible from*; the detector's `stairs` mask, seen from below, stamps cells
+*under* the upper flight. Neither is a place you can walk up from. Put the goal
+on the treads and the PointNav mover climbs, slowly.
+
+`mapping.stairs.find_flights` reads a staircase off the height layer:
+connected cells whose height sits strictly between this floor and the next,
+kept only when their heights span at least a metre. A table is a plateau and
+spans nothing; a sloped floor is capped by size; a flight that joins two
+storeys spans a metre by construction. The lowest tread is the foot.
+
+This is the question Stage 4's detector should have asked. It looked for
+steppable cells by their local height step, and a tread's interior is flat, so
+every flight fragmented into riser edges. Asking which cells are *between two
+storeys* keeps the treads whole.
+
+`floor.climb_targets: flights_first` pursues the nearest flight going the right
+way, marks its treads traversable, and hands the flight to the agent.
+`agent.climb_flight_carrot` then aims each climb step at the tread 0.35-1.0 m
+above the agent's standing height, so the goal stays on the flight the whole
+way up.
+
+### It climbs
+
+| | base | navmesh | v11 | v13 | v15 |
+|---|---:|---:|---:|---:|---:|
+| success, cross-floor | 0/12 | 2/12 | 0/12 | 0/12 | 0/12 |
+| climbs that committed a storey | 0 | 0 | 0 | **2** | **1** |
+| most height gained inside a climb | 0 | 0 | 0.34 m | **2.34 m** | 0.69 m |
+| flights found / pursued | 0 | 0 | 0 | 24 / 10 | 24 / 9 |
+| floor switch attempts | 76 | 9 | 18 | 15 | 14 |
+
+v13 is the first sensor-only arm whose climb reaches another storey. On 00808's
+yellow bottle it descended the flight the height layer found and the estimator
+committed the object's floor at step 314.
+
+### Two things found on the way down
+
+**It left again immediately.** At step 347 the original geometric gate --
+"nothing near is left to explore" -- was true, because a floor reached 33 steps
+ago has almost no map, and the agent climbed back up (`floor_log [1, 0, 1]`).
+`floor.dwell_on_arrival` gives a newly reached storey the dwell the episode
+start gets. That needed a second fix: "steps on this floor" was measured from
+`first_step`, which is 0 for a storey restored from the prior map, so a 33-step
+arrival read as 347 steps. `FloorStack.arrived_step` now records each arrival
+and the guards count from it. With both, v15 descends and stays
+(`floor_log [1, 0]`).
+
+**It stops on a landing.** v15 ends that episode at y = 0.946 with the object at
+y = 0.06: it descended 2.3 m of a 3.2 m storey, reached a half-landing, and the
+floor estimator committed the landing as a storey -- which ends the climb, and
+`goal_floor` then cannot be matched at all. This is exactly the risk
+`docs/MULTI_FLOOR.md` lists under "Biggest risk": a multi-flight landing looks
+like a new floor to any height-based estimator.
+
+So the ascent primitive exists and is the right shape, and the remaining loss is
+that one flight is not one storey. The next change is in the estimator, not the
+climb: do not commit a level while the agent is standing on cells that belong to
+a flight, and continue the climb through the landing to the next flight's foot.
