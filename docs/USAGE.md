@@ -182,3 +182,4 @@ was transcribed from.
 | the mover | `src/osg/planning/pointnav_driver.py` (weights bit-identical to ASCENT's) |
 | config | `configs/config.yaml` → `agent/s71`, `exploration/s71`, `verification/s71`, `detector/dfine`, `llm/qwen_local`, `scene_graph/place365`, `eval/scenes20_ep0to4` |
 | results log | `docs/AB_RESULTS.md` (S71 is the current record), `src/ascentnav/README.md` (fidelity notes F1–F14) |
+| methodology | `docs/METHODOLOGY.md` — protocol, evidence rules, differences from native ASCENT |

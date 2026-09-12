@@ -37,7 +37,9 @@ how it got here):
 > 54.0%. Same-floor 75.6%, cross-floor 18.2%.
 >
 > **[docs/USAGE.md](docs/USAGE.md)** is the how-to: model servers, running,
-> comparing against ASCENT, variants. **[docs/AB_RESULTS.md](docs/AB_RESULTS.md)**
+> comparing against ASCENT, variants. **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**
+> is the what-and-why: the protocol, how claims are established, and every
+> verified difference from native ASCENT. **[docs/AB_RESULTS.md](docs/AB_RESULTS.md)**
 > (S71) has the diagnosis and the paired result; **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)**
 > and **[docs/MULTI_FLOOR.md](docs/MULTI_FLOOR.md)** the earlier work. Note from
 > that work: **runs are not reproducible while the VLM verifier is on** — the
