@@ -353,6 +353,12 @@ class AgentConfig:
     floor_gap_min_m: float = 0.9
     climb_exit_rule: str = "height"  # height | topological
     stair_exit_m: float = 0.5
+    # Let a floor pursuit become a climb. Until now State.CLIMB was never
+    # entered: the carrot, the on-stairs test and the exit rule were all here
+    # and nothing assigned the state, so the sensor-only agent had no way up a
+    # staircase at all. Off by default because it changes what the agent does
+    # on arrival at a portal.
+    climb_enabled: bool = False
     climb_carrot: bool = False
     climb_carrot_m: float = 0.8
     down_look_every: int = 0

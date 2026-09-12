@@ -1,0 +1,229 @@
+"""The sensor-only climb, which did not exist.
+
+`State.CLIMB` was in the enum, `_carrot_action`, `_on_a_staircase` and
+`_left_the_stairs` were on `NavAgent`, and nothing ever assigned the state or the
+attributes they read. The `ascent` policy dispatches on `State.CLIMB` to a
+`_do_climb` that was never defined. So the OSG agent had no way up a staircase:
+`portals.py` says a portal is "a place to walk toward, after which the navmesh
+handles the climb", and the navmesh was removed on 2026-09-08.
+
+Measured on 00821's cracker box: base, 55 switch attempts and 0.17 m of ascent;
+navmesh restored, one attempt and the whole 3.6 m storey. These tests pin the
+sensor-only replacement for that step: a pursuit that reaches the stairs becomes
+a climb, the climb steers at the farthest depth, and it ends on a committed new
+storey or on evidence that it is not working.
+"""
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import numpy as np
+
+from osg.agent.nav_agent import NavAgent, State
+from osg.exploration.async_scorer import AsyncScorer
+from osg.exploration.scorer import NullScorer
+from osg.perception.detector import StubDetector
+
+from .conftest import make_frame
+from .test_nav_agent import make_cfg
+
+GROUND, UPPER = 0, 1
+
+
+def _agent(enabled=True):
+    cfg = make_cfg()
+    cfg.floor.enabled = True
+    cfg.floor.cross_floor = True
+    cfg.mapping.multi_floor = True
+    cfg.agent.climb_enabled = enabled
+    cfg.agent.climb_max_steps = 20
+    cfg.agent.stair_reach_m = 0.6
+    agent = NavAgent(cfg, StubDetector(), AsyncScorer(NullScorer()), None, "bowl")
+    est = agent.floors.estimator
+    est._levels = {GROUND: 0.0, UPPER: 2.9}
+    est.current = GROUND
+    agent.floors.stack.layer(GROUND, step=0).floor_y = 0.0
+    agent.floors.stack.layer(UPPER, step=0).floor_y = 2.9
+    agent.floors.stack.current_id = GROUND
+    return agent
+
+
+def _pursuit(agent, goal_xy=(1.0, 2.0), target_y=2.9):
+    """A floor pursuit in flight, as `_try_floor_switch` leaves one."""
+    agent.state = State.GOTO_FRONTIER
+    agent._goal_xy = np.asarray(goal_xy, dtype=float)
+    agent._goal_floor_y_cache = target_y
+    agent.floors.pursuing = True
+    agent.floors._pursuit_goal_xy = np.asarray(goal_xy, dtype=float)
+    agent._goto_deadline = 10 ** 9
+
+
+def _frame(intrinsics, xz, y=0.0):
+    T = np.eye(4)
+    T[0, 3], T[1, 3], T[2, 3] = xz[0], y, xz[1]
+    return make_frame(intrinsics, T)
+
+
+# ----------------------------------------------------------------- entry
+
+def test_arriving_at_the_stair_goal_starts_a_climb(intrinsics):
+    agent = _agent()
+    _pursuit(agent, goal_xy=(1.0, 2.0))
+    frame = _frame(intrinsics, (1.2, 2.0), y=1.5)
+    assert agent._at_the_stairs(frame)
+    agent._start_climb(frame)
+    assert agent.state is State.CLIMB
+    assert agent.stats["climb_start"] == 1
+    assert agent._climb_direction == +1
+
+
+def test_far_from_the_goal_and_off_any_stair_evidence_is_not_a_climb(intrinsics):
+    agent = _agent()
+    _pursuit(agent, goal_xy=(1.0, 2.0))
+    assert not agent._at_the_stairs(_frame(intrinsics, (5.0, 5.0), y=1.5))
+
+
+def test_the_climb_is_off_by_default(intrinsics):
+    agent = _agent(enabled=False)
+    assert not bool(agent.cfg.agent.climb_enabled)
+
+
+def test_a_descent_is_recognised_from_the_target_height(intrinsics):
+    agent = _agent()
+    agent.floors.estimator.current = UPPER
+    agent.floors.stack.current_id = UPPER
+    _pursuit(agent, goal_xy=(1.0, 2.0), target_y=0.0)
+    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
+    assert agent._climb_direction == -1
+
+
+# ------------------------------------------------------------------ body
+
+def test_a_descent_tilts_the_camera_down_once_first(intrinsics):
+    """ASCENT's phase 2: the carrot has to see the treads below, not the far
+    wall."""
+    agent = _agent()
+    agent.floors.estimator.current = UPPER
+    agent.floors.stack.current_id = UPPER
+    _pursuit(agent, goal_xy=(1.0, 2.0), target_y=0.0)
+    frame = _frame(intrinsics, (1.0, 2.0), y=4.4)
+    agent._start_climb(frame)
+    assert agent._do_climb(frame) == "look_down"
+    assert agent._climb_pitched
+    assert agent._do_climb(frame) != "look_down"
+
+
+def test_the_climb_ends_when_a_new_storey_is_committed(intrinsics):
+    agent = _agent()
+    _pursuit(agent)
+    frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
+    agent._start_climb(frame)
+    # The estimator commits the upper floor, as observe() does on the stairs.
+    agent.floors.stack.current_id = UPPER
+    agent._do_climb(_frame(intrinsics, (1.0, 4.0), y=4.4))
+    assert agent.state is State.EXPLORE
+    assert agent.stats.get("climb_ok") == 1
+    assert agent.stats.get("climb_end_new_floor") == 1
+
+
+def test_the_climb_ends_on_budget_and_records_the_failure(intrinsics):
+    """A climb that spends its budget without a new storey is evidence about
+    the place, and `end_pursuit` hands it to the portal failure memory."""
+    agent = _agent()
+    agent.cfg.floor.portal_failure_memory = True
+    _pursuit(agent, goal_xy=(1.0, 2.0))
+    frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
+    agent._start_climb(frame)
+    for _ in range(25):
+        if agent.state is not State.CLIMB:
+            break
+        agent._do_climb(frame)
+    assert agent.state is State.EXPLORE
+    assert agent.stats.get("climb_fail") == 1
+    assert agent.stats.get("climb_end_budget") == 1
+    assert agent.floors._portal_failed_here([1.0, 2.0])
+
+
+def test_height_gained_counts_even_if_the_pursuit_was_ended_elsewhere(intrinsics):
+    """`pursuit_ok` can end a pursuit on its deadline while the agent is halfway
+    up. Judge by height gained, not by what ended it."""
+    agent = _agent()
+    agent.cfg.floor.new_level_m = 1.8
+    _pursuit(agent)
+    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
+    agent.floors.pursuing = False
+    agent._do_climb(_frame(intrinsics, (1.0, 3.0), y=1.5 + 1.2))
+    assert agent.stats.get("climb_ok") == 1
+    assert agent.stats.get("climb_end_height") == 1
+
+
+def test_the_carrot_is_what_moves_the_agent(intrinsics):
+    """No pointnav in the test harness, so the follower path is taken; the
+    point is that a step in CLIMB is a motion command, not a stop."""
+    agent = _agent()
+    _pursuit(agent)
+    frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
+    agent._start_climb(frame)
+    action = agent._do_climb(frame)
+    assert action in ("move_forward", "turn_left", "turn_right")
+
+
+# ------------------------------------------------------------ targeting
+
+def test_a_seen_staircase_is_chosen_over_a_portal():
+    """`floor.climb_targets: stairs_first`. A `stairs` track the detector has
+    corroborated is a place you can climb from; a portal is a place you can see
+    the next floor from."""
+    from osg.agent.floor_policy import FloorPolicy
+    from osg.mapping.portals import FloorSwitchPolicy
+
+    cfg = make_cfg()
+    cfg.floor.enabled = True
+    cfg.floor.cross_floor = True
+    cfg.floor.climb_targets = "stairs_first"
+    policy = FloorPolicy(cfg, stats={})
+    policy.estimator._levels = {GROUND: 0.0, UPPER: 2.9}
+    policy.estimator.current = GROUND
+    policy.stack.layer(GROUND, step=0).floor_y = 0.0
+    policy.stack.layer(UPPER, step=0).floor_y = 2.9
+    policy.stack.current_id = GROUND
+    policy.switch_policy = FloorSwitchPolicy(max_steps=500, no_switch_before=0,
+                                             min_interval_steps=0)
+    frame = SimpleNamespace(camera_position=np.array([0.0, 1.5, 0.0]))
+    sg = SimpleNamespace(objects=[], rooms={})
+    goal = policy.try_switch(
+        frame, 100, best_path_cost=None, scene_graph=sg, target="bowl",
+        reachable_fn=None, target_floor=UPPER,
+        stair_xyz=[np.array([3.0, 0.4, 1.0]), np.array([9.0, 0.4, 9.0])],
+    )
+    assert goal is not None
+    assert goal.goal_xy.tolist() == [3.0, 1.0], "nearest seen staircase, not the far one"
+    assert goal.target_y == 2.9
+    assert policy.stats.get("stair_track_switch_attempts") == 1
+
+
+def test_a_staircase_on_another_storey_is_not_a_target_here():
+    from osg.agent.floor_policy import FloorPolicy
+    from osg.mapping.portals import FloorSwitchPolicy
+
+    cfg = make_cfg()
+    cfg.floor.enabled = True
+    cfg.floor.cross_floor = True
+    cfg.floor.climb_targets = "stairs_first"
+    policy = FloorPolicy(cfg, stats={})
+    policy.estimator._levels = {GROUND: 0.0, UPPER: 2.9}
+    policy.estimator.current = GROUND
+    policy.stack.layer(GROUND, step=0).floor_y = 0.0
+    policy.stack.layer(UPPER, step=0).floor_y = 2.9
+    policy.stack.current_id = GROUND
+    policy.switch_policy = FloorSwitchPolicy(max_steps=500, no_switch_before=0,
+                                             min_interval_steps=0)
+    frame = SimpleNamespace(camera_position=np.array([0.0, 1.5, 0.0]))
+    sg = SimpleNamespace(objects=[], rooms={})
+    # The only stair track is 3 m above this floor: it belongs upstairs.
+    goal = policy.try_switch(
+        frame, 100, best_path_cost=None, scene_graph=sg, target="bowl",
+        reachable_fn=None, target_floor=UPPER, stair_xyz=[np.array([3.0, 3.4, 1.0])],
+    )
+    assert policy.stats.get("stair_track_switch_attempts") is None
+    assert goal is None  # and no portal exists in an empty costmap either

@@ -344,7 +344,7 @@ class FloorPolicy:
 
     def try_switch(
         self, frame, step: int, best_path_cost, scene_graph, target: str, reachable_fn,
-        target_floor: Optional[int] = None, presence_of=None,
+        target_floor: Optional[int] = None, presence_of=None, stair_xyz=None,
     ) -> Optional[PortalGoal]:
         """Head for another storey when this one has nothing near left.
 
@@ -412,6 +412,63 @@ class FloorPolicy:
             self._remembered_stair(target_floor)
             if bool(getattr(self.cfg.floor, "use_prior_stairs", False)) else None
         )
+        # A staircase the detector has SEEN is a place you can climb from. A
+        # portal is a place you can see the next floor from, which over a
+        # balcony rail is not the same thing: measured on 00821, the portal the
+        # agent chased 55 times sat about 10 m from the flight the navmesh
+        # actually uses. `stair_xyz` are the 3D centres of `stairs` tracks in
+        # the object layer -- multi-frame, evidence-gated detections, not
+        # single-frame masks -- and on this storey they are the best target
+        # there is. Nearest first; the agent's climb state does the rest.
+        if (
+            str(getattr(self.cfg.floor, "climb_targets", "portals")) == "stairs_first"
+            and stair_xyz
+        ):
+            here_y = float(floor_y)
+            span = float(self.cfg.floor.new_level_m)
+            on_this_floor = [
+                np.asarray(c, dtype=float) for c in stair_xyz
+                if abs(float(c[1]) - here_y) < span
+                and not self._portal_failed_here(np.asarray(c, dtype=float)[list(PLANE)])
+            ]
+            if on_this_floor:
+                agent_xy = frame.camera_position[list(PLANE)]
+                best = min(on_this_floor, key=lambda c: float(np.linalg.norm(c[list(PLANE)] - agent_xy)))
+                goal_xy = best[list(PLANE)]
+                # Which way is up? The directed request names a storey; an
+                # undirected one takes whichever storey the stair is nearer to.
+                if directed and self.stack.by_key(int(target_floor)) is not None:
+                    target_y = float(self.stack.by_key(int(target_floor)).floor_y)
+                else:
+                    others = [h for k, h in self.estimator.levels.items()
+                              if k != self.stack.current_id]
+                    target_y = (min(others, key=lambda h: abs(h - float(best[1])))
+                                if others else here_y + span)
+                if reachable_fn is None or reachable_fn(goal_xy, here_y):
+                    self.pursuing = True
+                    self._pursuit_goal_xy = np.asarray(goal_xy, dtype=float).copy()
+                    self._portal_start_y = float(frame.camera_position[1])
+                    self._portal_step = step
+                    self.switch_policy.note_switch(step)
+                    self.stats["floor_switch_attempts"] = (
+                        self.stats.get("floor_switch_attempts", 0) + 1
+                    )
+                    self.stats["stair_track_switch_attempts"] = (
+                        self.stats.get("stair_track_switch_attempts", 0) + 1
+                    )
+                    if directed:
+                        self.stats["directed_floor_switch_attempts"] = (
+                            self.stats.get("directed_floor_switch_attempts", 0) + 1
+                        )
+                    self.portal_log.append((
+                        step, [round(float(x), 2) for x in goal_xy], "stair_track",
+                        len(portals),
+                    ))
+                    return PortalGoal(
+                        goal_xy=np.asarray(goal_xy, dtype=float).copy(),
+                        target_y=float(target_y),
+                        deadline_steps=self.cfg.floor.portal_deadline_steps,
+                    )
         prefer = bool(getattr(self.cfg.floor, "prefer_prior_stairs", False))
         if not portals or (prefer and remembered is not None):
             # Either nothing visible to drive to, or something visible that is

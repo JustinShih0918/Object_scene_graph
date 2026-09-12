@@ -126,6 +126,12 @@ class FloorConfig:
     # immediately: 00821's cracker box made 55 switch attempts, the last 50 at
     # one 28-cell patch, for 0.17 m of ascent in 500 steps.
     portal_failure_memory: bool = False
+    # What a floor pursuit aims at. "portals": a patch of another storey visible
+    # from here (the shipped behaviour). "stairs_first": a `stairs` track the
+    # detector has actually seen on this storey, nearest first, and only then a
+    # portal. Measured on 00821, the portal the agent chased 55 times sat about
+    # 10 m from the flight the navmesh uses.
+    climb_targets: str = "portals"
     # How close counts as the same failed place.
     portal_failure_radius_m: float = 1.5
     use_target_evidence: bool = True

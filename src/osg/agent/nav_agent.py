@@ -451,6 +451,19 @@ class NavAgent:
         self._carrot_disable_end = False
         self._climb_last_dist = None
         self._climb_paused_steps = 0
+        # The climb itself. Until now `State.CLIMB` was in the enum, the carrot
+        # and the on-stairs test were on this class, and nothing ever assigned
+        # the state or any of these -- so the sensor-only agent had no way up a
+        # staircase at all (see `_do_climb`).
+        self._climb_goal_xy: Optional[np.ndarray] = None
+        self._climb_centroid_xy: Optional[np.ndarray] = None
+        self._climb_cells_xy: Optional[np.ndarray] = None
+        self._climb_start_y = 0.0
+        self._climb_from_floor: Optional[int] = None
+        self._climb_direction = 0
+        self._climb_steps = 0
+        self._climb_max_dy = 0.0
+        self._climb_pitched = False
         self._pitch_ticks = 0
         self._last_down_look_step = -(10 ** 9)
         if self.commit_state is not None:
@@ -674,7 +687,18 @@ class NavAgent:
             if self.state == State.EXPLORE:  # nothing selectable
                 return TURN_ACTION  # keep looking around; map will grow
 
+        if self.state == State.CLIMB:
+            return self._do_climb(frame)
+
         if self.state == State.GOTO_FRONTIER:
+            if (
+                bool(getattr(self.cfg.agent, "climb_enabled", False))
+                and self.floors.pursuing
+                and self._goal_xy is not None
+                and self._at_the_stairs(frame)
+            ):
+                self._start_climb(frame)
+                return self._do_climb(frame)
             reselect = int(getattr(self.cfg.exploration, "reselect_every", 0))
             if reselect > 0 and self.step_count % reselect == 0:
                 self._select_new_frontier(frame)
@@ -1074,6 +1098,16 @@ class NavAgent:
         target_floor = self._llm_floor_choice(target_floor)
         if target_floor is False:
             return False  # the model said stay; this round is settled
+        stair_xyz = None
+        if str(getattr(self.cfg.floor, "climb_targets", "portals")) == "stairs_first":
+            from ..mapping.stairs import stair_tracks
+            stair_xyz = stair_tracks(
+                self.object_layer,
+                min_obs=int(self.cfg.floor.stair_min_obs),
+                min_evidence=float(self.cfg.floor.stair_min_evidence),
+            )
+            self.stats["stair_tracks_offered"] = max(
+                self.stats.get("stair_tracks_offered", 0), len(stair_xyz))
         portal = self.floors.try_switch(
             frame, self.step_count, best_path_cost,
             self.scene_graph, self.target, self._reachable_fn,
@@ -1081,6 +1115,7 @@ class NavAgent:
             presence_of=self._track_still_believed
             if bool(getattr(self.cfg.exploration, "floor_evidence_by_presence", False))
             else None,
+            stair_xyz=stair_xyz,
         )
         if portal is None:
             return False
@@ -1413,6 +1448,122 @@ class NavAgent:
             self._terminal_stalls = 0
             self._terminal_min_d = min(self._terminal_min_d, distance)
         return None
+
+    # ------------------------------------------------------------------ climb
+    #
+    # ASCENT's staircase behaviour (`ascent_policy.py:1069-1189`), fitted to this
+    # FSM. Three phases there: get close to the stair frontier, drive at its
+    # centroid, then steer at the farthest depth ray -- the "carrot" -- which on
+    # a flight of stairs points up it. Arrival is "off the stairs having been on
+    # the centroid"; here it is the floor estimator committing a new storey,
+    # which `FloorPolicy.observe` already turns into `end_pursuit("arrived")`.
+    #
+    # Why this exists: `portals.py` says a portal is "a place to walk toward,
+    # after which the navmesh handles the climb", and commit 866ab0e removed
+    # the navmesh. Measured on 00821's cracker box, base made 55 switch
+    # attempts and rose 0.17 m; with the navmesh restored, one attempt and the
+    # whole 3.6 m storey. This is the sensor-only replacement for that step.
+
+    def _at_the_stairs(self, frame: FrameData) -> bool:
+        """Has the pursuit reached somewhere a climb can start?
+
+        Either the stair detector's own evidence is under the agent, or the
+        pursuit goal is within `stair_reach_m`. The second matters because the
+        detector's `stairs` label is available on a minority of episodes; a
+        stair-track goal was chosen BECAUSE it is a staircase, so arriving at
+        it is enough.
+        """
+        agent_xy = frame.camera_position[list(PLANE)]
+        if self._on_a_staircase(agent_xy):
+            return True
+        reach = float(getattr(self.cfg.agent, "stair_reach_m", 0.6))
+        return float(np.linalg.norm(agent_xy - self._goal_xy)) <= reach
+
+    def _start_climb(self, frame: FrameData) -> None:
+        agent_xy = frame.camera_position[list(PLANE)]
+        self._climb_goal_xy = np.asarray(self._goal_xy, dtype=float).copy()
+        self._climb_centroid_xy = self._climb_goal_xy.copy()
+        self._climb_start_y = float(frame.camera_position[1])
+        self._climb_from_floor = int(self.floors.current_id)
+        target_y = self._goal_floor_y_cache
+        here_y = float(self.floors.estimator.height_of(self._climb_from_floor))
+        self._climb_direction = (
+            0 if target_y is None else (1 if float(target_y) > here_y else -1)
+        )
+        self._climb_steps = 0
+        self._climb_max_dy = 0.0
+        self._climb_pitched = False
+        self._carrot_xy = None
+        self._carrot_disable_end = False
+        self._climb_last_dist = None
+        self._climb_paused_steps = 0
+        # The stair cells near the agent, for `_left_the_stairs`; None when the
+        # detector has no evidence here, in which case the height test decides.
+        layer = self.floor_layer
+        cells = None
+        if self.stair_detector is not None and layer.up_stair_hits is not None:
+            mask = (
+                (layer.up_stair_hits >= self.stair_detector.min_hits)
+                | (layer.down_stair_hits >= self.stair_detector.min_hits)
+            )
+            rc = np.argwhere(mask)
+            if len(rc):
+                xy = np.stack([layer.costmap.grid_to_world(r) for r in rc])
+                near = np.linalg.norm(xy - agent_xy, axis=1) < 3.0
+                cells = xy[near] if near.any() else None
+        self._climb_cells_xy = cells
+        self._current_path = None
+        self.state = State.CLIMB
+        self.stats["climb_start"] = self.stats.get("climb_start", 0) + 1
+        self.stats["climb_start_up"] = self.stats.get("climb_start_up", 0) + int(self._climb_direction > 0)
+        self.stats["climb_start_down"] = self.stats.get("climb_start_down", 0) + int(self._climb_direction < 0)
+
+    def _end_climb(self, ok: bool, why: str) -> None:
+        self.stats["climb_ok" if ok else "climb_fail"] = (
+            self.stats.get("climb_ok" if ok else "climb_fail", 0) + 1
+        )
+        self.stats[f"climb_end_{why}"] = self.stats.get(f"climb_end_{why}", 0) + 1
+        self.stats["climb_max_dy_x100"] = max(
+            int(self.stats.get("climb_max_dy_x100", 0)), int(round(self._climb_max_dy * 100))
+        )
+        if not ok and self.floors.pursuing:
+            # Records the failure against the goal when portal_failure_memory is
+            # on, so the next selection round does not send the agent straight
+            # back to the same foot of the same wall.
+            self.floors.end_pursuit("no_vertical_progress")
+        self._goal_xy = None
+        self._current_path = None
+        self._carrot_disable_end = False
+        self.state = State.EXPLORE
+
+    def _do_climb(self, frame: FrameData) -> str:
+        agent_xy = frame.camera_position[list(PLANE)]
+        cam_y = float(frame.camera_position[1])
+        self._climb_steps += 1
+        dy = (cam_y - self._climb_start_y) * (self._climb_direction or 1)
+        self._climb_max_dy = max(self._climb_max_dy, dy)
+        # Success is the estimator committing a new storey. `observe` runs
+        # before the dispatch every step, so the id has already moved.
+        if int(self.floors.current_id) != int(self._climb_from_floor):
+            self._end_climb(True, "new_floor")
+            return "look_up" if self._climb_pitched else TURN_ACTION
+        # A pursuit `observe` ended for another reason (deadline) while we were
+        # climbing: judge by height gained, not by what ended it.
+        if not self.floors.pursuing and dy >= 0.6 * float(self.cfg.floor.new_level_m):
+            self._end_climb(True, "height")
+            return "look_up" if self._climb_pitched else TURN_ACTION
+        if self._climb_steps > int(getattr(self.cfg.agent, "climb_max_steps", 80)):
+            self._end_climb(False, "budget")
+            return "look_up" if self._climb_pitched else TURN_ACTION
+        if self._carrot_stalled(agent_xy) and dy < 0.3:
+            self._end_climb(False, "stalled")
+            return "look_up" if self._climb_pitched else TURN_ACTION
+        # Descending: tilt the camera down once so the carrot sees the treads
+        # below rather than the far wall (ASCENT's phase 2, `:1120-1127`).
+        if self._climb_direction < 0 and not self._climb_pitched:
+            self._climb_pitched = True
+            return "look_down"
+        return self._carrot_action(frame, agent_xy)
 
     def _carrot_goal(
         self, frame: FrameData, agent_xy: np.ndarray
