@@ -334,11 +334,33 @@ class FloorPolicy:
             scene_graph, self.stack.current_id, target, presence_of=presence_of,
         )
         directed = target_floor is not None
+        steps_here = step - self.stack.current.first_step
         if not directed and not self.switch_policy.may_switch(
             step, best_path_cost, evidence=evidence, n_objects=n_objects,
-            steps_on_floor=step - self.stack.current.first_step,
+            steps_on_floor=steps_here,
         ):
-            return None
+            # The gate refused. Measured on outputs/crossfloor_ab, 3 of 7
+            # cross-floor episodes end here every round: no storey request from
+            # the posterior, the geometric rule never satisfied because a large
+            # floor always has SOME near frontier, and so `try_switch` returns
+            # before `find_portals` is ever called -- which is why
+            # `use_prior_stairs` could not help them. They rose 0.00 to 0.19 m
+            # in 500 steps without one attempt.
+            #
+            # A remembered staircase changes what the refusal is about. The
+            # "nothing near left here" clause prices the risk of walking off
+            # toward a patch of another storey that may not be a way up; a
+            # traversal the prior map actually made carries no such risk.
+            if not (
+                bool(getattr(self.cfg.floor, "prior_stairs_override_gate", False))
+                and bool(getattr(self.cfg.floor, "use_prior_stairs", False))
+                and self._remembered_stair(target_floor) is not None
+                and self.switch_policy.may_switch_to_known_stairs(step, steps_here)
+            ):
+                return None
+            self.stats["prior_stair_gate_override"] = (
+                self.stats.get("prior_stair_gate_override", 0) + 1
+            )
 
         floor_y = self.estimator.height_of(self.stack.current_id)
         portals = find_portals(

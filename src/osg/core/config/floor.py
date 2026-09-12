@@ -113,6 +113,13 @@ class FloorConfig:
     # 0.17 m in 500 steps. `connectivity` records where pass 1 actually changed
     # floor, which is a staircase by construction.
     prefer_prior_stairs: bool = False
+    # Let a remembered staircase satisfy the switch gate when the geometric rule
+    # will not. `may_switch`'s last clause is "nothing near is left on this
+    # floor", which a large storey never satisfies, so `try_switch` returns
+    # before `find_portals` is called and the remembered staircase is never
+    # reached: 3 of 7 cross-floor episodes never made one attempt. Every timing
+    # guard still applies.
+    prior_stairs_override_gate: bool = False
     use_target_evidence: bool = True
     # Earliest step the evidence rule may fire (the geometric no_switch_before
     # still guards the geometry-only path).

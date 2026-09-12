@@ -205,5 +205,26 @@ class FloorSwitchPolicy:
         # thing left on this floor is further than a portal is worth.
         return best_path_cost is None or best_path_cost > self.near_frontier_m
 
+    def may_switch_to_known_stairs(self, step: int, steps_on_floor: int) -> bool:
+        """The gate, minus the reason that does not apply to a known staircase.
+
+        `may_switch`'s last clause is "nothing near is left here", and it exists
+        because leaving a floor is expensive and speculative: you walk off toward
+        a patch of another storey that may not even be a way up. When the prior
+        map records a staircase it actually walked, the speculation is gone and
+        that objection weakens.
+
+        What stays is every guard about TIMING, because those are about budget
+        rather than about evidence: never in the last third of the episode, never
+        twice in quick succession, and not before the current floor has been
+        looked at. `steps_on_floor` rather than `step`, so arriving on a new
+        storey does not immediately license leaving it again.
+        """
+        if step > self.no_switch_after:
+            return False
+        if step - self.last_switch_step < self.min_interval_steps:
+            return False
+        return steps_on_floor >= self.no_switch_before
+
     def note_switch(self, step: int) -> None:
         self.last_switch_step = step

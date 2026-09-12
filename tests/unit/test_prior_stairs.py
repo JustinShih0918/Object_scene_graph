@@ -120,3 +120,44 @@ def test_with_no_remembered_staircase_the_portals_still_stand():
     policy = _policy(True, [])
     policy.cfg.floor.prefer_prior_stairs = True
     assert _remembered(policy) is None
+
+
+# --------------------------- when the gate itself is what refuses
+
+def test_a_known_staircase_can_satisfy_a_gate_geometry_will_not():
+    """`may_switch`'s last clause is "nothing near is left on this floor", which
+    a large storey never satisfies. Measured on outputs/crossfloor_ab, 3 of 7
+    cross-floor episodes returned here every round and never made one switch
+    attempt, rising 0.00 to 0.19 m in 500 steps."""
+    from osg.mapping.portals import FloorSwitchPolicy
+
+    policy = FloorSwitchPolicy(max_steps=500, no_switch_before=50,
+                               min_interval_steps=50, no_switch_after_frac=0.7)
+    # The ordinary gate refuses: a near frontier still exists.
+    assert not policy.may_switch(200, best_path_cost=1.0)
+    # The narrower one allows it, because the risk that clause prices is gone.
+    assert policy.may_switch_to_known_stairs(200, steps_on_floor=200)
+
+
+def test_the_timing_guards_still_hold():
+    """Budget guards are not about evidence, so a known staircase does not lift
+    them: not in the last third, not twice in quick succession, and not before
+    this floor has been looked at."""
+    from osg.mapping.portals import FloorSwitchPolicy
+
+    policy = FloorSwitchPolicy(max_steps=500, no_switch_before=50,
+                               min_interval_steps=50, no_switch_after_frac=0.7)
+    assert not policy.may_switch_to_known_stairs(400, steps_on_floor=400)  # past 350
+    assert not policy.may_switch_to_known_stairs(200, steps_on_floor=10)   # just arrived
+    policy.note_switch(190)
+    assert not policy.may_switch_to_known_stairs(200, steps_on_floor=200)  # too soon
+
+
+def test_steps_on_floor_is_what_counts_not_the_episode_step():
+    """Arriving on a new storey must not immediately license leaving it."""
+    from osg.mapping.portals import FloorSwitchPolicy
+
+    policy = FloorSwitchPolicy(max_steps=500, no_switch_before=50,
+                               min_interval_steps=0, no_switch_after_frac=0.7)
+    assert not policy.may_switch_to_known_stairs(300, steps_on_floor=5)
+    assert policy.may_switch_to_known_stairs(300, steps_on_floor=60)

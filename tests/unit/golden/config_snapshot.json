@@ -307,6 +307,7 @@
   "floor.portal_min_cells": 20,
   "floor.portal_progress_m": 0.25,
   "floor.prefer_prior_stairs": false,
+  "floor.prior_stairs_override_gate": false,
   "floor.settle_m": 0.2,
   "floor.stair_cell_m": 0.1,
   "floor.stair_detect_every_kf": 5,
