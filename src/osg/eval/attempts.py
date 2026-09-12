@@ -123,7 +123,7 @@ def rearm_after_failed_attempt(agent, cfg) -> None:
             centre = np.asarray(layer.center_of(track), dtype=float)[list(PLANE)]
             radius = float(getattr(layer, "fp_disable_radius_m", 0.5))
             n = 0
-            for other in list(layer.tracks(include_blacklisted=True)):
+            for other in list(layer.tracks(include_blacklisted=True, include_proposals=True)):
                 if other.label.lower().replace(" ", "_") != agent.target.lower().replace(" ", "_"):
                     continue
                 d = float(np.linalg.norm(

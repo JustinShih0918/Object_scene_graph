@@ -170,12 +170,25 @@ class ObjectLayer:
         # looking at the surface and the detector produced nothing -- and a
         # detection too small to seed a track is still proof that something is
         # there, so it must not be counted as a miss.
+        # Two populations that never touch. A proposal is an appearance
+        # hypothesis under the target's label; let it associate with, lend
+        # presence to, or link with a track the detector named and it moves
+        # that track's centre, keeps its belief alive and changes when it
+        # becomes a candidate -- measured as 5 of 15 trials diverging from
+        # `_sensor_v2` with commits off. So proposals only ever form and
+        # extend proposal-only tracks, the detector's tracks never see them,
+        # and the named path is bit-identical to a map without the stage.
+        is_prop = lambda d: str(getattr(d, "source", "detector")) == "proposal"
         same_floor = [
             t for t in self._tracks.values()
-            if int(getattr(t, "floor_key", 0)) == int(floor_key)
+            if int(getattr(t, "floor_key", 0)) == int(floor_key) and not t.proposal_only
+        ]
+        prop_floor = [
+            t for t in self._tracks.values()
+            if int(getattr(t, "floor_key", 0)) == int(floor_key) and t.proposal_only
         ]
         if self.presence_filter is not None:
-            self.presence_filter.update(same_floor, frame, dets)
+            self.presence_filter.update(same_floor, frame, [d for d in dets if not is_prop(d)])
         dets = admitted
         if not dets:
             return
@@ -183,8 +196,18 @@ class ObjectLayer:
         # remember. Detections, not frames: the cost is a function of how much
         # is in view, not of the control rate.
         if self.feature_memory is not None:
-            self.feature_memory.embed_detections(dets)
-        matches = self._associator.associate(dets, frame, same_floor)
+            self.feature_memory.embed_detections([d for d in dets if not is_prop(d)])
+        det_idx = [i for i, d in enumerate(dets) if not is_prop(d)]
+        prop_idx = [i for i, d in enumerate(dets) if is_prop(d)]
+        matches = [
+            (det_idx[i], tid)
+            for i, tid in self._associator.associate([dets[i] for i in det_idx], frame, same_floor)
+        ] if det_idx else []
+        if prop_idx:
+            matches += [
+                (prop_idx[i], tid)
+                for i, tid in self._associator.associate([dets[i] for i in prop_idx], frame, prop_floor)
+            ]
         K = frame.intrinsics.K()
         T_cw = frame.T_cw
         cam_xy = frame.camera_position[list(PLANE)]
@@ -245,10 +268,7 @@ class ObjectLayer:
                     self._note_best_detection(track, det, frame, cam_xy)
                 self._accumulate_cloud(track, det, frame)
                 continue
-            # The first naming takes the best view over from a proposal
-            # outright: the proposal's constant score is not a confidence.
-            first_naming = track.n_obs - track.n_proposal_obs == 1
-            if det.score > track.best_score or first_naming:
+            if det.score > track.best_score:
                 self._note_best_detection(track, det, frame, cam_xy)
 
             self._accumulate_cloud(track, det, frame)
@@ -265,8 +285,10 @@ class ObjectLayer:
                 track.refined_at_obs = track.n_obs
 
         if relink_needed:
-            relink(list(self._tracks.values()), self.link_dist_m,
-                   max_frame_gap=self.link_max_frame_gap)
+            # Proposal-only tracks are never linked: a link would fold a
+            # region's centre into a named object's `center_of`.
+            relink([t for t in self._tracks.values() if not t.proposal_only],
+                   self.link_dist_m, max_frame_gap=self.link_max_frame_gap)
 
     # --------------------------------------------------------- surface clouds
 
@@ -369,7 +391,7 @@ class ObjectLayer:
         retracted = 0
         for track in self._tracks.values():
             if (
-                track.blacklisted or not track.out_of_range
+                track.blacklisted or not track.out_of_range or track.proposal_only
                 or (floor_key is not None and track.floor_key != floor_key)
                 or track.label in seen
             ):
@@ -401,8 +423,18 @@ class ObjectLayer:
         baseline = float(np.linalg.norm(cam_xy - track.first_cam_xy))
         return 1.0 if baseline >= self.confirm_baseline_m else self.repeat_view_discount
 
-    def tracks(self, include_blacklisted: bool = False) -> List[ObjectTrack]:
-        return [t for t in self._tracks.values() if include_blacklisted or not t.blacklisted]
+    def tracks(
+        self, include_blacklisted: bool = False, include_proposals: bool = False
+    ) -> List[ObjectTrack]:
+        """The map. Proposal-only tracks are left out unless asked for: the
+        scene graph, the search anchor, presence bookkeeping and the prior
+        map must see exactly the map the detector built. The candidate gate
+        reads `_tracks` directly and judges them on their own terms."""
+        return [
+            t for t in self._tracks.values()
+            if (include_blacklisted or not t.blacklisted)
+            and (include_proposals or not t.proposal_only)
+        ]
 
     def get(self, track_id: int) -> Optional[ObjectTrack]:
         return self._tracks.get(track_id)

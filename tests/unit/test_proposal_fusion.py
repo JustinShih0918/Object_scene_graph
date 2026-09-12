@@ -50,26 +50,27 @@ def test_a_proposal_counts_apart_from_a_naming_and_keeps_a_mean_feature():
     layer.set_proposal_text(_unit(1, 0, 0))
     layer.update(_frame(1), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
     layer.update(_frame(2), [_det("bowl", BOX, 0.5, "proposal", _unit(0, 1, 0))])
-    (t,) = layer.tracks()
+    (t,) = layer.tracks(include_proposals=True)
     assert t.n_obs == 2 and t.n_proposal_obs == 2 and t.proposal_only
     # mean of (1,0,0) and (0,1,0), renormalised: cosine to (1,0,0) is 1/sqrt 2
     assert abs(t.proposal_sim - 0.7071) < 1e-3
     assert layer.funnel["proposal_obs"] == 2
 
 
-def test_one_naming_by_the_detector_ends_proposal_only():
+def test_a_naming_at_the_same_spot_forms_its_own_track():
     layer = _layer()
     layer.set_proposal_text(_unit(1, 0, 0))
     layer.update(_frame(1), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
     layer.update(_frame(2), [_det("bowl", BOX, 0.9)])
-    (t,) = layer.tracks()
-    assert t.n_obs == 2 and t.n_proposal_obs == 1 and not t.proposal_only
+    ts = layer.tracks(include_proposals=True)
+    assert sorted(t.proposal_only for t in ts) == [False, True]
+    assert all(t.n_obs == 1 for t in ts)
 
 
 def test_without_a_query_text_the_cosine_stays_unset():
     layer = _layer()
     layer.update(_frame(1), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
-    (t,) = layer.tracks()
+    (t,) = layer.tracks(include_proposals=True)
     assert t.n_proposal_obs == 1 and t.proposal_sim == -1.0
 
 
@@ -190,28 +191,23 @@ def test_every_keyframe_bypasses_the_episode_gates_but_not_the_cap():
 
 # ------------------------------------------------------------ what a proposal may not touch
 
-def test_a_proposal_adds_a_view_but_no_evidence_and_no_best_detection():
+def test_a_proposal_beside_a_named_track_leaves_it_untouched():
     layer = _layer()
     layer.set_proposal_text(_unit(1, 0, 0))
     layer.update(_frame(1), [_det("tin can", BOX, 0.28)])                       # loosened class
     (t,) = layer.tracks()
-    ev, best, cam = t.evidence, t.best_score, t.best_cam_xy.copy()
+    ev, best, cam, n = t.evidence, t.best_score, t.best_cam_xy.copy(), t.n_obs
     layer.update(_frame(2), [_det("tin can", BOX, 0.5, "proposal", _unit(1, 0, 0))])
-    assert len(layer.tracks()) == 1 and t.n_obs == 2 and t.n_proposal_obs == 1
+    assert t.n_obs == n and t.n_proposal_obs == 0
     assert t.evidence == ev and t.best_score == best and np.allclose(t.best_cam_xy, cam)
 
 
-def test_a_proposal_only_track_starts_with_no_evidence():
+def test_a_proposal_only_track_has_no_evidence_and_the_region_as_its_best_view():
     layer = _layer()
     layer.update(_frame(1), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
-    (t,) = layer.tracks()
-    assert t.evidence == 0.0 and t.best_score == 0.5      # the region is its best view
+    (t,) = layer.tracks(include_proposals=True)
+    assert t.evidence == 0.0 and t.best_score == 0.5
     assert t.best_cam_xy is not None and t.best_bbox_px > 0
-    # a later naming takes the best view over; a later proposal does not
-    layer.update(_frame(2), [_det("bowl", BOX, 0.4)])
-    assert t.best_score == 0.4 and not t.proposal_only
-    layer.update(_frame(3), [_det("bowl", BOX, 0.9, "proposal", _unit(1, 0, 0))])
-    assert t.best_score == 0.4
 
 
 def test_the_proposal_sensor_answers_only_for_a_proposal_only_track():
@@ -231,3 +227,43 @@ def test_the_proposal_sensor_answers_only_for_a_proposal_only_track():
     assert a._working_a_proposal_track()
     a.object_layer = Layer(Track(False))
     assert not a._working_a_proposal_track()
+
+
+# ------------------------------------------------------------ two populations
+
+def test_a_proposal_never_joins_a_named_track_and_a_naming_never_joins_a_proposal_track():
+    layer = _layer()
+    layer.set_proposal_text(_unit(1, 0, 0))
+    layer.update(_frame(1), [_det("bowl", BOX, 0.9)])
+    layer.update(_frame(2), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
+    layer.update(_frame(3), [_det("bowl", BOX, 0.9)])
+    layer.update(_frame(4), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
+    named = [t for t in layer.tracks() if not t.proposal_only]
+    props = [t for t in layer.tracks(include_proposals=True) if t.proposal_only]
+    assert len(named) == 1 and named[0].n_obs == 2 and named[0].n_proposal_obs == 0
+    assert len(props) == 1 and props[0].n_obs == 2 and props[0].n_proposal_obs == 2
+
+
+def test_the_map_hides_proposal_only_tracks_unless_asked():
+    layer = _layer()
+    layer.update(_frame(1), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
+    layer.update(_frame(2), [_det("mug", (10, 10, 90, 90), 0.9)])
+    assert [t.label for t in layer.tracks()] == ["mug"]
+    assert sorted(t.label for t in layer.tracks(include_proposals=True)) == ["bowl", "mug"]
+    # ...but the candidate gate still judges them
+    assert [t.label for t in layer.candidates("bowl", min_obs=1)] == ["bowl"]
+
+
+def test_a_named_track_is_bit_identical_with_and_without_proposals_around_it():
+    def build(with_props):
+        layer = _layer()
+        layer.set_proposal_text(_unit(1, 0, 0))
+        for i in range(1, 7):
+            dets = [_det("bowl", BOX, 0.7)]
+            if with_props:
+                dets.append(_det("bowl", (300, 210, 370, 290), 0.5, "proposal", _unit(1, 0, 0)))
+            layer.update(_frame(i), dets)
+        (t,) = [t for t in layer.tracks() if not t.proposal_only]
+        return (t.n_obs, t.evidence, t.best_score, tuple(layer.center_of(t).round(6)),
+                t.presence.log_odds, tuple(t.linked_ids) if hasattr(t, "linked_ids") else ())
+    assert build(False) == build(True)

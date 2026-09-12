@@ -180,7 +180,7 @@ def build_episode_record(
     exploration = getattr(agent, "exploration", None)
     object_layer = getattr(agent, "object_layer", None)
     tracks = (
-        list(object_layer.tracks()) if object_layer is not None else []
+        list(object_layer.tracks(include_proposals=True)) if object_layer is not None else []
     )
     survival = (
         exploration.survival_report()
