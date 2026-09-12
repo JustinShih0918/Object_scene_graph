@@ -290,6 +290,7 @@
   "floor.climb_targets": "portals",
   "floor.commit_steps": 4,
   "floor.cross_floor": false,
+  "floor.dwell_on_arrival": false,
   "floor.early_switch_step": 30,
   "floor.enabled": false,
   "floor.estimate_only": true,

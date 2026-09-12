@@ -143,6 +143,12 @@ class FloorConfig:
     # resetting its progress clock, so a pursuit never ended, no failure was
     # ever remembered and the same target was chosen 55-82 times.
     hold_pursuit: bool = False
+    # The geometric switch rule must not fire on a floor the agent has only
+    # just reached: with almost no map, "no near frontier" is trivially true and
+    # the agent leaves again before looking. Measured on 00808's yellow bottle:
+    # arrived downstairs at step 314, left at 347, back upstairs by 418. Off by
+    # default because it changes when an agent may leave a storey.
+    dwell_on_arrival: bool = False
     # How close counts as the same failed place.
     portal_failure_radius_m: float = 1.5
     use_target_evidence: bool = True

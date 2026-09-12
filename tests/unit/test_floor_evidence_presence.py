@@ -85,3 +85,19 @@ def test_the_gate_reopens_once_the_instance_is_disbelieved():
                                  steps_on_floor=200)
     assert policy.may_switch(200, None, evidence=stale, n_objects=n,
                              steps_on_floor=200)
+
+
+def test_a_floor_just_reached_is_not_left_for_having_no_map_yet():
+    """Measured on 00808's yellow bottle under v13: a committed descent to the
+    object's floor at step 314, the geometric clause satisfied at 347 because
+    the new floor had almost no map, back upstairs by 418."""
+    from osg.mapping.portals import FloorSwitchPolicy
+
+    plain = FloorSwitchPolicy(max_steps=500, no_switch_before=50, min_interval_steps=0)
+    dwell = FloorSwitchPolicy(max_steps=500, no_switch_before=50, min_interval_steps=0,
+                              dwell_on_arrival=True)
+    # 33 steps onto a new floor, nothing selectable yet (inside the late cutoff).
+    assert plain.may_switch(300, best_path_cost=None, steps_on_floor=33)
+    assert not dwell.may_switch(300, best_path_cost=None, steps_on_floor=33)
+    # Having looked for the same dwell the episode start gets, it may leave.
+    assert dwell.may_switch(340, best_path_cost=None, steps_on_floor=86)

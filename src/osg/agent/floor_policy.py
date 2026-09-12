@@ -98,6 +98,7 @@ class FloorPolicy:
                 min_objects_to_judge=fcfg.min_objects_to_judge,
                 strong_evidence=fcfg.strong_evidence,
                 evidence_patience_steps=fcfg.evidence_patience_steps,
+                dwell_on_arrival=bool(getattr(fcfg, "dwell_on_arrival", False)),
             )
             if fcfg.cross_floor else None
         )

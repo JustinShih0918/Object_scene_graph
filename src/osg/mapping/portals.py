@@ -138,7 +138,9 @@ class FloorSwitchPolicy:
         min_objects_to_judge: int = 8,
         strong_evidence: int = 2,
         evidence_patience_steps: int = 120,
+        dwell_on_arrival: bool = False,
     ) -> None:
+        self.dwell_on_arrival = bool(dwell_on_arrival)
         self.near_frontier_m = float(near_frontier_m)
         self.min_interval_steps = int(min_interval_steps)
         self.no_switch_before = int(no_switch_before)
@@ -200,6 +202,14 @@ class FloorSwitchPolicy:
                 return False
 
         if step < self.no_switch_before:
+            return False
+        if self.dwell_on_arrival and steps_on_floor < self.no_switch_before:
+            # A floor the agent has just reached has almost no map, so "no near
+            # frontier" is trivially true there and the agent leaves again
+            # before it has looked. Measured on 00808's yellow bottle: a
+            # committed descent to the object's floor at step 314, this clause
+            # satisfied at step 347, back upstairs by 418. The same dwell the
+            # start of an episode gets, from the moment of arrival.
             return False
         # "No near frontier": either nothing selectable at all, or the best
         # thing left on this floor is further than a portal is worth.
