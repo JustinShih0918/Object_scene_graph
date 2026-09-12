@@ -76,6 +76,10 @@ class RegionProposer:
         self.cfg = cfg
         self.text: Optional[np.ndarray] = None
         self.target: Optional[str] = None
+        # The winning cosine on the last frame the stage actually scored, so a
+        # probe can sweep tau over the production path instead of re-deriving
+        # the scoring. -1.0 when the stage declined before ranking.
+        self.last_score: float = -1.0
         self.counters = {
             "region_frames": 0,        # keyframes the stage ran on
             "region_proposals": 0,     # regions scored
@@ -107,6 +111,7 @@ class RegionProposer:
         None whenever the stage declines: no target, nothing segmented, every
         region outside the size band, or the best one short of the threshold.
         """
+        self.last_score = -1.0
         if self.text is None or self.target is None:
             return None
         boxes, masks = self._regions(rgb)
@@ -142,6 +147,7 @@ class RegionProposer:
         self.counters["region_proposals"] += len(sims)
         best = int(np.argmax(sims))
         score = float(sims[best])
+        self.last_score = score
         if score < float(self.cfg.tau):
             self.counters["region_below_tau"] += 1
             return None
