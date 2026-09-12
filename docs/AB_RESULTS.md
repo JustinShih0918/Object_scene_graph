@@ -3981,12 +3981,72 @@ Two A/Bs follow from it, in order of cost:
    the reference, and directly opens the 55.7%. Run it on
    `scenes20_ep0to4` with the trace metrics -- if the LLM path is worth
    anything, this is the run where it shows.
+   **Done: S73. It showed nothing** -- the LLM path went 1.7% -> 9.1% of
+   decisions and SR moved +2 at p = 0.77, so the ranker is inert rather than
+   starved, and (2) below is not worth running.
 2. Ask the floor question on a step timer instead of inside the frontier
    decision (OSG's own `floor_ask_every` shape). Structural, and only worth
    doing if (1) shows the prompt has any effect when it is actually asked.
+   **Dropped after S73**, which showed it does not.
 
 Until one of them lands, treat the LLM planner as decorative in this arm: it
 costs 357 calls per 100 episodes and touches about one decision per episode.
+
+### S73 — opening the LLM cascade: the ranker is inert, not starved
+
+S72 found that three geometric short-circuits ahead of the planner absorb
+98.3% of frontier decisions, and named `exploration.nearby_distance_m` (3.0 ->
+1.5) as the one-number lever that opens the largest of them. It left the
+question it could not answer: is the LLM worthless here, or merely never
+asked?
+
+`outputs/s73_nearby15`, 100 episodes on `scenes20_ep0to4`, paired against
+`outputs/s71_port100` (same episodes, same everything else):
+
+| | s73 (nearby 1.5) | control (3.0) |
+|---|---|---|
+| SR | **65** | 63 |
+| SPL | 0.359 | 0.360 |
+| mean steps | 198 | 202 |
+| same-floor (78) | 79.5% | 75.6% |
+| cross-floor (22) | 13.6% | 18.2% |
+
+7 wins, 5 losses, **McNemar p = 0.77**. Null.
+
+**The mechanism moved as far as it can be made to move.** Counters over 14 053
+frontier decisions, against the S72 measurement:
+
+| where a frontier decision goes | nearby 3.0 | nearby 1.5 |
+|---|---|---|
+| nearby shortcut | 55.7% | **20.5%** |
+| **reaches the LLM** | **1.7%** | **9.1%** |
+| LLM calls / 100 eps | 357 | **1283** |
+| overrides | 93 | **418** |
+| errors | 9 | 16 |
+
+So the planner was consulted 5.4x more often, changed the geometric choice
+418 times, and bought 2 episodes at p = 0.77. **The ranker is not starved; it
+is inert.** Read with S53 -- the same ranker at the original cadence, measured
+at -4 -- the reading that fits both is that the LLM's frontier choice carries
+no signal for this pipeline at any cadence, and its 1283 calls per 100
+episodes are pure cost. That is the practical result: the ranker can be
+dropped for a speedup on any long run, and no LLM-cadence knob is worth
+another arm.
+
+**Secondary effects, none of which reached SR.** The smaller radius made the
+agent commit to distant frontiers instead of dithering locally, and the
+downstream counters show it: forced-forwards on a frontier 181 -> 90, sticky
+retirements 55 -> 30, and same-floor climb share **5.8% -> 0.8%** (ASCENT:
+5.2%). Against the goal geometry, `saw -> STOP` failures fell 11 -> 9 and
+conversion given SAW rose 0.713 -> 0.727, while `saw -> timeout` rose 14 -> 15:
+the arm converts what it sees slightly better and finds slightly less.
+
+**One split worth watching, not yet a finding.** Same-floor went 59 -> 62 and
+cross-floor 4 -> 3. A mechanism exists -- at 0.8% same-floor climb share the
+agent is barely taking staircases at all, which is right on same-floor
+episodes and wrong on cross-floor ones -- but n = 22 cross-floor and the
+difference is one episode. If the cross-floor bucket is attacked later
+(S71 follow-up item 1), re-measure this rather than assuming it.
 
 #### The pattern, after eleven A/Bs
 
@@ -4400,6 +4460,7 @@ climb complete it), and everything else for the 81%.
 | ASCENT (published) | 63% | — | sensor-only, v1 val |
 | `final_sensor` | _pending_ | | sensor-only — the comparable number, on the full split |
 | **`ascentnav` (S71 transcription) on `scenes20_ep0to4`** | **63.0%** | **0.360** | sensor-only, 100 eps — S71; ASCENT native on the same episodes: 65.0% / 0.36 |
+| `ascentnav` + `nearby_distance_m=1.5` | 65.0% | 0.359 | 100 eps — S73; +2 over S71 at p = 0.77, i.e. not distinguishable |
 | `ascentnav` + stairs on `scenes20_ep0to4` (pre-S71 port) | 58.0% | 0.285 | sensor-only, 100 eps — S41; superseded by S71 |
 | `ascentnav` on `scenes20_ep0to4` | 55.0% | 0.284 | sensor-only, 100 eps — S39, no stair machinery (0.0% cross-floor) |
 | `ascent_sensor` on `scenes20_ep0to4` | 42.0% | 0.196 | sensor-only, 100 eps — the S30-S38 port chain at its best |
