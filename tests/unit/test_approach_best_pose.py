@@ -141,3 +141,32 @@ def test_no_committed_track_is_a_no_op():
     nav._target_obj_xy = None
     ap._note_best(np.array([1.0, 0.0]))
     assert ap._return_to_best(None, np.array([2.0, 0.0])) is None
+
+
+def test_the_best_pose_does_not_survive_into_the_next_approach():
+    """It is per-approach state. Carried over, the next approach compares
+    against a distance measured to a DIFFERENT object and walks back to a pose
+    beside the previous one."""
+    ap, nav = _approach(0.15, obj_xy=(0.0, 0.0))
+    ap._note_best(np.array([0.4, 0.0]))          # close to target A
+    assert ap._return_to_best(None, np.array([2.0, 0.0])) == "move_forward"
+    # a new approach, to a target eight metres away
+    nav._target_obj_xy = np.array([8.0, 0.0])
+    ap.start = None  # not called here; emulate what start() must clear
+    ap.best_xy = None
+    ap.returning = False
+    ap.returned = False
+    ap._note_best(np.array([9.0, 0.0]))
+    assert ap._return_to_best(None, np.array([9.05, 0.0])) is None
+    assert np.allclose(ap.best_xy, [9.0, 0.0]), "the new approach owns its own best pose"
+
+
+def test_a_retarget_re_measures_the_best_pose():
+    """`retarget` moves the track centre mid-approach; a cached distance would
+    then be measured against a centre that no longer exists."""
+    ap, nav = _approach(0.15, obj_xy=(0.0, 0.0))
+    ap._note_best(np.array([1.0, 0.0]))          # 1.0 m from the old centre
+    nav._target_obj_xy = np.array([2.0, 0.0])    # centre refined: now 1.0 m the other side
+    assert abs(ap._best_distance() - 1.0) < 1e-9
+    ap._note_best(np.array([1.8, 0.0]))          # 0.2 m from the NEW centre: better
+    assert np.allclose(ap.best_xy, [1.8, 0.0])

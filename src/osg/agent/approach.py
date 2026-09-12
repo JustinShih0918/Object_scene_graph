@@ -77,7 +77,6 @@ class ApproachPolicy:
         # trials it loses, 0.04-1.72 m. Ten of sixteen losses had come inside
         # 1.0 m and every one of them stopped outside it.
         self.best_xy: Optional[np.ndarray] = None
-        self.best_d = float("inf")
         self.returning = False
         self.returned = False
         self._return_from_d = float("inf")
@@ -495,6 +494,18 @@ class ApproachPolicy:
             self.nav._goal_xy = nearest_free_xy(self.nav.costmap, obj_xy)
         self.nav._target_obj_xy = obj_xy.copy()
 
+    def _best_distance(self) -> float:
+        """How far the remembered best pose is from the track, measured NOW.
+
+        Only the pose is stored, never the distance: `retarget` moves
+        `_target_obj_xy` mid-approach, and a cached distance would then be
+        measured against a centre that no longer exists.
+        """
+        obj_xy = self.nav._target_obj_xy
+        if self.best_xy is None or obj_xy is None:
+            return float("inf")
+        return float(np.linalg.norm(self.best_xy - obj_xy))
+
     def _note_best(self, agent_xy: np.ndarray) -> None:
         """Remember the closest the agent has stood to the committed track.
 
@@ -505,8 +516,7 @@ class ApproachPolicy:
         if obj_xy is None:
             return
         d = float(np.linalg.norm(np.asarray(agent_xy, dtype=float) - obj_xy))
-        if d < self.best_d:
-            self.best_d = d
+        if d < self._best_distance():
             self.best_xy = np.asarray(agent_xy, dtype=float).copy()
 
     def _return_to_best(self, frame: FrameData, agent_xy: np.ndarray) -> Optional[str]:
@@ -544,7 +554,7 @@ class ApproachPolicy:
         if obj_xy is None or self.best_xy is None:
             return None
         here = float(np.linalg.norm(np.asarray(agent_xy, dtype=float) - obj_xy))
-        if here <= self.best_d + margin:
+        if here <= self._best_distance() + margin:
             self.returned = True
             return None
         self.returning = True
@@ -706,6 +716,16 @@ class ApproachPolicy:
         self.closed = False
         self.close_start_xy = None
         self.close_retreating = False
+        # Per-APPROACH, exactly like the closing walk's state above. Left to the
+        # per-episode reset it was a stale pose near the PREVIOUS target: the
+        # next approach would find `here` greater than a `best_d` measured
+        # against a different object, and walk back to a pose metres away. It
+        # also latched `returned`, so only the first approach of an episode
+        # could ever correct itself.
+        self.best_xy = None
+        self.returning = False
+        self.returned = False
+        self._return_from_d = float("inf")
         if self.nav._direct_approach:
             # A driver (navmesh or pointnav) covers the FULL distance to the
             # object, so the short-leg cap (approach_max_steps ~= 3 m) would cut
