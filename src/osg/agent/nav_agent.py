@@ -186,6 +186,8 @@ class NavAgent:
         self.region_proposer = region_proposer
         self._region_admits = 0
         self._region_cache = None
+        self._region_kf = 0          # keyframes seen this episode
+        self._region_named = False   # has the LABEL path ever named the target
         # One entry per appearance commit: which surface, which track, how
         # much it looked like the query, and how many it beat.
         self.feature_pick_log: list = []
@@ -470,6 +472,8 @@ class NavAgent:
             self.region_proposer.set_target(self.target)
             self._region_admits = 0
             self._region_cache = None
+            self._region_kf = 0
+            self._region_named = False
         if self.feature_memory is not None:
             # The prompt changes once an episode, so the text encoder runs once
             # an episode. Centres come from the object layer, which resolves a
@@ -1111,6 +1115,29 @@ class NavAgent:
             return max(matches, key=lambda d: d.score)
         return self._region_detection(frame)
 
+    def _region_active(self) -> bool:
+        """Is the proposal stage a fallback for THIS episode?
+
+        Per-frame gating was the defect: on a trial where the detector works the
+        target is absent from most individual frames, so a per-frame test fires
+        on nearly all of them. Measured on the full 107, that took the 21
+        perception trials from 0 to 6 and the other 86 from 57 to 41, with 13 of
+        the 18 lost trials exhausting all three attempts on regions the stage
+        had admitted.
+
+        Episode-level instead: once the label path has named the target even
+        once, the detector can see this object and the stage stays off.
+        """
+        rp = self.region_proposer
+        if rp is None:
+            return False
+        cfg = rp.cfg
+        if self._region_admits >= int(cfg.max_per_episode):
+            return False
+        if bool(getattr(cfg, "require_never_named", False)) and self._region_named:
+            return False
+        return self._region_kf >= int(getattr(cfg, "unnamed_keyframes", 0) or 0)
+
     def _region_detection(self, frame: FrameData) -> Optional[Detection]:
         """The proposal stage's answer for this frame, computed at most once.
 
@@ -1121,6 +1148,8 @@ class NavAgent:
         """
         rp = self.region_proposer
         if rp is None or self.target is None or not bool(rp.cfg.use_for_absence):
+            return None
+        if not self._region_active():
             return None
         key = int(getattr(frame, "frame_id", -1))
         cached = getattr(self, "_region_cache", None)
@@ -1435,12 +1464,18 @@ class NavAgent:
         if rp is None or self.target is None:
             return dets
         cfg = rp.cfg
-        if self._region_admits >= int(cfg.max_per_episode):
+        self._region_kf += 1
+        want = normalize_label(self.target)
+        named_now = any(normalize_label(d.label) == want for d in dets or [])
+        if named_now:
+            # The detector can see this object. Whatever else is true of the
+            # episode, it does not need a fallback -- and a fallback that runs
+            # anyway competes with a detector that was about to succeed.
+            self._region_named = True
+        if not self._region_active():
             return dets
-        if bool(cfg.only_when_unnamed):
-            want = normalize_label(self.target)
-            if any(normalize_label(d.label) == want for d in dets or []):
-                return dets
+        if bool(cfg.only_when_unnamed) and named_now:
+            return dets
         key = int(getattr(frame, "frame_id", -1))
         cached = getattr(self, "_region_cache", None)
         if cached is not None and cached[0] == key:

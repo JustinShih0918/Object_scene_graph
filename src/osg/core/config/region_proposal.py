@@ -40,7 +40,22 @@ class RegionProposalConfig:
     # this keyframe, and at most this many times per episode. FastSAM is 13 ms
     # a frame but encoding ~60 crops is not, and an unbounded stage would admit
     # on 15% of frames at 85% precision, which is a lot of wrong tracks.
+    # The gate, and the thing that decides whether this stage is a fallback or
+    # a competitor. `only_when_unnamed` is evaluated PER FRAME, and on a trial
+    # where the detector works the target is absent from most individual
+    # frames -- so the stage fired on nearly all of them, admitting ~13.5
+    # regions an episode and competing with a detector that was about to
+    # succeed. Measured on the full 107: the perception subset went 0 -> 6 and
+    # everything else went 57 -> 41, with 13 of the 18 lost trials exhausting
+    # all three attempts.
+    #
+    # `require_never_named` makes the condition EPISODE-level instead: once the
+    # label path has named the target even once, this object is one the
+    # detector can see and the stage stays off for the rest of the episode.
+    # `unnamed_keyframes` is the grace period before it activates at all.
     only_when_unnamed: bool = True
+    require_never_named: bool = True
+    unnamed_keyframes: int = 20
     # Let the absence sensor see the proposals too.
     #
     # `_best_target_detection` re-runs the RAW detector and filters by label,

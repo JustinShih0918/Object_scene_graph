@@ -22,6 +22,7 @@ class _Cfg:
     min_area_px, max_area_frac, max_regions = 200.0, 0.02, 64
     only_when_unnamed, max_per_episode = True, 40
     use_for_absence = True
+    require_never_named, unnamed_keyframes = True, 0
 
 
 class _Boxes:
@@ -169,6 +170,9 @@ def test_the_absence_test_must_be_able_to_see_a_proposal():
         def __init__(self, rp):
             self.region_proposer = rp
             self._region_cache = None
+            self._region_admits = 0
+            self._region_kf = 99      # past the grace period
+            self._region_named = False
             self.stats = {}
 
         class _Prof:
@@ -189,6 +193,7 @@ def test_the_absence_test_must_be_able_to_see_a_proposal():
         frame_id = 7
         rgb = np.zeros((960, 1280, 3), dtype=np.uint8)
 
+    agent._region_active = lambda: NavAgent._region_active(agent)
     got = NavAgent._region_detection(agent, _Frame())
     assert isinstance(got, Detection) and got.label == "scissors"
 
@@ -211,6 +216,9 @@ def test_the_frame_result_is_computed_once():
         def __init__(self):
             self.region_proposer = rp
             self._region_cache = None
+            self._region_admits = 0
+            self._region_kf = 99
+            self._region_named = False
             self.stats = {}
 
         class _Prof:
@@ -225,6 +233,7 @@ def test_the_frame_result_is_computed_once():
         rgb = np.zeros((960, 1280, 3), dtype=np.uint8)
 
     agent, frame = _Agent(), _Frame()
+    agent._region_active = lambda: NavAgent._region_active(agent)
     NavAgent._region_detection(agent, frame)
     NavAgent._region_detection(agent, frame)
     NavAgent._region_detection(agent, frame)
@@ -246,6 +255,9 @@ def test_the_absence_fallback_can_be_switched_off():
         def __init__(self):
             self.region_proposer = rp
             self._region_cache = None
+            self._region_admits = 0
+            self._region_kf = 99
+            self._region_named = False
             self.stats = {}
 
         class _Prof:
@@ -259,4 +271,51 @@ def test_the_absence_fallback_can_be_switched_off():
         frame_id = 7
         rgb = np.zeros((960, 1280, 3), dtype=np.uint8)
 
-    assert NavAgent._region_detection(_Agent(), _Frame()) is None
+    a = _Agent()
+    a._region_active = lambda: NavAgent._region_active(a)
+    assert NavAgent._region_detection(a, _Frame()) is None
+
+
+def test_once_the_detector_names_the_target_the_stage_stands_down():
+    """The gate that the full 107 said was wrong. Per-FRAME, the stage fires on
+    a working trial because the target is absent from most individual frames;
+    measured, that took the other 86 trials from 57 to 41 with 13 of the 18
+    losses exhausting all three attempts. Episode-level, a detector that can see
+    this object switches the fallback off."""
+    from osg.agent.nav_agent import NavAgent
+
+    class _A:
+        def __init__(self, named, kf=99, admits=0):
+            self.region_proposer = _proposer([[10, 10, 40, 40]],
+                                             [np.zeros((960, 1280), bool)], [0.9])
+            self._region_named, self._region_kf, self._region_admits = named, kf, admits
+
+    assert NavAgent._region_active(_A(named=False)) is True
+    assert NavAgent._region_active(_A(named=True)) is False, "the detector can see it"
+
+
+def test_the_grace_period_holds_the_stage_off_early():
+    from osg.agent.nav_agent import NavAgent
+
+    class _A:
+        def __init__(self, kf):
+            rp = _proposer([[10, 10, 40, 40]], [np.zeros((960, 1280), bool)], [0.9])
+            rp.cfg.unnamed_keyframes = 20
+            self.region_proposer = rp
+            self._region_named, self._region_kf, self._region_admits = False, kf, 0
+
+    assert NavAgent._region_active(_A(kf=5)) is False
+    assert NavAgent._region_active(_A(kf=25)) is True
+
+
+def test_the_per_episode_cap_still_binds():
+    from osg.agent.nav_agent import NavAgent
+
+    class _A:
+        def __init__(self, admits):
+            self.region_proposer = _proposer([[10, 10, 40, 40]],
+                                             [np.zeros((960, 1280), bool)], [0.9])
+            self._region_named, self._region_kf, self._region_admits = False, 99, admits
+
+    assert NavAgent._region_active(_A(admits=39)) is True
+    assert NavAgent._region_active(_A(admits=40)) is False
