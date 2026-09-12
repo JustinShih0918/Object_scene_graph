@@ -173,6 +173,7 @@ def build_run_components(cfg) -> dict:
         "feature_memory": build_feature_memory(cfg),
         "stair_segmenter": build_stair_segmenter(cfg),
         "stair_detector": build_stair_detector(cfg),
+        "region_proposer": build_region_proposer(cfg),
         "ram": build_ram_tagger(cfg),
     }
 
@@ -259,10 +260,18 @@ def build_agent(
         room_classifier=components["room_classifier"],
         image_text=components["image_text"],
         feature_memory=components.get("feature_memory"),
+        region_proposer=components.get("region_proposer"),
         stair_segmenter=components["stair_segmenter"],
         stair_detector=components.get("stair_detector"),
         ram=components.get("ram"),
     )
+
+
+def build_region_proposer(cfg):
+    """The class-agnostic proposal stage, or None when it is off."""
+    from ..perception.region_proposer import build_region_proposer as _build
+
+    return _build(cfg)
 
 
 def build_feature_memory(cfg):

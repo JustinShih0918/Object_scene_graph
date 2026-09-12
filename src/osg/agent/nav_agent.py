@@ -101,6 +101,7 @@ class NavAgent:
         room_classifier=None,
         image_text=None,
         feature_memory=None,
+        region_proposer=None,
         gate_itm=None,
         stair_segmenter=None,
         stair_detector=None,
@@ -180,6 +181,10 @@ class NavAgent:
         # from `image_text`: any non-None value THERE turns the semantic value
         # map on for every frame, which is a different mechanism entirely.
         self.feature_memory = feature_memory
+        # Class-agnostic proposals for the objects the detector never names
+        # (perception/region_proposer.py). None unless region_proposal.enabled.
+        self.region_proposer = region_proposer
+        self._region_admits = 0
         # One entry per appearance commit: which surface, which track, how
         # much it looked like the query, and how many it beat.
         self.feature_pick_log: list = []
@@ -460,6 +465,9 @@ class NavAgent:
         self.detector.set_vocabulary(
             target_vocabulary(self.target, self.cfg.detector.vocabulary)
         )
+        if self.region_proposer is not None:
+            self.region_proposer.set_target(self.target)
+            self._region_admits = 0
         if self.feature_memory is not None:
             # The prompt changes once an episode, so the text encoder runs once
             # an episode. Centres come from the object layer, which resolves a
@@ -805,6 +813,7 @@ class NavAgent:
                 frame.camera_position[list(PLANE)].copy(),
                 self.room_classifier.classify(frame.rgb),
             ))
+        dets = self._propose_regions(frame, dets)
         if self.on_keyframe_detections is not None:
             self.on_keyframe_detections(frame, dets)
         with self.profiler.timeit("object_layer"):
@@ -1370,6 +1379,39 @@ class NavAgent:
         if self._climb_paused_steps > 15:
             self._carrot_disable_end = True
         return self._climb_paused_steps > 30
+
+    def _propose_regions(self, frame: FrameData, dets):
+        """Add a class-agnostic proposal for the target, when one is warranted.
+
+        The stage returns an ordinary `Detection` under the target label, so
+        admission, the presence filter, the identity channel, the candidate
+        gate, the VLM and the attempt protocol all judge it exactly as they
+        judge the detector's own output. Nothing here can stop an approach or
+        score a trial by itself.
+
+        It runs only when the detector produced nothing for the target on this
+        keyframe -- the case it exists for -- and at most
+        `max_per_episode` times, because at the measured 85% precision an
+        unbounded stage would write a lot of wrong tracks.
+        """
+        rp = self.region_proposer
+        if rp is None or self.target is None:
+            return dets
+        cfg = rp.cfg
+        if self._region_admits >= int(cfg.max_per_episode):
+            return dets
+        if bool(cfg.only_when_unnamed):
+            want = normalize_label(self.target)
+            if any(normalize_label(d.label) == want for d in dets or []):
+                return dets
+        with self.profiler.timeit("region_proposal"):
+            det = rp.propose(frame.rgb)
+        self.stats.update(rp.counters)
+        if det is None:
+            return dets
+        self._region_admits += 1
+        self.stats["region_admits"] = self._region_admits
+        return list(dets or []) + [det]
 
     def _update_value_map(self, frame: FrameData, layer) -> None:
         """Score the current view and fuse it into the active floor map.
