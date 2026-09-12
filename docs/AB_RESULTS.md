@@ -4048,6 +4048,73 @@ episodes and wrong on cross-floor ones -- but n = 22 cross-floor and the
 difference is one episode. If the cross-floor bucket is attacked later
 (S71 follow-up item 1), re-measure this rather than assuming it.
 
+### S74/S75 — the open-vocabulary detector, and a VLM at the stop
+
+Two arms run in parallel against the same 100 episodes and the same control
+(`outputs/s71_port100`): swap the closed-set detector for the
+open-vocabulary one, and then add a VLM check at the moment of stopping.
+
+| | SR | SPL | steps | same-floor | cross-floor |
+|---|---|---|---|---|---|
+| `s71` D-FINE @0.8 (control) | **63** | 0.360 | 202 | 75.6% | 18.2% |
+| `s74` YOLOE @0.3 | 58 | 0.307 | 188 | 67.9% | 22.7% |
+| `s75` YOLOE @0.3 + VLM stop-gate | 59 | 0.314 | 190 | — | — |
+
+s74 vs control: 4 wins, 9 losses, McNemar p = 0.27. s75 vs s74: 2 wins, 1
+loss, p = 1.00. s75 vs control: 4 wins, 8 losses, p = 0.39. **Nothing here is
+significant at n = 100** -- what is solid is the mechanism.
+
+**S74: the extra recall arrives as false approaches, not as new finds.**
+
+| | s74 | s71 |
+|---|---|---|
+| steps with a target detection | 9.6% | 6.8% |
+| `give_up_unverified` (approach refused on arrival) | **85** | 33 |
+| wrong stops, >3 m from any viewpoint | 19 | 16 |
+| `gate_latched` | 87 | 84 |
+| mean steps | 188 | 202 |
+
+YOLOE fires ~40% more often and every extra detection that seeds a cloud costs
+an approach: 52 more refused approaches, each burning a region of the object
+map, and three more wrong stops. The BLIP-2 gate absorbs none of it (87 vs 84
+latches), which is what an AUC of 0.53 at the stop predicts. The agent commits
+sooner to worse candidates -- hence fewer steps and a sharply worse SPL
+(0.307 vs 0.360) even where it wins. Per category it is flat or down
+everywhere; no category benefits from the open vocabulary.
+
+Read with S56/S57, which put D-FINE's 0.8 bar *onto* YOLOE and measured 53%
+with 80% fewer far commits, the pair says the two scores are not
+interchangeable and neither operating point is where the episodes are. More
+evidence for the S71 diagnosis: the loss is before the target is ever seen, so
+detector recall is not the lever.
+
+**S75: the verifier works, and it is aimed at 58% of the problem.**
+
+`agent.verify_on_stop` shows the VLM the frame with the best target detection
+boxed at the gated arrival STOP; a refusal takes the give-up path. Over 100
+episodes: **54 calls, 10 refusals, 0 errors** -- a live mechanism, not a dead
+flag. Its five refusal episodes break down as 2 rescued, 1 destroyed, 2
+unchanged, i.e. net +1, which is exactly the p = 1.00 it measured.
+
+The number that matters is the one beside it: **39 of the 93 stop checks had
+no live detection to box (42%)**. Those are stale-cloud stops -- the agent is
+stopping on a cloud whose detection left the frame -- and this placement
+cannot see them at all. The gate is aimed at 58% of the stops, and among the
+ones it can see its judgement is roughly break-even.
+
+So the S71 follow-up's bucket 2 is not closed by this. A stop-time VLM is not
+obviously wrong; it is under-aimed. Either the check has to fire on the
+evidence that built the cloud (the stored best frame and bbox, which
+`VLMVerifier.verify` already accepts) rather than on the live frame, or the
+agent has to re-acquire before stopping. Measure the stored-frame variant
+before spending more on this one.
+
+**Cost note.** These two arms and the full-split run shared one GPU through the
+serialised model servers, which is only survivable because of the fix recorded
+under S72/S73 tooling (the GroundingDINO race). Nothing in the results depends
+on the sharing -- each episode is independent -- but wall-clock per episode
+roughly triples.
+
 #### The pattern, after eleven A/Bs
 
 | change | mechanism verified live? | SR effect | p |
@@ -4461,6 +4528,8 @@ climb complete it), and everything else for the 81%.
 | `final_sensor` | _pending_ | | sensor-only — the comparable number, on the full split |
 | **`ascentnav` (S71 transcription) on `scenes20_ep0to4`** | **63.0%** | **0.360** | sensor-only, 100 eps — S71; ASCENT native on the same episodes: 65.0% / 0.36 |
 | `ascentnav` + `nearby_distance_m=1.5` | 65.0% | 0.359 | 100 eps — S73; +2 over S71 at p = 0.77, i.e. not distinguishable |
+| `ascentnav` + `detector=yoloe` | 58.0% | 0.307 | 100 eps — S74; −5 at p = 0.27, and 85 refused approaches against 33 |
+| `ascentnav` + `detector=yoloe` + VLM stop-gate | 59.0% | 0.314 | 100 eps — S75; +1 over S74 at p = 1.00; the gate cannot see 42% of stops |
 | `ascentnav` + stairs on `scenes20_ep0to4` (pre-S71 port) | 58.0% | 0.285 | sensor-only, 100 eps — S41; superseded by S71 |
 | `ascentnav` on `scenes20_ep0to4` | 55.0% | 0.284 | sensor-only, 100 eps — S39, no stair machinery (0.0% cross-floor) |
 | `ascent_sensor` on `scenes20_ep0to4` | 42.0% | 0.196 | sensor-only, 100 eps — the S30-S38 port chain at its best |
