@@ -820,9 +820,12 @@ class NavAgent:
                 frame.camera_position[list(PLANE)].copy(),
                 self.room_classifier.classify(frame.rgb),
             ))
+        named_dets = list(dets or [])
         dets = self._propose_regions(frame, dets)
         if self.on_keyframe_detections is not None:
-            self.on_keyframe_detections(frame, dets)
+            # The ground-truth view counts what the DETECTOR saw; proposals
+            # have their own counters.
+            self.on_keyframe_detections(frame, named_dets)
         with self.profiler.timeit("object_layer"):
             self.object_layer.update(frame, dets, floor_key=self.floors.current_id)
         self.keyframes.add(frame)
