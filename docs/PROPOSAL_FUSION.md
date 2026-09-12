@@ -40,7 +40,7 @@ trial. It took four rounds to get there, each found by that check:
 | 1 | 7/14 | the proposal sensor stopped and steered NAMED approaches; proposal score displaced the best view |
 | 2 | 5/15 | proposals associated into named tracks, lent presence, linked, became the search anchor |
 | 3 | 3/19 | shared random generator (ellipsoid depth sample) and shared id counter |
-| 4 | 1/43 | `in_anchor__0118__soup_can`: identical through step 201, then the detector's own scores differ on identical frames (0.596 -> 0.527); under investigation as GPU numerics, no proposal touched the track |
+| 4 | 1/43 | `in_anchor__0118__soup_can`: identical through step 201, then the detector's own scores differ on identical frames (0.596 -> 0.527). Rerun alone on an idle GPU, the observe arm reproduces v2 exactly (269 steps, 0.647 m): not a leak but run-to-run GPU numerics under two co-resident workers. That is the identity check's floor. |
 
 Final: 21/22 on the phantom split, 21/21 on the perception split.
 
