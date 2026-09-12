@@ -41,4 +41,15 @@ class RegionProposalConfig:
     # a frame but encoding ~60 crops is not, and an unbounded stage would admit
     # on 15% of frames at 85% precision, which is a lot of wrong tracks.
     only_when_unnamed: bool = True
+    # Let the absence sensor see the proposals too.
+    #
+    # `_best_target_detection` re-runs the RAW detector and filters by label,
+    # and it is what the close look asks before concluding a committed track is
+    # absent. That is the same detector that could not name the object -- which
+    # is exactly why the trial is in this bucket -- so an absence verdict
+    # reached that way is not evidence. Measured: in_anchor__0117__banana
+    # walked to the banana, looked from 1.5 m, was told "not detected",
+    # abandoned the track (p 0.95 -> 0.433) and committed elsewhere, while the
+    # proposal stage had admitted 16 regions in the same episode.
+    use_for_absence: bool = True
     max_per_episode: int = 40

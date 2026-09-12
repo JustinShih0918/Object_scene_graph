@@ -21,6 +21,7 @@ class _Cfg:
     tau, admit_score, pad_frac = 0.24, 0.5, 0.25
     min_area_px, max_area_frac, max_regions = 200.0, 0.02, 64
     only_when_unnamed, max_per_episode = True, 40
+    use_for_absence = True
 
 
 class _Boxes:
@@ -144,3 +145,118 @@ def test_set_target_clears_the_counters():
     assert rp.counters["region_admitted"] == 1
     rp.set_target("mug")
     assert rp.counters["region_admitted"] == 0, "counters are per episode"
+
+
+# ------------------------------------------------- the absence sensor
+
+def test_the_absence_test_must_be_able_to_see_a_proposal():
+    """`_best_target_detection` re-runs the raw detector and filters by label,
+    and the close look asks it before declaring a committed track ABSENT. For
+    the objects this stage exists for that is circular: the detector that could
+    not name the object is asked whether it is there, says no, and the track is
+    retired. Measured on in_anchor__0117__banana -- looked from 1.5 m, told
+    "not detected", belief 0.95 -> 0.433, committed elsewhere, in an episode
+    where the stage had admitted 16 regions."""
+    import numpy as np
+
+    from osg.core.types import Detection
+
+    class _Agent:
+        """Just the three attributes `_region_detection` touches."""
+        target = "scissors"
+        stats: dict = {}
+
+        def __init__(self, rp):
+            self.region_proposer = rp
+            self._region_cache = None
+            self.stats = {}
+
+        class _Prof:
+            def timeit(self, _):
+                import contextlib
+                return contextlib.nullcontext()
+
+        profiler = _Prof()
+
+    from osg.agent.nav_agent import NavAgent
+
+    boxes = [[10, 10, 40, 40]]
+    masks = [np.zeros((960, 1280), bool)]
+    rp = _proposer(boxes, masks, [0.90])
+    agent = _Agent(rp)
+
+    class _Frame:
+        frame_id = 7
+        rgb = np.zeros((960, 1280, 3), dtype=np.uint8)
+
+    got = NavAgent._region_detection(agent, _Frame())
+    assert isinstance(got, Detection) and got.label == "scissors"
+
+
+def test_the_frame_result_is_computed_once():
+    """Several callers ask per step -- the approach stop, the close look, the
+    absence sensor. Segmenting per CALLER would multiply the cost by the number
+    of askers rather than by the number of frames."""
+    import numpy as np
+
+    from osg.agent.nav_agent import NavAgent
+
+    boxes = [[10, 10, 40, 40]]
+    masks = [np.zeros((960, 1280), bool)]
+    rp = _proposer(boxes, masks, [0.90])
+
+    class _Agent:
+        target = "scissors"
+
+        def __init__(self):
+            self.region_proposer = rp
+            self._region_cache = None
+            self.stats = {}
+
+        class _Prof:
+            def timeit(self, _):
+                import contextlib
+                return contextlib.nullcontext()
+
+        profiler = _Prof()
+
+    class _Frame:
+        frame_id = 7
+        rgb = np.zeros((960, 1280, 3), dtype=np.uint8)
+
+    agent, frame = _Agent(), _Frame()
+    NavAgent._region_detection(agent, frame)
+    NavAgent._region_detection(agent, frame)
+    NavAgent._region_detection(agent, frame)
+    assert rp.counters["region_frames"] == 1, "one segment per frame, not per caller"
+
+
+def test_the_absence_fallback_can_be_switched_off():
+    import numpy as np
+
+    from osg.agent.nav_agent import NavAgent
+
+    boxes = [[10, 10, 40, 40]]
+    masks = [np.zeros((960, 1280), bool)]
+    rp = _proposer(boxes, masks, [0.90], use_for_absence=False)
+
+    class _Agent:
+        target = "scissors"
+
+        def __init__(self):
+            self.region_proposer = rp
+            self._region_cache = None
+            self.stats = {}
+
+        class _Prof:
+            def timeit(self, _):
+                import contextlib
+                return contextlib.nullcontext()
+
+        profiler = _Prof()
+
+    class _Frame:
+        frame_id = 7
+        rgb = np.zeros((960, 1280, 3), dtype=np.uint8)
+
+    assert NavAgent._region_detection(_Agent(), _Frame()) is None

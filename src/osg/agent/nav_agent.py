@@ -185,6 +185,7 @@ class NavAgent:
         # (perception/region_proposer.py). None unless region_proposal.enabled.
         self.region_proposer = region_proposer
         self._region_admits = 0
+        self._region_cache = None
         # One entry per appearance commit: which surface, which track, how
         # much it looked like the query, and how many it beat.
         self.feature_pick_log: list = []
@@ -468,6 +469,7 @@ class NavAgent:
         if self.region_proposer is not None:
             self.region_proposer.set_target(self.target)
             self._region_admits = 0
+            self._region_cache = None
         if self.feature_memory is not None:
             # The prompt changes once an episode, so the text encoder runs once
             # an episode. Centres come from the object layer, which resolves a
@@ -1084,8 +1086,20 @@ class NavAgent:
     # ---------------------------------------------------------------- helpers
 
     def _best_target_detection(self, frame: FrameData) -> Optional[Detection]:
-        """Runs the detector on the current frame and returns its highest-
-        confidence detection matching the target category, or None."""
+        """The detector's best detection of the target on this frame, or None.
+
+        This is the choke point the approach stop, the close look and the
+        exploration check all ask, and -- through the close look -- it is what
+        decides that a committed track is ABSENT. Asking only the label path
+        there is circular for exactly the objects the proposal stage exists
+        for: the detector that could not name the object is re-asked whether
+        the object is present, says no, and the track is retired.
+
+        Measured on in_anchor__0117__banana: the agent walked to the banana,
+        looked from 1.5 m, was told "not detected", dropped the track's belief
+        from 0.95 to 0.433 and committed elsewhere -- in an episode where the
+        proposal stage had already admitted 16 regions.
+        """
         target = normalize_label(self.target)
         with self.profiler.timeit("detector"):
             dets = self.detector.detect(frame.rgb)
@@ -1093,7 +1107,30 @@ class NavAgent:
             d for d in dets
             if normalize_label(d.label) == target and d.score > 0.25
         ]
-        return max(matches, key=lambda d: d.score) if matches else None
+        if matches:
+            return max(matches, key=lambda d: d.score)
+        return self._region_detection(frame)
+
+    def _region_detection(self, frame: FrameData) -> Optional[Detection]:
+        """The proposal stage's answer for this frame, computed at most once.
+
+        Cached on the frame id because this is called several times per step --
+        the approach stop, the close look and the absence sensor each ask -- and
+        a segment-plus-encode per call would multiply the stage's cost by the
+        number of askers rather than by the number of frames.
+        """
+        rp = self.region_proposer
+        if rp is None or self.target is None or not bool(rp.cfg.use_for_absence):
+            return None
+        key = int(getattr(frame, "frame_id", -1))
+        cached = getattr(self, "_region_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        with self.profiler.timeit("region_proposal"):
+            det = rp.propose(frame.rgb)
+        self._region_cache = (key, det)
+        self.stats.update(rp.counters)
+        return det
 
     def _target_visible(self, frame: FrameData) -> bool:
         """Does the detector see the target category in the current view?"""
@@ -1404,8 +1441,14 @@ class NavAgent:
             want = normalize_label(self.target)
             if any(normalize_label(d.label) == want for d in dets or []):
                 return dets
-        with self.profiler.timeit("region_proposal"):
-            det = rp.propose(frame.rgb)
+        key = int(getattr(frame, "frame_id", -1))
+        cached = getattr(self, "_region_cache", None)
+        if cached is not None and cached[0] == key:
+            det = cached[1]
+        else:
+            with self.profiler.timeit("region_proposal"):
+                det = rp.propose(frame.rgb)
+            self._region_cache = (key, det)
         self.stats.update(rp.counters)
         if det is None:
             return dets
