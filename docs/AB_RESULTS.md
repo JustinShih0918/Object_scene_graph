@@ -3850,6 +3850,144 @@ necessary inside the reference's. The 2-point residual is within n=100 noise
 (the 6 ASCENT-only episodes are 5 timeouts, 4 of them same-floor); the stair
 A/B is `+experiment=ascentnav_union_stairs`.
 
+#### S71 follow-up — where the remaining 37 episodes are, and which are movable
+
+Read off `outputs/s71_port100` (100 episodes, full step traces, scored against
+the dataset's object positions). Ranked by how many episodes the mechanism
+holds and whether the trace shows a signal that could move them.
+
+**1. Cross-floor: the agent knows where the stairs are and does not take them
+(6 episodes, ~+3 plausible).** 18 of the 22 cross-floor episodes fail; in 15
+the agent never reached the goal storey. Split by cause:
+
+| cause | eps | example |
+|---|---|---|
+| stairs on the map in the right direction for 250-500 steps, **0 climb attempts** | 6 | `wcojb4TFT35:3` up-stair mapped for 496 steps, 3 frontiers left at step 500 |
+| climbed, but looped or ended on the wrong storey | 5 | `bxsVRursffK:2` 9 attempts, 1 completed, 398 climb steps (the F3 retry) |
+| stairs never mapped (RedNet ∧ GroundingDINO found nothing) | 4 | `TEEsavR23oF:4` 457 steps, 0 stair px |
+
+The first row is structural: the reference climbs only when the floor's
+frontiers are exhausted (`_explore` :704-726), and its multi-floor LLM decision
+never runs (F2). With a 500-step budget a floor rarely runs out. The ported
+multi-floor prompt is behind `exploration.llm_multi_floor=true` and untested;
+the floor prior it would read says `bed` is upstairs 59% of the time in a
+2-storey house. That is the cheapest A/B on the table and it targets the
+biggest bucket ASCENT itself leaves on the floor (it wins 2 of these 15).
+
+**2. Wrong STOPs on a look-alike (17 episodes, +1-3).** The largest failure
+class, and the same one ASCENT has (21 `false_positive`). The BLIP-2 gate that
+is supposed to catch them **does not discriminate at all** at the stop:
+AUC 0.53 for the cosine at STOP, 0.42-0.46 for its episode/last-10 maxima. It
+is a latch, not a check. What does carry signal is detection persistence --
+target detections in the last 10 steps before the decision: AUC 0.78 on
+stops, **0.84 over all 117 terminal decisions** (stops + give-ups, "is this
+the true target"). Simulating one rule at both decision points:
+
+| `dets in last 10 >= 5` | today | simulated |
+|---|---|---|
+| true-target stops kept | 62 | 58 |
+| wrong stops turned into a give-up | 0 | 10 |
+| true-target give-ups turned into a STOP | 0 | 5 (2 of those episodes failed today) |
+| false-target give-ups turned into a STOP | 0 | 1 |
+
+Recovery after a give-up on a false target is 3/13 in this run, so the 10
+rejected wrong stops are worth ~2-3 episodes and the 4 lost true stops cost
+~3: net +1 to +3 depending on threshold (thr 3 is the safer side). The
+semantic false positives (toilet 4, sofa 3, bed 3, tv 3, plant 3 -- sinks,
+armchairs, monitors, vases) need a re-check the detector cannot give; a VLM
+at STOP is the only candidate, and OSG's verifier refused 52% of true
+positives in S55. Measure it offline first: rerun with the stop frame saved
+and score precision/recall on these 79 stops before wiring anything.
+
+**3. Same-floor stair sink, residual (5 episodes, +1-2).** Same-floor climb
+share is at the reference's (5.8% vs 5.2%), but 724 same-floor climb steps sit
+in five episodes: `4ok3usBNeis:0` 279 steps / 8 passive entries / 8 attempts
+(ASCENT wins it), `DYehNKdT76V:1` 95 (ASCENT wins it), `q3zU7Yy5E5s:4` 66,
+`DYehNKdT76V:4` 66, `bxsVRursffK:4` 34. Passive entry fired 14 times on
+same-floor episodes and 34 overall. `agent.stair_disable_burns_map=true` (the
+reference's dead F3 branch) and the passive-entry threshold are the two
+knobs; A/B on `eval=scenes20_ep0to4` with the trace metric.
+
+**4. Never saw the target on its own floor (9 same-floor episodes).** Median
+first-sight is step 54 for successes, 90 for failures; the never-saw failures
+explore as much area (22.8 vs 20.0 m²) but with 10.4% blocked forwards vs
+4.4% -- they are the cluttered scenes. No single mechanism; exploration order
+(the LLM overrode the value ranking 93 times in 357 calls, un-measured in
+this flow) is the A/B: `exploration.ranker=none`-equivalent inside the
+transcription.
+
+**5. Near misses (2 episodes, +1-2).** `wcojb4TFT35:4` stopped 0.16 m from a
+viewpoint and `5cdEh9F2hJL:3` 0.30 m: the stall rule (`|d - min| < 0.1`)
+fired at 0.87 m from the cloud point. A stall above 0.6 m could spend a few
+more steps before it is honoured; the reference's rule is what it is.
+
+**6. Detector recall in frame.** With the target inside 3 m / ±40°, D-FINE at
+0.8 fires on 26% of tv_monitor steps, 41% chair, 41% toilet, 48% plant, 77%
+sofa, 100% bed. Whether that costs episodes is not measurable from this run
+(ASCENT's recorder logs `n_target_det = 0` on every step, so no paired
+number); a lower ingest threshold trades against bucket 2.
+
+Not movable from the trace: 31 of the 37 failures are shared with ASCENT, and
+the transcription's step cost on shared successes is +0 (median). The wins
+above are beyond the reference, not toward it.
+
+### S72 — the multi-floor LLM prompt: null, because the whole LLM cascade is starved
+
+The S71 follow-up named "cross-floor: the stairs are on the map and the agent
+never climbs them" as the biggest movable bucket (6 episodes), and
+`exploration.llm_multi_floor=true` (F2 -- the prompt the reference carries but
+its own run never reaches) as the cheapest A/B. Run on
+`eval=scenes20_crossfloor`, 21 episodes, paired against the same episodes
+inside `outputs/s71_port100`:
+
+| | s72 (multi-floor on) | s71 control | ASCENT |
+|---|---|---|---|
+| SR | 4/21 | 4/21 | 5/21 |
+| SPL | 0.103 | 0.100 | — |
+
+1 win, 1 loss, and the mechanism counters are flat: 34 climb attempts against
+35, 18 passive entries against 18, and the 15 episodes that never left the
+start floor still never left it. **Null.**
+
+The branch carried no counter, so "fired and did not help" and "never fired"
+were indistinguishable. `outputs/s72b_mf_instrumented` re-runs four
+high-eligibility episodes with counters on every arm of
+`get_best_frontier`. Over 1258 frontier decisions (4 episodes, ~1733 steps):
+
+| where a frontier decision goes | count | share |
+|---|---|---|
+| nearby shortcut, a frontier within 3 m (`llm_planner.py:100-113`) | 701 | **55.7%** |
+| only one frontier extracted (`:82-86`) | 319 | 25.4% |
+| the latched `_force_frontier` is still extracted (`:168-175`) | 217 | 17.2% |
+| **reaches `_decide_frontier_with_llm` at all** | **21** | **1.7%** |
+
+The multi-floor question was asked **4 times in 1733 steps** (1 GO_UP, 3
+stay). It fires; it is simply never asked. The 60-step throttle is not the
+binding constraint -- reaching the LLM path at all is.
+
+**This is the finding, and it is not about floors.** Every LLM decision in
+this pipeline -- the single-floor frontier choice as much as the multi-floor
+one -- runs on 1.7% of decisions, because three geometric short-circuits ahead
+of it take the other 98.3%. It explains the whole-run numbers that looked odd
+in S71 (357 LLM calls and 93 overrides across 100 episodes: about one override
+per episode), and it re-reads S53, where the ranker "worked" and cost 4
+episodes: a ranker consulted once per episode cannot pay for itself either
+way. The short-circuits are the reference's own rules, faithfully ported, so
+this is a property of ASCENT's planner, not a porting defect.
+
+Two A/Bs follow from it, in order of cost:
+
+1. `exploration.nearby_distance_m=1.5` (from 3.0). One number, deviates from
+   the reference, and directly opens the 55.7%. Run it on
+   `scenes20_ep0to4` with the trace metrics -- if the LLM path is worth
+   anything, this is the run where it shows.
+2. Ask the floor question on a step timer instead of inside the frontier
+   decision (OSG's own `floor_ask_every` shape). Structural, and only worth
+   doing if (1) shows the prompt has any effect when it is actually asked.
+
+Until one of them lands, treat the LLM planner as decorative in this arm: it
+costs 357 calls per 100 episodes and touches about one decision per episode.
+
 #### The pattern, after eleven A/Bs
 
 | change | mechanism verified live? | SR effect | p |
