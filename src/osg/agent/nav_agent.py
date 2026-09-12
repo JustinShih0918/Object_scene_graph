@@ -474,6 +474,7 @@ class NavAgent:
             self._region_cache = None
             self._region_kf = 0
             self._region_named = False
+            self.object_layer.set_proposal_text(self.region_proposer.text)
         if self.feature_memory is not None:
             # The prompt changes once an episode, so the text encoder runs once
             # an episode. Centres come from the object layer, which resolves a
@@ -1134,6 +1135,8 @@ class NavAgent:
         cfg = rp.cfg
         if self._region_admits >= int(cfg.max_per_episode):
             return False
+        if bool(getattr(cfg, "every_keyframe", False)):
+            return True
         if bool(getattr(cfg, "require_never_named", False)) and self._region_named:
             return False
         return self._region_kf >= int(getattr(cfg, "unnamed_keyframes", 0) or 0)

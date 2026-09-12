@@ -13,7 +13,7 @@ from ..core.types import Detection, FrameData
 from ..mapping.costmap import HEIGHT_AXIS, PLANE
 from .association import DataAssociator, Observation, ObjectTrack
 from .ellipsoid import Ellipsoid
-from .feature_memory import merge_running_mean
+from .feature_memory import cosine, merge_running_mean
 from .linking import object_center, relink
 from .presence import PresenceFilter
 from .optimization import WassersteinRefiner
@@ -72,6 +72,11 @@ class ObjectLayer:
         # None unless feature_memory.enabled; nothing is loaded and no code
         # path below changes while it is None.
         self.feature_memory = feature_memory
+        # The query phrase's text feature, set per episode by the agent when
+        # the proposal stage is on. A proposal observation carries its region's
+        # image feature; the track keeps the running mean and its cosine
+        # against this text is `proposal_sim`.
+        self.proposal_text: Optional[np.ndarray] = None
         self.max_range_m = float(max_range_m)
         self.fp_disable_radius_m = float(fp_disable_radius_m)
         self.cloud_stride = int(cloud_stride)
@@ -92,6 +97,7 @@ class ObjectLayer:
             "ellipsoid_rejected": 0,  # depth too sparse to back-project a quadric
             "tracks_created": 0,
             "target_bypassed": 0,  # admitted only because it is the target
+            "proposal_obs": 0,     # observations the proposal stage contributed
         }
 
     # ------------------------------------------------------------------ api
@@ -99,6 +105,9 @@ class ObjectLayer:
     def set_target(self, label: str) -> None:
         """Which class this episode is hunting. Only read by `_admits`."""
         self.target_label = normalize_label(label)
+
+    def set_proposal_text(self, text_ft: Optional[np.ndarray]) -> None:
+        self.proposal_text = None if text_ft is None else np.asarray(text_ft, dtype=np.float32)
 
     def _admits(self, det: Detection) -> bool:
         """Is this detection worth putting in the map?
@@ -209,11 +218,17 @@ class ObjectLayer:
                 if not self._marginal(det, frame):
                     track.out_of_range = False
             track.observations.append(obs)
-            if self.feature_memory is not None and det.clip_ft is not None:
+            if det.clip_ft is not None:
                 track.clip_ft, track.clip_n = merge_running_mean(
                     track.clip_ft, track.clip_n, det.clip_ft
                 )
-                self.feature_memory.tag(track)
+                if self.feature_memory is not None:
+                    self.feature_memory.tag(track)
+            if str(getattr(det, "source", "detector")) == "proposal":
+                track.n_proposal_obs += 1
+                self.funnel["proposal_obs"] += 1
+                if self.proposal_text is not None:
+                    track.proposal_sim = cosine(track.clip_ft, self.proposal_text)
             if det.score > track.best_score:
                 track.best_score = det.score
                 track.best_crop = det.crop if det.crop is not None else det.crop_from(frame.rgb)
@@ -394,6 +409,9 @@ class ObjectLayer:
         rank_by_presence: bool = False,
         floor_key: Optional[int] = None,
         step: Optional[int] = None,
+        proposal_commits: bool = True,
+        proposal_min_obs: int = 1,
+        proposal_tau: float = -1.0,
     ) -> List[ObjectTrack]:
         """Non-blacklisted tracks matching the target with enough support,
         detection quality, accumulated evidence (fragment detections and
@@ -432,6 +450,18 @@ class ObjectLayer:
         restores its belief. Measured, with the identity channel off: one episode
         committed to the same wrong track 251 times in 500 steps, its belief
         pinned at the 0.95 positive clamp through 250 absence readings.
+
+        A track the proposal stage alone has seen (`proposal_only`) carries the
+        target's label without the detector ever having said so. Measured on
+        the full 107 (docs/REGION_FALSE_ADMISSION.md), letting such a track
+        through on the label test cost 18 trials: a per-frame region admitted
+        on 13% of frames with no object in view became an ordinary same-label
+        track, won this gate and spent an attempt. So it is judged on what it
+        actually is -- an appearance hypothesis accumulated over views: at
+        least `proposal_min_obs` observations, a running-mean feature whose
+        cosine to the query clears `proposal_tau`, and never ahead of a track
+        the detector has named. `proposal_commits=False` keeps them out
+        entirely, which is how the bar was measured before it was set.
         """
         target = target_label.lower().replace(" ", "_")
         out = []
@@ -454,12 +484,25 @@ class ObjectLayer:
                 continue
             if max_identity_rejections and t.identity_rejections >= max_identity_rejections:
                 continue
-            if t.label.lower().replace(" ", "_") == target:
-                out.append(t)
+            if t.label.lower().replace(" ", "_") != target:
+                continue
+            if t.proposal_only:
+                if not proposal_commits:
+                    continue
+                if t.n_proposal_obs < int(proposal_min_obs):
+                    continue
+                if float(t.proposal_sim) < float(proposal_tau):
+                    continue
+            out.append(t)
+        # Named tracks first; a proposal-only track competes only among its
+        # own kind. The tier is 0 for every track the detector (or the prior
+        # map) has named, so with no proposals in the map the order is exactly
+        # what it was.
+        tier = lambda t: 1 if t.proposal_only else 0
         if rank_by_presence:
-            out.sort(key=lambda t: (-t.presence.p, -t.evidence))
+            out.sort(key=lambda t: (tier(t), -t.presence.p, -t.evidence))
         else:
-            out.sort(key=lambda t: -(t.best_score * t.presence.p))
+            out.sort(key=lambda t: (tier(t), -(t.best_score * t.presence.p)))
         return out
 
     @staticmethod

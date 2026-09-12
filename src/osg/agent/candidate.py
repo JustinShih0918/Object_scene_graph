@@ -86,6 +86,7 @@ class CandidatePolicy:
             rank_by_presence=self.nav.cfg.verification.rank_candidates_by_presence,
             floor_key=self.nav.floors.current_id,
             step=self.nav.step_count,
+            **self._proposal_gate(),
         )
         if candidates and bool(self.nav.cfg.verification.retire_stale_twins_after_absence):
             candidates = self._without_stale_twins(candidates)
@@ -181,6 +182,17 @@ class CandidatePolicy:
         self.nav.state = State.GOTO_VERIFY_VIEW
         self.nav._current_path = None
         self.nav._goto_deadline = self.nav.step_count + 80
+
+    def _proposal_gate(self) -> dict:
+        """The bar a proposal-only track must clear to be a candidate."""
+        rp = getattr(self.nav.cfg, "region_proposal", None)
+        if rp is None:
+            return {}
+        return {
+            "proposal_commits": bool(getattr(rp, "commits", True)),
+            "proposal_min_obs": int(getattr(rp, "commit_min_obs", 1)),
+            "proposal_tau": float(getattr(rp, "commit_tau", -1.0)),
+        }
 
     def _appearance_pick(self):
         """The surface is reached, the label path has nothing: which nearby
@@ -313,6 +325,11 @@ class CandidatePolicy:
                 # Proposed by appearance rather than by its label.
                 "feature_admitted": bool(getattr(track, "feature_admitted", False)),
                 "feature_sim": round(float(getattr(track, "feature_sim", -1.0)), 4),
+                # Never named by the detector: committed on accumulated
+                # appearance from the proposal stage.
+                "proposal_only": bool(getattr(track, "proposal_only", False)),
+                "n_proposal_obs": int(getattr(track, "n_proposal_obs", 0)),
+                "proposal_sim": round(float(getattr(track, "proposal_sim", -1.0)), 4),
             }
         )
 

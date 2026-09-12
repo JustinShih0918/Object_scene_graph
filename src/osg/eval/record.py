@@ -262,6 +262,11 @@ def build_episode_record(
                 "best_bbox_px": round(float(t.best_bbox_px), 1),
                 "evidence": round(float(t.evidence), 3),
                 "floor_key": int(getattr(t, "floor_key", 0)),
+                # Provenance: how many of the observations the proposal stage
+                # contributed, and the running-mean feature's cosine to the
+                # query. A track with n_proposal_obs == n_obs was never named.
+                "n_proposal_obs": int(getattr(t, "n_proposal_obs", 0)),
+                "proposal_sim": round(float(getattr(t, "proposal_sim", -1.0)), 4),
             }
             for t in tracks
             if normalize_label(t.label) == want
