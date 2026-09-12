@@ -1,0 +1,20 @@
+# MP3D ObjectNav (Matterport3D). 21 goal categories, 11 val scenes,
+# 2195 val episodes -- a different benchmark from HM3D, not a variant split.
+#
+# Scenes are license-gated and are NOT downloaded by scripts/download_data.py:
+# sign the Matterport Terms of Use at https://niessner.github.io/Matterport/,
+# then `python scripts/download_mp3d.py --mp-script <download_mp.py>`.
+# Episodes are public (`python scripts/download_mp3d.py --episodes-only`).
+#
+# The agent geometry is identical to HM3D's (640x480, 79deg, 0.88 m, 500 steps),
+# so numbers differ because of the scenes and the goal set, not the embodiment.
+defaults:
+  - base_hm3d
+
+mode: objectnav
+split: val
+dataset_version: v1
+episodes_path: data/datasets/objectnav/mp3d/{split}/{split}.json.gz
+benchmark_config: benchmark/nav/objectnav/objectnav_mp3d.yaml
+num_episodes: -1
+max_scene_repeat_episodes: -1

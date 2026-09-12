@@ -46,27 +46,43 @@ def encode_rgb(rgb: np.ndarray) -> str:
 
 
 def post_json(url: str, payload: dict, timeout_s: float, strict: bool,
-              counters: Optional[dict] = None):
-    """POST a JSON payload; return the decoded reply, or None (non-strict)."""
+              counters: Optional[dict] = None, attempts: int = 2):
+    """POST a JSON payload; return the decoded reply, or None (non-strict).
+
+    `attempts` covers the transient failure these servers actually produce. A
+    100-episode run makes ~18 000 requests per model and GroundingDINO raises
+    `AttributeError: 'GroundingDINO' object has no attribute 'poss'` inside its
+    own forward pass on roughly one frame in ten thousand (twice in the
+    2026-09-12 log). Under the strict contract a single one of those ends the
+    run: it killed `outputs/full_final` at episode 699 of 2000 and `s73` at
+    episode 12 of 100. The failure is per-frame and not sticky -- the very next
+    request succeeds -- so one retry is the difference between losing a frame
+    and losing a day.
+    """
     body = json.dumps(payload).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as r:
-            if r.status != 200:
-                raise PerceptionUnavailable(f"{url} answered HTTP {r.status}")
-            out = json.loads(r.read())
-    except PerceptionUnavailable:
-        if counters is not None:
-            counters["errors"] = counters.get("errors", 0) + 1
-        if strict:
-            raise
-        return None
-    except Exception as exc:  # noqa: BLE001 - transport / decode
-        if counters is not None:
-            counters["errors"] = counters.get("errors", 0) + 1
-        if strict:
-            raise PerceptionUnavailable(f"{url}: {exc}") from exc
-        return None
+    last: Optional[Exception] = None
+    for attempt in range(max(1, int(attempts))):
+        req = urllib.request.Request(url, data=body,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as r:
+                if r.status != 200:
+                    raise PerceptionUnavailable(f"{url} answered HTTP {r.status}")
+                out = json.loads(r.read())
+            break
+        except Exception as exc:  # noqa: BLE001 - transport / HTTP / decode
+            last = exc
+            if counters is not None:
+                counters["errors"] = counters.get("errors", 0) + 1
+            if attempt + 1 < max(1, int(attempts)):
+                if counters is not None:
+                    counters["retries"] = counters.get("retries", 0) + 1
+                continue
+            if strict:
+                if isinstance(exc, PerceptionUnavailable):
+                    raise
+                raise PerceptionUnavailable(f"{url}: {exc}") from exc
+            return None
     if counters is not None:
         counters["calls"] = counters.get("calls", 0) + 1
     return out

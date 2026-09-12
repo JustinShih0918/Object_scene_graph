@@ -1,0 +1,11 @@
+# The only MP3D split that runs with NO Matterport licence: habitat's free
+# example scene `17DRP5sb8fy` (`python scripts/download_mp3d.py --example-scene`),
+# which appears in the TRAIN episodes, not val. Three episodes, for checking
+# that the plumbing works end to end before the licensed scenes arrive.
+defaults:
+  - base_mp3d
+
+split: train
+num_episodes: 3
+content_scenes:
+  - 17DRP5sb8fy

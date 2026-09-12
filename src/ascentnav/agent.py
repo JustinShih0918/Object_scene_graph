@@ -82,10 +82,16 @@ PITCH_OFFSET_DEG = 30      # ascent config `look_down.tilt_angle`
 # habitat_policies.py:28); its BLIP-2 prompt and LLM `Goal` are built from
 # them and the 0.15 gate was calibrated on them. The object-map key stays the
 # HM3D name so the record and the detector filter are unchanged.
-HM3D_TO_COCO = {
+# F6: the reference names the target with its COCO string in the BLIP-2 prompt
+# and the LLM `Goal` field, and the 0.15 gate was calibrated on those. MP3D adds
+# `sink` and `table`; its other 13 categories have no COCO name, so the prompt
+# falls back to the benchmark category with underscores spaced out.
+GOAL_TO_COCO = {
     "chair": "chair", "bed": "bed", "toilet": "toilet",
     "tv_monitor": "tv", "sofa": "couch", "plant": "potted plant",
+    "sink": "sink", "table": "dining table",
 }
+HM3D_TO_COCO = GOAL_TO_COCO          # the name the HM3D arms were written against
 
 # ASCENT's Qwen system message (`model_api/qwen25_ollama.py:29-46`).
 LLM_SYSTEM = (
@@ -222,8 +228,8 @@ class AscentNavAgent:
 
     def reset(self, target_category: str) -> None:
         self.target = target_category
-        self.target_coco = HM3D_TO_COCO.get(target_category.lower().replace(" ", "_"),
-                                             target_category.replace("_", " "))
+        self.target_coco = GOAL_TO_COCO.get(target_category.lower().replace(" ", "_"),
+                                            target_category.replace("_", " "))
         self.step_count = 0
         self.anchor: Optional[EpisodeAnchor] = None
         self._floors = [self._new_floor()]

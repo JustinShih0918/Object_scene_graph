@@ -1,0 +1,24 @@
+# @package _global_
+#
+# MP3D restricted to the 8 goal categories closed-set COCO can name, on the
+# same D-FINE detector the HM3D number is measured with. This is the
+# like-for-like arm: any gap against HM3D is scenes and episode difficulty,
+# not detector coverage.
+#
+#   python scripts/run_eval.py +experiment=ascentnav_mp3d_coco8
+#
+# It scores roughly a third of the val split (chair, table, sofa, bed, plant,
+# sink, toilet, tv_monitor). Report it as such -- it is NOT an MP3D ObjectNav
+# result, which requires all 21.
+
+defaults:
+  - ascentnav
+  - override /eval: mp3d_val
+
+detector:
+  goal_vocabulary: mp3d
+
+eval:
+  # 1080 of the 2195 val episodes (chair 434, table 340, plant 87, sink 82,
+  # sofa 53, bed 48, toilet 28, tv_monitor 8).
+  goal_categories: [chair, table, sofa, bed, plant, sink, toilet, tv_monitor]

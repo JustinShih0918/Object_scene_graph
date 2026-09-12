@@ -52,6 +52,9 @@ class DetectorConfig:
     # Raise `PerceptionUnavailable` on any served-model failure instead of
     # returning a neutral value. The ascentnav preset turns this on.
     strict: bool = False
+    # Which benchmark's goal categories the closed-set head maps COCO onto:
+    # `hm3d` (6 categories) or `mp3d` (21, of which COCO can name 8).
+    goal_vocabulary: str = "hm3d"
     vocabulary: List[str] = field(default_factory=lambda: list(DEFAULT_VOCABULARY))
 
 

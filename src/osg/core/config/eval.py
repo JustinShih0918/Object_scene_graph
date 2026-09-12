@@ -27,6 +27,10 @@ class EvalConfig:
     dataset_version: str = "v2"  # HM3D-semantics v0.2, 6 categories
     episodes_path: str = "data/datasets/objectnav/hm3d/v2/{split}/{split}.json.gz"
     scenes_dir: str = "data/scene_datasets/"
+    # The habitat-lab benchmark config the env is built from. It fixes the
+    # dataset type and the goal-category set; `objectnav_mp3d.yaml` is the
+    # MP3D counterpart and ships with the same 640x480/79deg/0.88 m agent.
+    benchmark_config: str = "benchmark/nav/objectnav/objectnav_hm3d.yaml"
     num_episodes: int = -1  # -1 = all
     # >0 forces habitat to move to a new scene after this many episodes, so a
     # fixed-size subset spans the split instead of draining one scene first.
@@ -36,6 +40,10 @@ class EvalConfig:
     max_scene_repeat_steps: int = 50_000
     allow_sliding: bool = False
     episode_ids: Optional[List[str]] = None
+    # Keep only episodes whose goal is one of these categories. MP3D asks for
+    # 21 and a closed-set COCO head can name 8, so a like-for-like comparison
+    # against the HM3D number needs the subset stated, not implied.
+    goal_categories: Optional[List[str]] = None
     # Restrict the eval to specific scene ids (None/["*"] = all). Used by the
     # single-floor preset since the 2D scene graph cannot represent stairs.
     content_scenes: Optional[List[str]] = None
