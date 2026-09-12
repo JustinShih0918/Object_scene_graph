@@ -267,3 +267,32 @@ def test_a_named_track_is_bit_identical_with_and_without_proposals_around_it():
         return (t.n_obs, t.evidence, t.best_score, tuple(layer.center_of(t).round(6)),
                 t.presence.log_odds, tuple(t.linked_ids) if hasattr(t, "linked_ids") else ())
     assert build(False) == build(True)
+
+
+def test_proposal_tracks_take_no_draws_and_no_ids_from_the_named_map():
+    from osg.objects.object_layer import PROPOSAL_ID_BASE
+    rng = np.random.default_rng(7)
+
+    def build(with_props):
+        layer = _layer()
+        layer.set_proposal_text(_unit(1, 0, 0))
+        out = []
+        for i in range(1, 9):
+            depth = np.full((480, 640), 2.0, dtype=np.float32)
+            depth += rng.random((480, 640)).astype(np.float32) * 0.5     # sampled depth matters now
+            f = FrameData(frame_id=i, rgb=np.zeros((480, 640, 3), dtype=np.uint8), depth=depth,
+                          T_wc=np.eye(4), intrinsics=K)
+            dets = [_det("bowl", (40 * i, 100, 40 * i + 60, 160), 0.8)]        # a new bowl each frame
+            if with_props:
+                dets.insert(0, _det("bowl", (300, 300, 380, 380), 0.5, "proposal", _unit(1, 0, 0)))
+            layer.update(f, dets)
+        named = [t for t in layer.tracks() if not t.proposal_only]
+        return [(t.id, tuple(np.round(t.ellipsoid.center, 6)), tuple(np.round(t.ellipsoid.axes, 6))) for t in named]
+
+    rng = np.random.default_rng(7); a = build(False)
+    rng = np.random.default_rng(7); b = build(True)
+    assert a == b
+    layer = _layer()
+    layer.update(_frame(1), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
+    (t,) = layer.tracks(include_proposals=True)
+    assert t.id >= PROPOSAL_ID_BASE

@@ -19,6 +19,9 @@ from .presence import PresenceFilter
 from .optimization import WassersteinRefiner
 
 
+PROPOSAL_ID_BASE = 1_000_000   # proposal-only track ids live above here
+
+
 class ObjectLayer:
     def __init__(
         self,
@@ -84,6 +87,13 @@ class ObjectLayer:
         self.keep_cloud_labels: set = set()
         self._disabled_pts: List[tuple] = []
         self._rng = np.random.default_rng(rng_seed)
+        # Proposal tracks draw from their own generator and take ids from
+        # their own range: sharing either shifted every later named track's
+        # depth sample and id, and a plate committed at the same step to the
+        # same object landed 10 cm off and missed. The named map must be the
+        # named map, draw for draw.
+        self._rng_prop = np.random.default_rng(rng_seed + 1_000_003)
+        self._next_prop_id = PROPOSAL_ID_BASE
         # Track-creation funnel. Instrumentation only: nine failures of the last
         # campaign named the target 4-36 times at its new pose and ended with
         # the ONLY same-label tracks in the map being the ones loaded from the
@@ -221,18 +231,23 @@ class ObjectLayer:
                 continue
             proposal = str(getattr(det, "source", "detector")) == "proposal"
             if track_id is None:
-                ell = Ellipsoid.init_from_detection(det, frame, rng=self._rng)
+                ell = Ellipsoid.init_from_detection(
+                    det, frame, rng=self._rng_prop if proposal else self._rng
+                )
                 if ell is None:
                     self.funnel["ellipsoid_rejected"] += 1
                     continue
                 self.funnel["tracks_created"] += 1
+                if proposal:
+                    new_id, self._next_prop_id = self._next_prop_id, self._next_prop_id + 1
+                else:
+                    new_id, self._next_id = self._next_id, self._next_id + 1
                 track = ObjectTrack(
-                    id=self._next_id, label=det.label, ellipsoid=ell, first_cam_xy=cam_xy.copy(),
+                    id=new_id, label=det.label, ellipsoid=ell, first_cam_xy=cam_xy.copy(),
                     floor_key=int(floor_key), out_of_range=self._marginal(det, frame),
                 )
                 if not proposal:
                     track.evidence += det.score  # first sighting: full weight
-                self._next_id += 1
                 self._tracks[track.id] = track
                 if self._in_disabled_region(track):
                     track.blacklisted = track.disabled = True
@@ -308,7 +323,8 @@ class ObjectLayer:
         if not len(pts):
             return
         if len(pts) > self.cloud_cap:
-            pts = pts[self._rng.choice(len(pts), self.cloud_cap, replace=False)]
+            rng = self._rng_prop if track.proposal_only else self._rng
+            pts = pts[rng.choice(len(pts), self.cloud_cap, replace=False)]
         track.points_w = (
             pts if track.points_w is None
             else np.vstack([track.points_w, pts])[-self.cloud_cap:]
