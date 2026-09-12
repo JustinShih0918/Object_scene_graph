@@ -120,6 +120,14 @@ python scripts/download_mp3d.py --mp-script /path/to/download_mp.py
 which runs its `--task habitat` subset (~15 GB, not the 1.3 TB raw release)
 and expects the result unpacked to `data/scene_datasets/mp3d/<scene>/<scene>.glb`.
 
+There is no MP3D downloader bundled anywhere in the tree — not under
+`relative_work/ascent` (whose README delegates to habitat-lab's DATASETS.md),
+and not in either conda env's `habitat_sim.utils.datasets_download`, which
+offers only `mp3d_example_scene`. The Matterport ToU is the only route to the
+val scenes. The episode layout here (`.../objectnav/mp3d/v1/{split}/`) matches
+habitat's DATASETS.md, this repo's HM3D tree, and ASCENT's own README, so
+native ASCENT's `eval_ascent_mp3d.yaml` reads the same files.
+
 **The detector is the one thing that does not transfer.** Closed-set COCO can
 name 8 of the 21 categories (chair, table, sofa, bed, plant, sink, toilet,
 tv_monitor). The other 13 — picture, cabinet, cushion, chest_of_drawers, stool,

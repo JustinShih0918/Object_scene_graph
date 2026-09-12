@@ -18,7 +18,7 @@ Three pieces, with different licences:
 Layout produced, which `configs/eval/base_mp3d.yaml` expects:
 
     data/scene_datasets/mp3d/<scene>/<scene>.glb   (+ .navmesh, .house, _semantic.ply)
-    data/datasets/objectnav/mp3d/{train,val,val_mini}/...
+    data/datasets/objectnav/mp3d/v1/{train,val,val_mini}/...
 """
 from __future__ import annotations
 
@@ -32,7 +32,11 @@ from pathlib import Path
 
 DATA = Path("data")
 SCENES = DATA / "scene_datasets/mp3d"
-EPISODES = DATA / "datasets/objectnav/mp3d"
+# habitat's DATASETS.md and ASCENT's README both place these under a `v1`
+# level (`data/datasets/objectnav/mp3d/v1/val/...`), and this repo's HM3D tree
+# follows the same convention, so native ASCENT's `eval_ascent_mp3d.yaml` reads
+# the same files. The zip unpacks flat, so the split dirs are moved under it.
+EPISODES = DATA / "datasets/objectnav/mp3d/v1"
 EPISODES_URL = "https://dl.fbaipublicfiles.com/habitat/data/datasets/objectnav/m3d/v1/objectnav_mp3d_v1.zip"
 EXAMPLE_URL = "http://dl.fbaipublicfiles.com/habitat/mp3d/mp3d_example_v1.1.zip"
 VAL_SCENES = (
@@ -53,7 +57,7 @@ def _fetch(url: str, dest: Path) -> Path:
 
 
 def download_episodes() -> None:
-    z = _fetch(EPISODES_URL, EPISODES / "objectnav_mp3d_v1.zip")
+    z = _fetch(EPISODES_URL, EPISODES.parent / "objectnav_mp3d_v1.zip")
     with zipfile.ZipFile(z) as f:
         f.extractall(EPISODES)
     splits = sorted(p.name for p in EPISODES.iterdir() if p.is_dir())
