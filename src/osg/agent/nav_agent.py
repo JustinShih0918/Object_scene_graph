@@ -1572,12 +1572,14 @@ class NavAgent:
                 cells = xy[near] if near.any() else None
         self._climb_cells_xy = cells
         self._current_path = None
+        self.floors.climbing = True
         self.state = State.CLIMB
         self.stats["climb_start"] = self.stats.get("climb_start", 0) + 1
         self.stats["climb_start_up"] = self.stats.get("climb_start_up", 0) + int(self._climb_direction > 0)
         self.stats["climb_start_down"] = self.stats.get("climb_start_down", 0) + int(self._climb_direction < 0)
 
     def _end_climb(self, ok: bool, why: str) -> None:
+        self.floors.climbing = False
         self.stats["climb_ok" if ok else "climb_fail"] = (
             self.stats.get("climb_ok" if ok else "climb_fail", 0) + 1
         )
@@ -1605,6 +1607,17 @@ class NavAgent:
         # before the dispatch every step, so the id has already moved.
         if int(self.floors.current_id) != int(self._climb_from_floor):
             self._end_climb(True, "new_floor")
+            return "look_up" if self._climb_pitched else TURN_ACTION
+        # With levels suppressed for the duration of the climb, a storey is not
+        # announced by the estimator while the agent is on it. Judge arrival by
+        # height instead: a full `new_level_m` of gain is a storey however many
+        # flights it took, and the estimator commits it on the next frame once
+        # the climb releases the suppression.
+        if (
+            bool(getattr(self.cfg.floor, "no_level_on_flight", False))
+            and dy >= float(self.cfg.floor.new_level_m)
+        ):
+            self._end_climb(True, "storey_of_height")
             return "look_up" if self._climb_pitched else TURN_ACTION
         # A pursuit `observe` ended for another reason (deadline) while we were
         # climbing: judge by height gained, not by what ended it.

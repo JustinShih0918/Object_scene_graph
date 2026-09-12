@@ -129,6 +129,11 @@ class FloorPolicy:
         # The flight a pursuit is heading for, when the target came from the
         # height layer; the agent's climb carrot walks up its treads.
         self.pursuit_flight = None
+        # Set by the agent for the duration of a climb. A half-landing is FLAT
+        # ground between two flights, so standing on stair cells is not enough:
+        # measured on 00808, the suppression fired on 7 frames of treads and the
+        # level was still created on the landing in between.
+        self.climbing = False
         self.estimator.reset()
         self.stack.reset()
 
@@ -192,7 +197,7 @@ class FloorPolicy:
         agent_xy = frame.camera_position[list(PLANE)]
         on_flight = bool(
             getattr(self.cfg.floor, "no_level_on_flight", False)
-        ) and self.on_flight_cells(agent_xy)
+        ) and (self.climbing or self.on_flight_cells(agent_xy))
         if on_flight:
             self.stats["steps_on_a_flight"] = self.stats.get("steps_on_a_flight", 0) + 1
         floor_id = self.estimator.update(

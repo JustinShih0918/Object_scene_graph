@@ -431,3 +431,31 @@ def test_the_climb_picks_up_the_next_flight_from_a_landing(intrinsics):
 def test_relinking_is_off_by_default(intrinsics):
     agent = _agent()
     assert not bool(agent.cfg.agent.climb_relink_flights)
+
+
+def test_levels_are_suppressed_for_the_whole_climb_not_just_on_treads(intrinsics):
+    """A half-landing is flat ground between two flights. Measured on 00808 the
+    suppression fired on 7 frames of treads and the level was still created on
+    the landing in between."""
+    agent = _agent()
+    agent.cfg.floor.no_level_on_flight = True
+    _pursuit(agent)
+    frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
+    assert not agent.floors.climbing
+    agent._start_climb(frame)
+    assert agent.floors.climbing, "the whole climb suppresses, not only the treads"
+    agent._end_climb(False, "budget")
+    assert not agent.floors.climbing
+
+
+def test_a_storey_of_height_ends_the_climb_when_levels_are_suppressed(intrinsics):
+    """With the estimator held back, nothing announces the new floor while the
+    agent is on it, so the climb judges arrival by height gained."""
+    agent = _agent()
+    agent.cfg.floor.no_level_on_flight = True
+    agent.cfg.floor.new_level_m = 1.8
+    _pursuit(agent)
+    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
+    agent._do_climb(_frame(intrinsics, (1.0, 4.0), y=1.5 + 1.9))
+    assert agent.stats.get("climb_ok") == 1
+    assert agent.stats.get("climb_end_storey_of_height") == 1
