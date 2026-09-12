@@ -158,7 +158,7 @@ def run_eval(cfg) -> dict:
             # "floor_mass_rule" "floor_mass_margin"
             # "cross_floor" "floor_stairs" "use_prior_stairs" "prefer_prior_stairs"
             # "prior_stairs_override_gate" "portal_failure_memory" "climb_targets"
-            # "climb_enabled"
+            # "climb_enabled" "stair_evidence_every_kf" "down_look_every"
             # "search_frontier_weight" "search_glance_detect_prob"
             # "search_glance_floor" "search_glance_range_m" "search_max_steps"
             # "search_posterior" "search_proximity_floor" "search_proximity_len_m"

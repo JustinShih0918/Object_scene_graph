@@ -194,7 +194,7 @@ def test_a_seen_staircase_is_chosen_over_a_portal():
     goal = policy.try_switch(
         frame, 100, best_path_cost=None, scene_graph=sg, target="bowl",
         reachable_fn=None, target_floor=UPPER,
-        stair_xyz=[np.array([3.0, 0.4, 1.0]), np.array([9.0, 0.4, 9.0])],
+        stair_xyz=[(np.array([3.0, 1.0]), "up"), (np.array([9.0, 9.0]), "up")],
     )
     assert goal is not None
     assert goal.goal_xy.tolist() == [3.0, 1.0], "nearest seen staircase, not the far one"
@@ -202,7 +202,7 @@ def test_a_seen_staircase_is_chosen_over_a_portal():
     assert policy.stats.get("stair_track_switch_attempts") == 1
 
 
-def test_a_staircase_on_another_storey_is_not_a_target_here():
+def test_a_flight_the_wrong_way_is_not_a_way_there():
     from osg.agent.floor_policy import FloorPolicy
     from osg.mapping.portals import FloorSwitchPolicy
 
@@ -220,10 +220,37 @@ def test_a_staircase_on_another_storey_is_not_a_target_here():
                                              min_interval_steps=0)
     frame = SimpleNamespace(camera_position=np.array([0.0, 1.5, 0.0]))
     sg = SimpleNamespace(objects=[], rooms={})
-    # The only stair track is 3 m above this floor: it belongs upstairs.
+    # The only known flight goes DOWN and the request is for the floor above.
     goal = policy.try_switch(
         frame, 100, best_path_cost=None, scene_graph=sg, target="bowl",
-        reachable_fn=None, target_floor=UPPER, stair_xyz=[np.array([3.0, 3.4, 1.0])],
+        reachable_fn=None, target_floor=UPPER, stair_xyz=[(np.array([3.0, 1.0]), "down")],
     )
     assert policy.stats.get("stair_track_switch_attempts") is None
     assert goal is None  # and no portal exists in an empty costmap either
+
+
+def test_an_undirected_pursuit_takes_a_down_flight_downward():
+    """With no storey requested, a `down` region names the floor below as the
+    target, not the floor above."""
+    from osg.agent.floor_policy import FloorPolicy
+    from osg.mapping.portals import FloorSwitchPolicy
+
+    cfg = make_cfg()
+    cfg.floor.enabled = True
+    cfg.floor.cross_floor = True
+    cfg.floor.climb_targets = "stairs_first"
+    policy = FloorPolicy(cfg, stats={})
+    policy.estimator._levels = {0: 0.0, 1: 2.9, 2: -2.9}
+    policy.estimator.current = 0
+    for k, y in ((0, 0.0), (1, 2.9), (2, -2.9)):
+        policy.stack.layer(k, step=0).floor_y = y
+    policy.stack.current_id = 0
+    policy.switch_policy = FloorSwitchPolicy(max_steps=500, no_switch_before=0,
+                                             min_interval_steps=0)
+    frame = SimpleNamespace(camera_position=np.array([0.0, 1.5, 0.0]))
+    sg = SimpleNamespace(objects=[], rooms={})
+    goal = policy.try_switch(
+        frame, 100, best_path_cost=None, scene_graph=sg, target="bowl",
+        reachable_fn=None, target_floor=None, stair_xyz=[(np.array([2.0, 2.0]), "down")],
+    )
+    assert goal is not None and goal.target_y == -2.9

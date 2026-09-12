@@ -72,6 +72,7 @@
   "agent.rednet_stairs": false,
   "agent.rednet_weights": "data/weights/rednet_semmap_mp3d_40.pth",
   "agent.stair_climb_state": true,
+  "agent.stair_evidence_every_kf": false,
   "agent.stair_exit_m": 0.5,
   "agent.stair_overshoot_m": 1.5,
   "agent.stair_reach_m": 0.6,

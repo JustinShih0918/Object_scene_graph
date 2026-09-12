@@ -426,24 +426,36 @@ class FloorPolicy:
         ):
             here_y = float(floor_y)
             span = float(self.cfg.floor.new_level_m)
-            on_this_floor = [
-                np.asarray(c, dtype=float) for c in stair_xyz
-                if abs(float(c[1]) - here_y) < span
-                and not self._portal_failed_here(np.asarray(c, dtype=float)[list(PLANE)])
-            ]
-            if on_this_floor:
+            # Which way must the flight go? A directed request says; otherwise
+            # any flight will do.
+            want = None
+            if directed and self.stack.by_key(int(target_floor)) is not None:
+                want = "up" if float(self.stack.by_key(int(target_floor)).floor_y) > here_y else "down"
+            usable = []
+            for xy, kind in stair_xyz:
+                xy = np.asarray(xy, dtype=float)
+                if want is not None and kind is not None and kind != want:
+                    continue  # a flight the wrong way is not a way there
+                if self._portal_failed_here(xy):
+                    continue
+                usable.append((xy, kind))
+            if usable:
                 agent_xy = frame.camera_position[list(PLANE)]
-                best = min(on_this_floor, key=lambda c: float(np.linalg.norm(c[list(PLANE)] - agent_xy)))
-                goal_xy = best[list(PLANE)]
-                # Which way is up? The directed request names a storey; an
-                # undirected one takes whichever storey the stair is nearer to.
-                if directed and self.stack.by_key(int(target_floor)) is not None:
+                goal_xy, kind = min(usable, key=lambda c: float(np.linalg.norm(c[0] - agent_xy)))
+                if want is not None:
                     target_y = float(self.stack.by_key(int(target_floor)).floor_y)
                 else:
                     others = [h for k, h in self.estimator.levels.items()
                               if k != self.stack.current_id]
-                    target_y = (min(others, key=lambda h: abs(h - float(best[1])))
-                                if others else here_y + span)
+                    if kind == "up":
+                        above = [h for h in others if h > here_y]
+                        target_y = min(above) if above else here_y + span
+                    elif kind == "down":
+                        below = [h for h in others if h < here_y]
+                        target_y = max(below) if below else here_y - span
+                    else:
+                        target_y = (min(others, key=lambda h: abs(h - here_y))
+                                    if others else here_y + span)
                 if reachable_fn is None or reachable_fn(goal_xy, here_y):
                     self.pursuing = True
                     self._pursuit_goal_xy = np.asarray(goal_xy, dtype=float).copy()

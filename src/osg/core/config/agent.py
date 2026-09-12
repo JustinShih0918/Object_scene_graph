@@ -359,6 +359,11 @@ class AgentConfig:
     # staircase at all. Off by default because it changes what the agent does
     # on arrival at a portal.
     climb_enabled: bool = False
+    # Stamp the detector's `stairs` masks into the stair-evidence grids on every
+    # keyframe. Until now that happened only on the single frame of a periodic
+    # look-down, and `down_look_every` defaults to 0, so on every ycb preset the
+    # evidence was never accumulated and `StairDetector.extract` had no caller.
+    stair_evidence_every_kf: bool = False
     climb_carrot: bool = False
     climb_carrot_m: float = 0.8
     down_look_every: int = 0

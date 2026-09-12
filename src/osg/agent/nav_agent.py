@@ -834,6 +834,21 @@ class NavAgent:
         with self.profiler.timeit("object_layer"):
             self.object_layer.update(frame, dets, floor_key=self.floors.current_id)
         self.keyframes.add(frame)
+        # Stair evidence used to accumulate ONLY on the one frame of a periodic
+        # look-down, and `down_look_every` defaults to 0 -- so on every ycb
+        # preset `StairDetector.accumulate` never ran, `up_stair_hits` and
+        # `down_stair_hits` stayed empty, `_on_a_staircase` was always False
+        # and `StairDetector.extract` had no caller at all. The detector emits
+        # `stairs` masks on ordinary keyframes; stamp them here.
+        if (
+            bool(getattr(self.cfg.agent, "stair_evidence_every_kf", False))
+            and self.stair_detector is not None
+            and not self.floors.on_stairs
+        ):
+            with self.profiler.timeit("stairs"):
+                self.stair_detector.accumulate(
+                    frame, self.floor_layer, dets, self._seg_stair_mask(frame)
+                )
 
         pf = self.object_layer.presence_filter
         if pf is not None:
@@ -1101,13 +1116,32 @@ class NavAgent:
         stair_xyz = None
         if str(getattr(self.cfg.floor, "climb_targets", "portals")) == "stairs_first":
             from ..mapping.stairs import stair_tracks
-            stair_xyz = stair_tracks(
+            here_y = float(self.floors.height_of(self.floors.current_id))
+            # (xy, kind): kind is "up", "down", or None when unknown. A semantic
+            # `stairs` track's 3D centre sits mid-flight, so its height relative
+            # to this floor says which way the flight goes.
+            stair_xyz = []
+            for c in stair_tracks(
                 self.object_layer,
                 min_obs=int(self.cfg.floor.stair_min_obs),
                 min_evidence=float(self.cfg.floor.stair_min_evidence),
-            )
+            ):
+                c = np.asarray(c, dtype=float)
+                if abs(float(c[1]) - here_y) >= float(self.cfg.floor.new_level_m):
+                    continue  # a staircase on another storey
+                rel = float(c[1]) - here_y
+                kind = "up" if rel > 0.3 else ("down" if rel < -0.3 else None)
+                stair_xyz.append((c[list(PLANE)], kind))
+            n_sem = len(stair_xyz)
+            # The detector's own accumulated evidence, which until now was
+            # stamped and never read back.
+            if self.stair_detector is not None and self.floor_layer.up_stair_hits is not None:
+                for det in self.stair_detector.extract(self.floor_layer):
+                    stair_xyz.append((np.asarray(det.centroid_xy, dtype=float), det.kind))
             self.stats["stair_tracks_offered"] = max(
-                self.stats.get("stair_tracks_offered", 0), len(stair_xyz))
+                self.stats.get("stair_tracks_offered", 0), n_sem)
+            self.stats["stair_regions_offered"] = max(
+                self.stats.get("stair_regions_offered", 0), len(stair_xyz) - n_sem)
         portal = self.floors.try_switch(
             frame, self.step_count, best_path_cost,
             self.scene_graph, self.target, self._reachable_fn,
