@@ -464,6 +464,7 @@ class NavAgent:
         self._climb_steps = 0
         self._climb_max_dy = 0.0
         self._climb_pitched = False
+        self._climb_blocked_run = 0
         self._pitch_ticks = 0
         self._last_down_look_step = -(10 ** 9)
         if self.commit_state is not None:
@@ -1549,6 +1550,7 @@ class NavAgent:
         self._climb_steps = 0
         self._climb_max_dy = 0.0
         self._climb_pitched = False
+        self._climb_blocked_run = 0
         self._carrot_xy = None
         self._carrot_disable_end = False
         self._climb_last_dist = None
@@ -1656,17 +1658,67 @@ class NavAgent:
             self._carrot_xy = fresh
         return self._carrot_xy
 
+    def _stair_cell_carrot(self, agent_xy: np.ndarray) -> Optional[np.ndarray]:
+        """Steer at the detector's own stair cells rather than the farthest thing
+        in view.
+
+        ASCENT's depth-ray carrot works because ASCENT starts it standing ON the
+        flight, where the farthest visible point is up it. Ours starts within
+        reach of a stair target that is often beside the flight, not at its
+        foot: on 00821 seven climbs pushed forward 238 times into whatever the
+        far wall was and rose 0.00 m. The stamped `stairs` cells say where the
+        treads actually are. Ascending, aim at the farthest of them within a
+        few metres -- the top of the visible flight; descending, the nearest --
+        the lip.
+        """
+        if not bool(getattr(self.cfg.agent, "climb_cell_carrot", False)):
+            return None
+        layer = self.floor_layer
+        if self.stair_detector is None or layer.up_stair_hits is None:
+            return None
+        hits = layer.up_stair_hits if self._climb_direction >= 0 else layer.down_stair_hits
+        mask = hits >= self.stair_detector.min_hits
+        if layer.disabled_stair is not None:
+            mask &= ~layer.disabled_stair
+        rc = np.argwhere(mask)
+        if not len(rc):
+            return None
+        xy = np.stack([layer.costmap.grid_to_world(r) for r in rc])
+        d = np.linalg.norm(xy - agent_xy, axis=1)
+        near = d <= 3.0
+        if not near.any():
+            return None
+        xy, d = xy[near], d[near]
+        pick = int(np.argmax(d)) if self._climb_direction >= 0 else int(np.argmin(d))
+        self.stats["climb_cell_carrot"] = self.stats.get("climb_cell_carrot", 0) + 1
+        return xy[pick]
+
     def _carrot_action(self, frame: FrameData, agent_xy: np.ndarray) -> str:
-        goal = self._update_carrot(frame, agent_xy)
+        goal = self._stair_cell_carrot(agent_xy)
+        if goal is None:
+            goal = self._update_carrot(frame, agent_xy)
         if goal is None:
             return FORWARD_ACTION
         if self.pointnav is not None:
-            nav = self.pointnav.step(goal)
+            nav = self.pointnav.step(goal, stop_radius=0.0)
             if nav.action is None:
                 self.stats["climb_forced_forward"] = (
                     self.stats.get("climb_forced_forward", 0) + 1
                 )
+                self._climb_blocked_run += 1
+                limit = int(getattr(self.cfg.agent, "climb_blocked_turn_after", 0))
+                if limit > 0 and self._climb_blocked_run >= limit:
+                    # The mover has said STOP this many times running and the
+                    # agent has not risen: it is pressing into something. A
+                    # turn re-aims the carrot; pushing again does not.
+                    self._climb_blocked_run = 0
+                    self._carrot_xy = None
+                    self.stats["climb_blocked_turn"] = (
+                        self.stats.get("climb_blocked_turn", 0) + 1
+                    )
+                    return TURN_ACTION
                 return FORWARD_ACTION
+            self._climb_blocked_run = 0
             return nav.action
         action = self._follow_to(frame, goal)
         return action if action is not None else FORWARD_ACTION

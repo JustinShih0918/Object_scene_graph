@@ -160,6 +160,7 @@ def run_eval(cfg) -> dict:
             # "cross_floor" "floor_stairs" "use_prior_stairs" "prefer_prior_stairs"
             # "prior_stairs_override_gate" "portal_failure_memory" "climb_targets" "hold_pursuit"
             # "climb_enabled" "stair_evidence_every_kf" "down_look_every"
+            # "climb_cell_carrot" "climb_blocked_turn_after" "climb_max_steps"
             # "search_frontier_weight" "search_glance_detect_prob"
             # "search_glance_floor" "search_glance_range_m" "search_max_steps"
             # "search_posterior" "search_proximity_floor" "search_proximity_len_m"

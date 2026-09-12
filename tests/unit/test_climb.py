@@ -280,3 +280,68 @@ def test_a_pursuit_in_flight_is_not_reissued(intrinsics):
     assert agent._try_floor_switch(frame, None, target_floor=UPPER) is True
     assert agent.stats.get("floor_switch_reissue_suppressed") == 1
     assert agent.stats.get("floor_switch_attempts", 0) == 0
+
+
+# ------------------------------------------------ v12: what the carrot aims at
+
+def _stamp(agent, cells_xy, kind="up"):
+    """Put detector stair evidence on the current floor's grid."""
+    layer = agent.floor_layer
+    from osg.mapping.stairs import StairDetector
+    if agent.stair_detector is None:
+        agent.stair_detector = StairDetector(resolution_m=layer.costmap.resolution, min_hits=1)
+    agent.stair_detector._ensure_grids(layer)
+    grid = layer.up_stair_hits if kind == "up" else layer.down_stair_hits
+    for xy in cells_xy:
+        r, c = layer.costmap.world_to_grid(np.asarray(xy, dtype=float))
+        grid[r, c] = 5
+
+
+def test_ascending_aims_at_the_farthest_stair_cell_in_reach(intrinsics):
+    """The top of the visible flight, not the far wall."""
+    agent = _agent()
+    agent.cfg.agent.climb_cell_carrot = True
+    _stamp(agent, [(1.5, 2.0), (2.0, 2.0), (2.5, 2.0), (9.0, 9.0)])
+    _pursuit(agent, goal_xy=(1.0, 2.0))
+    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
+    goal = agent._stair_cell_carrot(np.array([1.0, 2.0]))
+    assert goal is not None
+    assert abs(goal[0] - 2.5) < 0.06 and abs(goal[1] - 2.0) < 0.06, "the 9 m cell is out of reach"
+
+
+def test_descending_aims_at_the_nearest_lip(intrinsics):
+    agent = _agent()
+    agent.cfg.agent.climb_cell_carrot = True
+    agent.floors.estimator.current = UPPER
+    agent.floors.stack.current_id = UPPER
+    _stamp(agent, [(1.5, 2.0), (2.5, 2.0)], kind="down")
+    _pursuit(agent, goal_xy=(1.0, 2.0), target_y=0.0)
+    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
+    goal = agent._stair_cell_carrot(np.array([1.0, 2.0]))
+    assert goal is not None and abs(goal[0] - 1.5) < 0.06
+
+
+def test_without_stair_cells_the_depth_ray_is_the_fallback(intrinsics):
+    agent = _agent()
+    agent.cfg.agent.climb_cell_carrot = True
+    _pursuit(agent)
+    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
+    assert agent._stair_cell_carrot(np.array([1.0, 2.0])) is None
+
+
+def test_a_run_of_blocked_forwards_becomes_a_turn(intrinsics):
+    """Pressing into a wall 238 times gained 0.00 m. After N STOPs in a row the
+    agent re-aims."""
+    agent = _agent()
+    agent.cfg.agent.climb_blocked_turn_after = 3
+    agent.pointnav = SimpleNamespace(
+        stop_radius=0.9,
+        step=lambda goal, stop_radius=None: SimpleNamespace(action=None, reason="policy_stop"),
+    )
+    _pursuit(agent)
+    frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
+    agent._start_climb(frame)
+    actions = [agent._carrot_action(frame, np.array([1.0, 2.0])) for _ in range(3)]
+    assert actions[:2] == ["move_forward", "move_forward"]
+    assert actions[2] == "turn_left"
+    assert agent.stats.get("climb_blocked_turn") == 1

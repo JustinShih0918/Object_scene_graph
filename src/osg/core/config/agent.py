@@ -364,6 +364,15 @@ class AgentConfig:
     # look-down, and `down_look_every` defaults to 0, so on every ycb preset the
     # evidence was never accumulated and `StairDetector.extract` had no caller.
     stair_evidence_every_kf: bool = False
+    # Steer the climb at the detector's stamped stair cells (farthest within
+    # 3 m ascending, nearest descending) rather than at the farthest depth ray.
+    # The depth ray is ASCENT's carrot and works from ON the flight; ours starts
+    # within reach of a target that is often beside it -- on 00821 seven climbs
+    # pushed forward 238 times and rose 0.00 m.
+    climb_cell_carrot: bool = False
+    # After this many consecutive mover STOPs with no height gained, turn to
+    # re-aim instead of pressing into the wall again. 0 disables.
+    climb_blocked_turn_after: int = 0
     climb_carrot: bool = False
     climb_carrot_m: float = 0.8
     down_look_every: int = 0

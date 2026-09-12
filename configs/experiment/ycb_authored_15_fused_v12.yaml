@@ -1,0 +1,24 @@
+# @package _global_
+#
+# v11, and a carrot that knows where the treads are.
+#
+# v11 made the climb engage and end properly -- on 00821's cracker box seven
+# climbs started, each was remembered when it failed, and switch attempts fell
+# from 58 to 11 -- and every one of the seven pushed forward into a wall and
+# rose 0.00 m. ASCENT's depth-ray carrot works from ON the flight, where the
+# farthest visible point is up it; ours starts within reach of a stair target
+# that is often beside the flight rather than at its foot. On 00808 a descent
+# gained 1.94 m and ran out of its 80-step budget mid-storey.
+#
+# Three things. The carrot aims at the detector's stamped stair cells -- the
+# farthest within 3 m going up, the nearest going down -- with the depth ray as
+# the fallback when there are none. A run of mover STOPs with no height gained
+# turns to re-aim instead of pressing again. And the budget is sized for a
+# switchback storey.
+defaults:
+  - ycb_authored_15_fused_v11
+
+agent:
+  climb_cell_carrot: true
+  climb_blocked_turn_after: 4
+  climb_max_steps: 160
