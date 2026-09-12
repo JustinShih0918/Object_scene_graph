@@ -118,6 +118,13 @@ class FloorPolicy:
         self.pursuing = False
         self._portal_start_y = 0.0
         self._portal_step = 0
+        # Where the current pursuit is headed, and the places a pursuit has
+        # already failed from. Without the second, `find_portals` re-proposes the
+        # same patch every selection round for the rest of the episode: measured
+        # on 00821's cracker box, 55 switch attempts, the last 50 of them at one
+        # 28-cell patch at (1.19, -7.96), for 0.17 m of ascent in 500 steps.
+        self._pursuit_goal_xy = None
+        self._failed_portals: list = []
         self.estimator.reset()
         self.stack.reset()
 
@@ -280,6 +287,29 @@ class FloorPolicy:
     def end_pursuit(self, reason: str) -> None:
         self.pursuing = False
         self.stats[f"portal_end_{reason}"] = self.stats.get(f"portal_end_{reason}", 0) + 1
+        # A pursuit that ended without climbing is evidence about that PLACE, not
+        # just a statistic. `find_portals` is recomputed from scratch every round
+        # and has no memory, so without recording the failure the same patch is
+        # proposed again immediately -- which is exactly what 55 attempts at one
+        # 28-cell patch looked like.
+        if (
+            reason in ("no_vertical_progress", "deadline")
+            and self._pursuit_goal_xy is not None
+            and bool(getattr(self.cfg.floor, "portal_failure_memory", False))
+        ):
+            self._failed_portals.append(np.asarray(self._pursuit_goal_xy, dtype=float))
+            self.stats["portal_failures_remembered"] = len(self._failed_portals)
+        self._pursuit_goal_xy = None
+
+    def _portal_failed_here(self, xy) -> bool:
+        """Has a pursuit already failed from this place?"""
+        if not self._failed_portals:
+            return False
+        radius = float(getattr(self.cfg.floor, "portal_failure_radius_m", 1.5))
+        here = np.asarray(xy, dtype=float)
+        return any(
+            float(np.linalg.norm(here - bad)) <= radius for bad in self._failed_portals
+        )
 
     def _remembered_stair(self, target_floor: Optional[int]):
         """A staircase the prior map already walked, as (goal_xy, other_floor).
@@ -370,6 +400,14 @@ class FloorPolicy:
             min_cells=self.cfg.floor.portal_min_cells,
         )
         self.stats["portals_seen"] = max(self.stats.get("portals_seen", 0), len(portals))
+        if bool(getattr(self.cfg.floor, "portal_failure_memory", False)):
+            kept = [p for p in portals if not self._portal_failed_here(p.centroid_xy)]
+            if len(kept) != len(portals):
+                self.stats["portals_skipped_after_failure"] = (
+                    self.stats.get("portals_skipped_after_failure", 0)
+                    + (len(portals) - len(kept))
+                )
+            portals = kept
         remembered = (
             self._remembered_stair(target_floor)
             if bool(getattr(self.cfg.floor, "use_prior_stairs", False)) else None
@@ -397,10 +435,6 @@ class FloorPolicy:
             # cross-floor episodes, 4 saw no portal and never attempted a
             # switch, and across the run 405 storey requests produced 12
             # attempts.
-            # this is the usual answer: of 11 cross-floor episodes, 4 saw no
-            # portal at all and never attempted a switch, and across the run 405
-            # storey requests produced 12 attempts.
-            #
             # But the agent is not ignorant of the staircase -- the prior map
             # RECORDED the one pass 1 walked, in `connectivity`, and `apply_map`
             # restores it into `stack.stair_edges`. Nothing ever read it back.
@@ -418,6 +452,7 @@ class FloorPolicy:
                 )
                 return None
             self.pursuing = True
+            self._pursuit_goal_xy = np.asarray(goal_xy, dtype=float).copy()
             self._portal_start_y = float(frame.camera_position[1])
             self._portal_step = step
             self.switch_policy.note_switch(step)
@@ -489,6 +524,7 @@ class FloorPolicy:
         # frontier down there and walks the agent back down. Measured: three
         # episodes climbed ~1.6 m and turned around exactly this way.
         self.pursuing = True
+        self._pursuit_goal_xy = portal.centroid_xy.copy()
         self._portal_start_y = float(frame.camera_position[1])
         self._portal_step = step
         self.switch_policy.note_switch(step)

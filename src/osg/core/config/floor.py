@@ -120,6 +120,14 @@ class FloorConfig:
     # reached: 3 of 7 cross-floor episodes never made one attempt. Every timing
     # guard still applies.
     prior_stairs_override_gate: bool = False
+    # Remember where a portal pursuit failed, so the same patch is not proposed
+    # again. `find_portals` is recomputed from scratch every selection round and
+    # keeps no state, so a patch that did not lead anywhere is re-chosen
+    # immediately: 00821's cracker box made 55 switch attempts, the last 50 at
+    # one 28-cell patch, for 0.17 m of ascent in 500 steps.
+    portal_failure_memory: bool = False
+    # How close counts as the same failed place.
+    portal_failure_radius_m: float = 1.5
     use_target_evidence: bool = True
     # Earliest step the evidence rule may fire (the geometric no_switch_before
     # still guards the geometry-only path).

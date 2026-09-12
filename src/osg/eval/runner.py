@@ -100,6 +100,7 @@ def _algorithm_fingerprint(cfg) -> dict:
         "prefer_prior_stairs": bool(getattr(cfg.floor, "prefer_prior_stairs", False)),
         "prior_stairs_override_gate": bool(
             getattr(cfg.floor, "prior_stairs_override_gate", False)),
+        "portal_failure_memory": bool(getattr(cfg.floor, "portal_failure_memory", False)),
     })
     return out
 
@@ -155,7 +156,7 @@ def run_eval(cfg) -> dict:
             # "search_surface_when_floor_unreachable"
             # "floor_mass_rule" "floor_mass_margin"
             # "cross_floor" "floor_stairs" "use_prior_stairs" "prefer_prior_stairs"
-            # "prior_stairs_override_gate"
+            # "prior_stairs_override_gate" "portal_failure_memory"
             # "search_frontier_weight" "search_glance_detect_prob"
             # "search_glance_floor" "search_glance_range_m" "search_max_steps"
             # "search_posterior" "search_proximity_floor" "search_proximity_len_m"

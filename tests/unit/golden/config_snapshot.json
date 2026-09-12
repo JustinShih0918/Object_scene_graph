@@ -302,6 +302,8 @@
   "floor.per_floor_costmap": false,
   "floor.point_cloud_peaks": false,
   "floor.portal_deadline_steps": 120,
+  "floor.portal_failure_memory": false,
+  "floor.portal_failure_radius_m": 1.5,
   "floor.portal_grace_steps": 100,
   "floor.portal_max_delta_m": 4.0,
   "floor.portal_min_cells": 20,
