@@ -44,6 +44,10 @@ class FloorLayer:
     room_labels: Optional[np.ndarray] = None
     entry_xy: Optional[np.ndarray] = None  # where the agent first arrived
     first_step: int = 0
+    # The step of the most recent ARRIVAL on this storey. `first_step` is when
+    # the layer was created, which for a floor restored from a prior map is 0 --
+    # so "steps on this floor" read 347 the moment the agent got there.
+    arrived_step: int = 0
     floor_y: float = 0.0
     planner: object = None
     value_map: object = None
@@ -163,6 +167,7 @@ class FloorStack:
         )
         self.current_id = fid
         layer.visits += 1
+        layer.arrived_step = int(step)
         return True
 
     def set_height(self, floor_key: int, floor_y: float) -> None:

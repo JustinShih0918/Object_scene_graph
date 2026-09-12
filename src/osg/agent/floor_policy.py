@@ -369,7 +369,10 @@ class FloorPolicy:
             scene_graph, self.stack.current_id, target, presence_of=presence_of,
         )
         directed = target_floor is not None
-        steps_here = step - self.stack.current.first_step
+        # Since ARRIVAL, not since the layer was created: a floor restored from
+        # the prior map has first_step 0, which made a 33-step-old arrival look
+        # like 347 steps of searching and let every dwell guard through.
+        steps_here = step - int(getattr(self.stack.current, "arrived_step", self.stack.current.first_step))
         if not directed and not self.switch_policy.may_switch(
             step, best_path_cost, evidence=evidence, n_objects=n_objects,
             steps_on_floor=steps_here,

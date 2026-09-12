@@ -101,3 +101,17 @@ def test_a_floor_just_reached_is_not_left_for_having_no_map_yet():
     assert not dwell.may_switch(300, best_path_cost=None, steps_on_floor=33)
     # Having looked for the same dwell the episode start gets, it may leave.
     assert dwell.may_switch(340, best_path_cost=None, steps_on_floor=86)
+
+
+def test_steps_on_a_floor_count_from_arrival_not_from_the_prior_map():
+    """A storey restored from the prior map has first_step 0. Under v14 the
+    agent reached the object's floor at step 314 and its dwell guard read 347
+    steps on the floor at step 347, so it left at once, exactly as v13 had."""
+    from osg.mapping.floor_stack import FloorStack
+
+    stack = FloorStack(resolution_m=0.05)
+    stack.layer(0, step=0); stack.layer(1, step=0)   # both "from the map"
+    stack.current_id = 1
+    stack.set_current(0, step=314)
+    assert stack.current.first_step == 0
+    assert stack.current.arrived_step == 314
