@@ -254,3 +254,29 @@ def test_an_undirected_pursuit_takes_a_down_flight_downward():
         reachable_fn=None, target_floor=None, stair_xyz=[(np.array([2.0, 2.0]), "down")],
     )
     assert goal is not None and goal.target_y == -2.9
+
+
+# --------------------------------------------- the two v9 defects, pinned
+
+def test_the_reach_is_never_inside_the_movers_own_stop_radius(intrinsics):
+    """PointNav stops at 0.9 m and will not close further. Measured on 00821:
+    82 pursuits of one stair target, the agent 0.87 m from it, zero climbs."""
+    agent = _agent()
+    agent.cfg.agent.stair_reach_m = 0.6
+    agent.pointnav = SimpleNamespace(stop_radius=0.9)
+    _pursuit(agent, goal_xy=(1.0, 2.0))
+    assert agent._at_the_stairs(_frame(intrinsics, (1.87, 2.0), y=1.5))
+
+
+def test_a_pursuit_in_flight_is_not_reissued(intrinsics):
+    """Each re-issue reset the progress clock, so a pursuit never ended and
+    no failure was ever remembered."""
+    agent = _agent()
+    agent.cfg.floor.hold_pursuit = True
+    _pursuit(agent, goal_xy=(1.0, 2.0))
+    agent.floors._portal_step = agent.step_count
+    agent.floors._portal_start_y = 1.5
+    frame = _frame(intrinsics, (0.0, 0.0), y=1.5)
+    assert agent._try_floor_switch(frame, None, target_floor=UPPER) is True
+    assert agent.stats.get("floor_switch_reissue_suppressed") == 1
+    assert agent.stats.get("floor_switch_attempts", 0) == 0

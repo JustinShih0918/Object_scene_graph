@@ -1110,6 +1110,22 @@ class NavAgent:
         thing here is 12 m away" is exactly ASCENT's condition for reasoning
         about storeys.
         """
+        if (
+            bool(getattr(self.cfg.floor, "hold_pursuit", False))
+            and self.floors.pursuing
+            and self.floors.pursuit_ok(frame, self.step_count, self._goto_deadline)
+        ):
+            # A directed request comes back every selection round, and until
+            # now each one re-ran `try_switch`, which restarted the pursuit:
+            # `_portal_step` and `_portal_start_y` reset every 5 steps, so the
+            # grace window and the deadline never elapsed, `end_pursuit` never
+            # ran, no failure was ever remembered, and the same target was
+            # chosen again -- 55 times on base, 82 on v9. A pursuit that is
+            # still making its case is left to make it.
+            self.stats["floor_switch_reissue_suppressed"] = (
+                self.stats.get("floor_switch_reissue_suppressed", 0) + 1
+            )
+            return True
         target_floor = self._llm_floor_choice(target_floor)
         if target_floor is False:
             return False  # the model said stay; this round is settled
@@ -1511,6 +1527,12 @@ class NavAgent:
         if self._on_a_staircase(agent_xy):
             return True
         reach = float(getattr(self.cfg.agent, "stair_reach_m", 0.6))
+        if self.pointnav is not None:
+            # The PointNav policy stops at its own radius (0.9 m) and will not
+            # close further, so a reach inside that radius can never be met.
+            # Measured on 00821: 82 pursuits of one stair target, the agent
+            # standing 0.87 m from it at the end, zero climbs started.
+            reach = max(reach, float(getattr(self.pointnav, "stop_radius", 0.9)) + 0.2)
         return float(np.linalg.norm(agent_xy - self._goal_xy)) <= reach
 
     def _start_climb(self, frame: FrameData) -> None:

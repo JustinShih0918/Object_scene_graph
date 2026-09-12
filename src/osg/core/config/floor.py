@@ -132,6 +132,11 @@ class FloorConfig:
     # portal. Measured on 00821, the portal the agent chased 55 times sat about
     # 10 m from the flight the navmesh uses.
     climb_targets: str = "portals"
+    # Do not re-issue a floor pursuit that is still in flight. A directed
+    # request recurs every selection round and each one restarted the pursuit,
+    # resetting its progress clock, so a pursuit never ended, no failure was
+    # ever remembered and the same target was chosen 55-82 times.
+    hold_pursuit: bool = False
     # How close counts as the same failed place.
     portal_failure_radius_m: float = 1.5
     use_target_evidence: bool = True

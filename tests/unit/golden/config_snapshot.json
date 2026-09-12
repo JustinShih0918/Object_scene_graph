@@ -293,6 +293,7 @@
   "floor.evidence_patience_steps": 120,
   "floor.freeze_in_climb": false,
   "floor.freeze_on_stairs": false,
+  "floor.hold_pursuit": false,
   "floor.level_tol_m": 0.35,
   "floor.merge_m": 0.6,
   "floor.min_dwell_steps": 6,
