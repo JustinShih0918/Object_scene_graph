@@ -22,10 +22,12 @@ to record "the mug is on *that* table" — and both the presence filter and the 
 posterior are defined relative to that relation. **Phase 0 adds
 `floor → room → container → object`.**
 
-Prior art is real and must be credited, not claimed: the filter is Rosen et al.'s
-persistence filter at object level; the search index is classical discrete search
-theory; Khronos and TemPest are close relatives. Novelty, if any, is the composition
-plus the measurement protocol.
+Prior art is real and must be credited, not claimed: the filter is a binary Bayes
+filter in log-odds, inspired by Rosen et al.'s persistence filter but without its
+survival-time channel; the search index is classical discrete search theory; Khronos
+and Toris & Chernova's temporal persistence modelling are close relatives. Novelty, if
+any, is the composition plus the measurement protocol. Verified references and the one
+phrasing this must not use are in "Prior art" at the end of this document.
 
 ---
 
@@ -2764,14 +2766,27 @@ Two concrete pieces:
 
 ## Prior art
 
-Nothing here is novel on its own and the write-up must say so. The presence filter is
-Rosen, Mason & Leonard's persistence filter (ICRA 2016) applied at object level; the
-temporal-model variant is Krajník's FreMEn; Khronos (Schmid et al. 2024) already builds a
-spatio-temporal metric-semantic map with absence detection. The search index is classical
-discrete search theory (Koopman; Stone 1975), and semantic-prior object search is
-Aydemir et al. (T-RO 2013) and Zeng et al.'s Semantic Linking Maps (ICRA 2020); the
-change log's ancestor is Toris & Chernova's TemPest. Data association is Bowman et al.
-(ICRA 2017). **These citations are from memory and must be verified before use.**
+Nothing here is novel on its own and the write-up must say so. Verified 2026-09-12;
+the entries below are checked against the published record, one open item flagged.
+
+| Our claim | Reference |
+|---|---|
+| presence filter, at object level | D. M. Rosen, J. Mason, J. J. Leonard, "Towards Lifelong Feature-Based Mapping in Semi-Static Environments", **ICRA 2016**, Stockholm, pp. 1063-1070. Authors' C++/Python implementation: `github.com/david-m-rosen/Persistence-Filter` |
+| temporal-model variant | T. Krajník, J. P. Fentanes, J. M. Santos, T. Duckett, "FreMEn: Frequency Map Enhancement for Long-Term Mobile Robot Autonomy in Changing Environments", **IEEE T-RO, 2017** (a journal, not a conference) |
+| spatio-temporal map with absence detection | L. Schmid, M. Abate, Y. Chang, L. Carlone, "Khronos: A Unified Approach for Spatio-Temporal Metric-Semantic SLAM in Dynamic Environments", **RSS 2024**, Delft. arXiv:2402.13817 |
+| search index | B. O. Koopman, *Search and Screening*, OEG report **1946** (Pergamon edition later); L. D. Stone, *Theory of Optimal Search*, Academic Press, **1975** (Lanchester Prize). The 1975 belongs to Stone; Koopman needs its own year |
+| semantic-prior object search | A. Aydemir, A. Pronobis, M. Göbelbecker, P. Jensfelt, "Active Visual Object Search in Unknown Environments Using Uncertain Semantics", **IEEE T-RO 29(4):986-1002, 2013** (four authors, not two) |
+| semantic-prior object search | Z. Zeng, A. Röfer, O. C. Jenkins, "Semantic Linking Maps for Active Visual Object Search", **ICRA 2020**. arXiv:2006.10807; extended abstract at IJCAI 2021 |
+| change log's ancestor | R. Toris, S. Chernova, "Temporal Persistence Modeling for Object Search", **ICRA 2017**, pp. 3215-3222. **Open item:** the paper is confirmed, but "TemPest" as the system's name is not -- check the paper before using that word |
+| data association | S. L. Bowman, N. Atanasov, K. Daniilidis, G. J. Pappas, "Probabilistic Data Association for Semantic SLAM", **ICRA 2017**, pp. 1722-1729. DOI 10.1109/ICRA.2017.7989203 |
+
+**One thing the write-up must not claim.** What ships is a binary Bayes filter in
+log-odds with a depth-derived observability gate. Rosen's contribution is the
+*survival-time* prior, and that channel -- "Channel 2 -- survival" above,
+`P <- P * 2^(-dt / t_half)` -- has no implementation in `objects/presence.py`: no
+half-life, no time decay. So the honest phrasing is "inspired by Rosen et al.'s
+persistence filter", not "Rosen et al.'s persistence filter applied at object
+level", unless the survival channel is actually built.
 
 What is arguably ours: object-level persistence filtering *inside* an abstract/concrete
 anchor split so it stays cheap; coupling a collapsed belief directly to a search

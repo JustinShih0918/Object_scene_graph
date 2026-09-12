@@ -186,3 +186,48 @@ def test_every_keyframe_bypasses_the_episode_gates_but_not_the_cap():
     assert a._region_active()
     a._region_admits = 2
     assert not a._region_active()
+
+
+# ------------------------------------------------------------ what a proposal may not touch
+
+def test_a_proposal_adds_a_view_but_no_evidence_and_no_best_detection():
+    layer = _layer()
+    layer.set_proposal_text(_unit(1, 0, 0))
+    layer.update(_frame(1), [_det("tin can", BOX, 0.28)])                       # loosened class
+    (t,) = layer.tracks()
+    ev, best, cam = t.evidence, t.best_score, t.best_cam_xy.copy()
+    layer.update(_frame(2), [_det("tin can", BOX, 0.5, "proposal", _unit(1, 0, 0))])
+    assert len(layer.tracks()) == 1 and t.n_obs == 2 and t.n_proposal_obs == 1
+    assert t.evidence == ev and t.best_score == best and np.allclose(t.best_cam_xy, cam)
+
+
+def test_a_proposal_only_track_starts_with_no_evidence():
+    layer = _layer()
+    layer.update(_frame(1), [_det("bowl", BOX, 0.5, "proposal", _unit(1, 0, 0))])
+    (t,) = layer.tracks()
+    assert t.evidence == 0.0 and t.best_score == 0.5      # the region is its best view
+    assert t.best_cam_xy is not None and t.best_bbox_px > 0
+    # a later naming takes the best view over; a later proposal does not
+    layer.update(_frame(2), [_det("bowl", BOX, 0.4)])
+    assert t.best_score == 0.4 and not t.proposal_only
+    layer.update(_frame(3), [_det("bowl", BOX, 0.9, "proposal", _unit(1, 0, 0))])
+    assert t.best_score == 0.4
+
+
+def test_the_proposal_sensor_answers_only_for_a_proposal_only_track():
+    from osg.agent.nav_agent import NavAgent
+
+    class Track:
+        def __init__(self, po): self.proposal_only = po
+
+    class Layer:
+        def __init__(self, tr): self.tr = tr
+        def get(self, i): return self.tr
+
+    a = NavAgent.__new__(NavAgent)
+    a._candidate_id = None; a.object_layer = Layer(Track(True))
+    assert not a._working_a_proposal_track()
+    a._candidate_id = 3
+    assert a._working_a_proposal_track()
+    a.object_layer = Layer(Track(False))
+    assert not a._working_a_proposal_track()

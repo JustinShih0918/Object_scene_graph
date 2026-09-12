@@ -196,6 +196,7 @@ class ObjectLayer:
             if obs is None:
                 self.funnel["obs_rejected"] += 1
                 continue
+            proposal = str(getattr(det, "source", "detector")) == "proposal"
             if track_id is None:
                 ell = Ellipsoid.init_from_detection(det, frame, rng=self._rng)
                 if ell is None:
@@ -206,7 +207,8 @@ class ObjectLayer:
                     id=self._next_id, label=det.label, ellipsoid=ell, first_cam_xy=cam_xy.copy(),
                     floor_key=int(floor_key), out_of_range=self._marginal(det, frame),
                 )
-                track.evidence += det.score  # first sighting: full weight
+                if not proposal:
+                    track.evidence += det.score  # first sighting: full weight
                 self._next_id += 1
                 self._tracks[track.id] = track
                 if self._in_disabled_region(track):
@@ -214,7 +216,8 @@ class ObjectLayer:
                 relink_needed = True  # visible immediately -- join the scene graph now
             else:
                 track = self._tracks[track_id]
-                track.evidence += det.score * self._view_diversity_weight(track, cam_xy)
+                if not proposal:
+                    track.evidence += det.score * self._view_diversity_weight(track, cam_xy)
                 if not self._marginal(det, frame):
                     track.out_of_range = False
             track.observations.append(obs)
@@ -224,21 +227,29 @@ class ObjectLayer:
                 )
                 if self.feature_memory is not None:
                     self.feature_memory.tag(track)
-            if str(getattr(det, "source", "detector")) == "proposal":
+            if proposal:
                 track.n_proposal_obs += 1
                 self.funnel["proposal_obs"] += 1
                 if self.proposal_text is not None:
                     track.proposal_sim = cosine(track.clip_ft, self.proposal_text)
-            if det.score > track.best_score:
-                track.best_score = det.score
-                track.best_crop = det.crop if det.crop is not None else det.crop_from(frame.rgb)
-                track.best_frame_rgb = frame.rgb  # shared by ref across same-frame tracks
-                track.best_bbox_xyxy = np.asarray(det.bbox_xyxy, dtype=float).copy()
-                x1, y1, x2, y2 = det.bbox_xyxy
-                track.best_bbox_px = float(max(0.0, x2 - x1) * max(0.0, y2 - y1))
-                # The pose this detection was made from is a proven
-                # "object visible from here" pose — the terminal stop target.
-                track.best_cam_xy = cam_xy.copy()
+                # A proposal is a view and a feature, nothing more: it does
+                # not add detector evidence and its constant score must not
+                # displace the best detection's crop or the pose it was made
+                # from -- that pose is the approach's terminal stop target,
+                # and `admit_score` beats every class the detector was
+                # loosened to 0.20 for.
+                # ...unless the proposal is all this track has: then the
+                # region IS its best view -- the crop the VLM will be shown,
+                # the size gate, and the pose an approach returns to.
+                if track.proposal_only and det.score > track.best_score:
+                    self._note_best_detection(track, det, frame, cam_xy)
+                self._accumulate_cloud(track, det, frame)
+                continue
+            # The first naming takes the best view over from a proposal
+            # outright: the proposal's constant score is not a confidence.
+            first_naming = track.n_obs - track.n_proposal_obs == 1
+            if det.score > track.best_score or first_naming:
+                self._note_best_detection(track, det, frame, cam_xy)
 
             self._accumulate_cloud(track, det, frame)
 
@@ -504,6 +515,18 @@ class ObjectLayer:
         else:
             out.sort(key=lambda t: (tier(t), -(t.best_score * t.presence.p)))
         return out
+
+    @staticmethod
+    def _note_best_detection(track: ObjectTrack, det: Detection, frame: FrameData, cam_xy: np.ndarray) -> None:
+        track.best_score = det.score
+        track.best_crop = det.crop if det.crop is not None else det.crop_from(frame.rgb)
+        track.best_frame_rgb = frame.rgb  # shared by ref across same-frame tracks
+        track.best_bbox_xyxy = np.asarray(det.bbox_xyxy, dtype=float).copy()
+        x1, y1, x2, y2 = det.bbox_xyxy
+        track.best_bbox_px = float(max(0.0, x2 - x1) * max(0.0, y2 - y1))
+        # The pose this detection was made from is a proven
+        # "object visible from here" pose -- the terminal stop target.
+        track.best_cam_xy = cam_xy.copy()
 
     @staticmethod
     def _bbox_px(det: Detection) -> float:

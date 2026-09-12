@@ -1114,7 +1114,25 @@ class NavAgent:
         ]
         if matches:
             return max(matches, key=lambda d: d.score)
+        # The fallthrough is for the track whose identity rests on appearance.
+        # This function also stops and steers every approach, ends the close
+        # look and gates the terminal stop, so a proposal answering it while
+        # the agent works a track the DETECTOR named lets a region on the
+        # wrong object do all of that. Measured with the stage on every
+        # keyframe: a named red plate approach stopped at 1.52 m on a region,
+        # a tin can scored a false stop at step 46 on its prior-map track.
+        # A proposal-only track gets the proposal sensor; a named one gets the
+        # detector, exactly as before the stage existed.
+        if not self._working_a_proposal_track():
+            return None
         return self._region_detection(frame)
+
+    def _working_a_proposal_track(self) -> bool:
+        cid = getattr(self, "_candidate_id", None)
+        if cid is None:
+            return False
+        track = self.object_layer.get(int(cid))
+        return bool(track is not None and getattr(track, "proposal_only", False))
 
     def _region_active(self) -> bool:
         """Is the proposal stage a fallback for THIS episode?
