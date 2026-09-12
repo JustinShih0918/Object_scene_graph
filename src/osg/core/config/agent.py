@@ -373,6 +373,9 @@ class AgentConfig:
     # the height layer. Keeps the goal ON the flight, which is what the PointNav
     # mover climbs (slowly). Falls through to the other carrots when the target
     # was not a flight.
+    # Carry a climb through a half-landing onto the next flight, instead of
+    # handing back to exploration part-way up a multi-flight staircase.
+    climb_relink_flights: bool = False
     climb_flight_carrot: bool = False
     climb_cell_carrot: bool = False
     # After this many consecutive mover STOPs with no height gained, turn to

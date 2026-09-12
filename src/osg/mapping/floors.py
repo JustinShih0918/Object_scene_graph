@@ -137,6 +137,8 @@ class FloorEstimator:
         self.capture_m = self.new_level_m / 2.0
 
         self._levels: Dict[int, float] = {}
+        # How often a new level was refused because the agent was on a flight.
+        self.suppressed_levels = 0
         self._samples: Dict[int, List[float]] = {}
         self._max_samples = 400
         self._next_id = 0
@@ -191,12 +193,21 @@ class FloorEstimator:
 
     # ----------------------------------------------------------------- update
 
-    def update(self, cam_y: float, step: int = 0, xy: Optional[Sequence[float]] = None) -> int:
+    def update(self, cam_y: float, step: int = 0, xy: Optional[Sequence[float]] = None,
+               on_flight: bool = False) -> int:
         """Feed one frame's camera height; returns the committed floor id.
 
         `xy` is the agent's ground-plane position. Optional, but without it the
         horizontal-run route to committing a level is unavailable and only
         `new_level_m` applies.
+
+        `on_flight` says the agent is standing on cells that belong to a
+        staircase. It suppresses the creation of a NEW level and nothing else:
+        returning to a floor the stack already knows is a real arrival and still
+        commits. A half-landing is off every known level and roomy enough to
+        walk 2.5 m across, so without this it becomes a storey of its own --
+        measured on 00808, a descent of 2.3 m out of 3.2 committed the landing
+        at y=0.946 as a floor, which ended the climb one flight short.
         """
         y = float(cam_y) - self.camera_height
 
@@ -262,6 +273,9 @@ class FloorEstimator:
         #   * enough horizontal room at this height that it cannot be a landing.
         far_enough = dist >= self.new_level_m
         roomy = self.min_horizontal_run_m > 0 and self._cand_run >= self.min_horizontal_run_m
+        if on_flight:
+            self.suppressed_levels += 1
+            return self.current
         if self._dwell >= self.min_dwell_steps and (far_enough or roomy):
             new_id = self._add_level(y)
             self.transitions.append((step, self.current, new_id))

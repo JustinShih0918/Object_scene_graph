@@ -89,3 +89,43 @@ def test_a_huge_sloped_region_is_capped():
 def test_nothing_without_a_height_layer():
     cm = Costmap2D(resolution=0.05, size_m=6.0, track_height=False)
     assert find_flights(cm, FLOOR_Y) == []
+
+
+# -------------------------------------------- not stopping on a half-landing
+
+def test_a_landing_does_not_become_a_storey_of_its_own():
+    """Measured on 00808: a descent of 2.3 m out of 3.2 committed the landing at
+    y=0.946 as a floor, which ended the climb one flight short. A landing is off
+    every known level and roomy enough to walk 2.5 m across, so the
+    horizontal-run route creates a level there."""
+    from osg.mapping.floors import FloorEstimator
+
+    def _walk(on_flight):
+        est = FloorEstimator(camera_height=0.88, new_level_m=1.8, level_tol_m=0.35,
+                             merge_m=0.6, min_dwell_steps=3, min_horizontal_run_m=2.5)
+        est.update(0.88 + 2.86, step=0, xy=[0.0, 0.0])          # upstairs, floor 0
+        for i in range(40):                                      # across a landing
+            est.update(0.88 + 0.95, step=1 + i, xy=[0.1 * i, 0.0], on_flight=on_flight)
+        return est
+
+    assert len(_walk(False).levels) == 2, "the landing became a floor"
+    held = _walk(True)
+    assert len(held.levels) == 1
+    assert held.suppressed_levels > 0
+
+
+def test_arriving_on_a_floor_the_stack_knows_still_commits():
+    """The suppression is about creating a NEW level. Reaching a storey the
+    agent has already stood on is a real arrival and must still register."""
+    from osg.mapping.floors import FloorEstimator
+
+    est = FloorEstimator(camera_height=0.88, new_level_m=1.8, level_tol_m=0.35,
+                         merge_m=0.6, min_dwell_steps=3, min_horizontal_run_m=2.5)
+    est.update(0.88 + 0.0, step=0, xy=[0.0, 0.0])
+    for i in range(30):                                # walk up to a second storey
+        est.update(0.88 + 2.9, step=1 + i, xy=[0.1 * i, 0.0])
+    assert len(est.levels) == 2
+    upstairs = est.current
+    for i in range(30):                                # come back down, on a flight
+        est.update(0.88 + 0.0, step=40 + i, xy=[0.0, 0.1 * i], on_flight=True)
+    assert est.current != upstairs, "returning to a known floor must still commit"

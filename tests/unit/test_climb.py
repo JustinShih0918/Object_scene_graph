@@ -396,3 +396,38 @@ def test_without_a_flight_the_carrot_declines(intrinsics):
     frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
     agent._start_climb(frame)
     assert agent._flight_carrot(frame, np.array([1.0, 2.0])) is None
+
+
+# ------------------------------------------- v16: through the half-landing
+
+def test_the_climb_picks_up_the_next_flight_from_a_landing(intrinsics):
+    """One flight is not one storey. When the treads run out part-way the climb
+    takes the next flight rather than handing back 2.3 m into a 3.2 m descent."""
+    from osg.mapping.stairs import Flight
+
+    agent = _agent()
+    agent.cfg.agent.climb_relink_flights = True
+    agent.cfg.agent.climb_flight_carrot = True
+    agent.floors.estimator.current = UPPER
+    agent.floors.stack.current_id = UPPER
+    _pursuit(agent, goal_xy=(1.0, 2.0), target_y=0.0)
+    frame = _frame(intrinsics, (1.0, 2.0), y=4.4)
+    agent._start_climb(frame)
+
+    # Its only tread is ABOVE the agent: descending, there is nothing ahead on
+    # this flight, which is what standing on the landing at its foot looks like.
+    finished = Flight(kind="down", cells_rc=np.array([[10, 10]]), heights=np.array([4.0]),
+                      foot_xy=np.array([9.0, 9.0]), top_xy=np.array([9.0, 9.0]), span_m=0.6)
+    nxt = Flight(kind="down", cells_rc=np.array([[20, 20]]), heights=np.array([1.0]),
+                 foot_xy=np.array([1.4, 2.0]), top_xy=np.array([2.0, 2.0]), span_m=0.6)
+    agent.floors.pursuit_flight = finished
+    agent._relink_flight = lambda f, xy: (setattr(agent.floors, "pursuit_flight", nxt), True)[1]
+
+    agent._do_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
+    assert agent.floors.pursuit_flight is nxt
+    assert agent.stats.get("climb_relinked") == 1
+
+
+def test_relinking_is_off_by_default(intrinsics):
+    agent = _agent()
+    assert not bool(agent.cfg.agent.climb_relink_flights)

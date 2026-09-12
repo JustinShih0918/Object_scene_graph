@@ -149,6 +149,16 @@ class FloorConfig:
     # arrived downstairs at step 314, left at 347, back upstairs by 418. Off by
     # default because it changes when an agent may leave a storey.
     dwell_on_arrival: bool = False
+    # Refuse to create a NEW level while the agent is standing on a staircase.
+    # A half-landing is off every known level and roomy enough to walk 2.5 m
+    # across, so the horizontal-run route makes it a storey of its own and the
+    # climb ends there: measured on 00808, a descent of 2.3 m out of 3.2
+    # committed the landing at y=0.946 as a floor. Arriving on a floor the stack
+    # already knows is unaffected.
+    no_level_on_flight: bool = False
+    # A continuation flight, found from a landing, is half a storey rather than
+    # a whole one; `find_flights` is asked for a smaller span when relinking.
+    flight_relink_span_m: float = 0.5
     # How close counts as the same failed place.
     portal_failure_radius_m: float = 1.5
     use_target_evidence: bool = True

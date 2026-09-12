@@ -1551,6 +1551,7 @@ class NavAgent:
         self._climb_max_dy = 0.0
         self._climb_pitched = False
         self._climb_blocked_run = 0
+        self._climb_relink_step = -100
         self._carrot_xy = None
         self._carrot_disable_end = False
         self._climb_last_dist = None
@@ -1616,6 +1617,20 @@ class NavAgent:
         if self._carrot_stalled(agent_xy) and dy < 0.3:
             self._end_climb(False, "stalled")
             return "look_up" if self._climb_pitched else TURN_ACTION
+        # One flight is not one storey. When the treads run out part-way -- on a
+        # half-landing -- look for the next flight from here and carry on, rather
+        # than handing back to exploration 2.3 m into a 3.2 m descent.
+        if (
+            bool(getattr(self.cfg.agent, "climb_relink_flights", False))
+            and self._flight_carrot(frame, agent_xy) is None
+            and self.step_count - self._climb_relink_step >= 10
+        ):
+            self._climb_relink_step = self.step_count
+            if self._relink_flight(frame, agent_xy):
+                self.stats["climb_relinked"] = self.stats.get("climb_relinked", 0) + 1
+                self._carrot_xy = None
+                self._climb_last_dist = None
+                self._climb_paused_steps = 0
         # Descending: tilt the camera down once so the carrot sees the treads
         # below rather than the far wall (ASCENT's phase 2, `:1120-1127`).
         if self._climb_direction < 0 and not self._climb_pitched:
@@ -1692,6 +1707,39 @@ class NavAgent:
         pick = int(np.argmax(d)) if self._climb_direction >= 0 else int(np.argmin(d))
         self.stats["climb_cell_carrot"] = self.stats.get("climb_cell_carrot", 0) + 1
         return xy[pick]
+
+    def _relink_flight(self, frame: FrameData, agent_xy: np.ndarray) -> bool:
+        """Pick up the next flight of a multi-flight staircase.
+
+        Re-reads the height layer from where the agent is standing and takes the
+        nearest flight going the same way whose foot is within a few metres --
+        the next flight down from a half-landing. Returns whether one was found.
+        """
+        from ..mapping.stairs import find_flights
+
+        floor_y = float(self.floors.height_of(self.floors.current_id))
+        flights = find_flights(
+            self.costmap, floor_y,
+            new_level_m=float(self.cfg.floor.new_level_m),
+            min_span_m=float(getattr(self.cfg.floor, "flight_relink_span_m", 0.5)),
+            min_cells=int(getattr(self.cfg.floor, "flight_min_cells", 150)),
+        )
+        want = "up" if self._climb_direction >= 0 else "down"
+        current = getattr(self.floors, "pursuit_flight", None)
+        near = []
+        for f in flights:
+            if f.kind != want:
+                continue
+            if float(np.linalg.norm(f.foot_xy - agent_xy)) > 4.0:
+                continue
+            if current is not None and float(np.linalg.norm(f.foot_xy - current.foot_xy)) < 0.5:
+                continue  # the flight just finished
+            near.append(f)
+        if not near:
+            return False
+        self.floors.pursuit_flight = min(
+            near, key=lambda f: float(np.linalg.norm(f.foot_xy - agent_xy)))
+        return True
 
     def _flight_carrot(self, frame: FrameData, agent_xy: np.ndarray) -> Optional[np.ndarray]:
         """The next tread. Keeps the goal ON the flight, which is what the

@@ -189,10 +189,18 @@ class FloorPolicy:
             self._floor_y = float(frame.camera_position[1] - self.cfg.agent.camera_height)
 
         prev_floor = self.estimator.current
+        agent_xy = frame.camera_position[list(PLANE)]
+        on_flight = bool(
+            getattr(self.cfg.floor, "no_level_on_flight", False)
+        ) and self.on_flight_cells(agent_xy)
+        if on_flight:
+            self.stats["steps_on_a_flight"] = self.stats.get("steps_on_a_flight", 0) + 1
         floor_id = self.estimator.update(
             float(frame.camera_position[1]), step,
-            xy=frame.camera_position[list(PLANE)],
+            xy=agent_xy, on_flight=on_flight,
         )
+        self.stats["levels_suppressed_on_flight"] = int(
+            getattr(self.estimator, "suppressed_levels", 0))
         # Key is persistent; order is derived from these heights on demand.
         # Discovering a basement therefore changes order without renumbering
         # any track, room, cache entry, or portal edge.
@@ -315,6 +323,25 @@ class FloorPolicy:
         return any(
             float(np.linalg.norm(here - bad)) <= radius for bad in self._failed_portals
         )
+
+    def on_flight_cells(self, agent_xy) -> bool:
+        """Is the agent standing on a staircase?
+
+        The flight this pursuit chose if there is one, else any cell the stair
+        mask has marked traversable on this storey. Used to refuse creating a
+        new level mid-climb; a half-landing is otherwise roomy enough to become
+        a storey of its own.
+        """
+        rc = self.costmap.world_to_grid(np.asarray(agent_xy, dtype=float))
+        if not self.costmap.in_bounds(rc):
+            return False
+        flight = self.pursuit_flight
+        if flight is not None and flight.n_cells:
+            radius = max(1, int(round(0.5 / self.costmap.resolution)))
+            if np.any(np.all(np.abs(flight.cells_rc - rc) <= radius, axis=1)):
+                return True
+        mask = self.costmap.stair_mask
+        return bool(mask is not None and mask[rc[0], rc[1]])
 
     def _remembered_stair(self, target_floor: Optional[int]):
         """A staircase the prior map already walked, as (goal_xy, other_floor).

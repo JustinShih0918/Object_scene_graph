@@ -104,6 +104,7 @@ def _algorithm_fingerprint(cfg) -> dict:
         "climb_targets": str(getattr(cfg.floor, "climb_targets", "portals")),
         "hold_pursuit": bool(getattr(cfg.floor, "hold_pursuit", False)),
         "dwell_on_arrival": bool(getattr(cfg.floor, "dwell_on_arrival", False)),
+        "no_level_on_flight": bool(getattr(cfg.floor, "no_level_on_flight", False)),
     })
     return out
 
@@ -159,7 +160,8 @@ def run_eval(cfg) -> dict:
             # "search_surface_when_floor_unreachable"
             # "floor_mass_rule" "floor_mass_margin"
             # "cross_floor" "floor_stairs" "use_prior_stairs" "prefer_prior_stairs"
-            # "prior_stairs_override_gate" "portal_failure_memory" "climb_targets" "hold_pursuit" "dwell_on_arrival"
+            # "prior_stairs_override_gate" "portal_failure_memory" "climb_targets" "hold_pursuit" "dwell_on_arrival" "no_level_on_flight"
+            # "climb_relink_flights" "flight_relink_span_m"
             # "climb_enabled" "stair_evidence_every_kf" "down_look_every"
             # "climb_cell_carrot" "climb_blocked_turn_after" "climb_max_steps"
             # "climb_flight_carrot" "flight_min_span_m" "flight_min_cells"
