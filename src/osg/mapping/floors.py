@@ -225,7 +225,14 @@ class FloorEstimator:
         # capture radius converges to the modal standing height -- the flat
         # floor, where the agent spends nearly all its steps -- rather than the
         # handful of treads above it.
-        self._refine(y)
+        # Not while climbing. `_refine` folds the samples nearest a level into
+        # its height estimate, and a half-landing is near enough to the floor
+        # below to be folded in: measured on 00808, a descent that stopped on a
+        # landing 0.89 m above floor 0 dragged floor 0's estimate up to meet it,
+        # so the agent "arrived" on a storey it was not standing on and the
+        # climb ended one flight short. Treads and landings are not floor.
+        if not on_flight:
+            self._refine(y)
 
         fid, dist = self._nearest(y)
         self.on_stairs = dist > self.level_tol_m

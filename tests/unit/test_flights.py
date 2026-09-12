@@ -129,3 +129,26 @@ def test_arriving_on_a_floor_the_stack_knows_still_commits():
     for i in range(30):                                # come back down, on a flight
         est.update(0.88 + 0.0, step=40 + i, xy=[0.0, 0.1 * i], on_flight=True)
     assert est.current != upstairs, "returning to a known floor must still commit"
+
+
+def test_a_landing_is_not_folded_into_the_floor_below():
+    """`_refine` folds the samples nearest a level into its height. A landing is
+    near enough to the floor below to be folded in: measured on 00808, a descent
+    that stopped 0.89 m above floor 0 dragged floor 0's estimate up to meet it,
+    so the agent "arrived" on a storey it was not standing on."""
+    from osg.mapping.floors import FloorEstimator
+
+    def _descend(on_flight):
+        est = FloorEstimator(camera_height=0.88, new_level_m=1.8, level_tol_m=0.35,
+                             merge_m=0.6, min_dwell_steps=3, min_horizontal_run_m=2.5)
+        est.update(0.88 + 0.06, step=0, xy=[0.0, 0.0])      # floor 0, at 0.06
+        for i in range(20):
+            est.update(0.88 + 2.86, step=1 + i, xy=[0.1 * i, 0.0])   # up to floor 1
+        for i in range(40):                                  # stop on a landing
+            est.update(0.88 + 0.95, step=40 + i, xy=[0.1 * i, 1.0], on_flight=on_flight)
+        return est
+
+    drifted = _descend(False).levels[0]
+    held = _descend(True).levels[0]
+    assert held == pytest.approx(0.06, abs=0.05), "floor 0 moved to meet the landing"
+    assert abs(drifted - 0.06) > abs(held - 0.06)
