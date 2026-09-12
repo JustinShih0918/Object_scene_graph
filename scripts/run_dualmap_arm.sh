@@ -54,6 +54,7 @@ for scene in 00829-QaLdnwvtxbs 00848-ziup5kvtCCR 00880-Nfvxx8J5NCo; do
     chunk=$(IFS=,; echo "${arr[*]:k:CHUNK}")
     while [ "$(jobs_running)" -ge "$MAX_PARALLEL" ]; do sleep 20; done
     d="$OUT/$scene/${TAG}_$k"
+    mkdir -p "$d"
     echo "[start] $ARM $scene chunk $k/$n $(date +%H:%M:%S)"
     python scripts/run_eval.py "+experiment=${PRESET_PREFIX}${ARM}" \
       "dualmap.scenes=[$scene]" 'dualmap.conditions=[in_anchor,cross_anchor]' \
