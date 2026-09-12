@@ -108,3 +108,81 @@ portal or a better prior. Three candidates, in the order their evidence supports
 Until one of those exists, cross-floor numbers on the sensor-only line measure
 an agent that cannot ascend on purpose, and no work in the floor decision layer
 can register.
+
+## The climb, built and measured
+
+Everything above was diagnosis. This is what happened when the sensor-only
+climb was actually built.
+
+**What was there.** `State.CLIMB` was in the enum; `_carrot_action`,
+`_on_a_staircase` and `_left_the_stairs` were on `NavAgent`; the `ascent` policy
+dispatched to a `_do_climb` that was never defined; nothing assigned the state
+or any attribute it read. `StairDetector.accumulate` ran only on the one frame
+of a periodic look-down, `down_look_every` defaulted to 0 so it never ran on any
+YCB preset, and `StairDetector.extract` had no caller at all. In short, no
+sensor-only climb existed, and no stair evidence was ever collected.
+
+**What was built**, one arm at a time, each default-off:
+
+| arm | adds |
+|---|---|
+| v9 | `agent.climb_enabled`: a pursuit that reaches the stairs becomes a climb (ASCENT's depth-ray carrot, tilt-down on descent, exit on committed storey / budget / stall, failure → portal memory). `floor.climb_targets: stairs_first`. |
+| v10 | stair evidence on every keyframe; look down every 30 steps; extracted up/down regions offered as direction-aware targets |
+| v11 | entry reach outside the mover's own 0.9 m stop radius; `floor.hold_pursuit` so a pursuit in flight is not re-issued every round (which is also what base's 55 attempts were) |
+| v12 | carrot aimed at the detector's stamped stair cells; a turn after a run of blocked forwards; budget sized for a switchback |
+
+**What it did**, six scenes, twelve genuine storey changes, paired:
+
+| | base | navmesh | v10 | v11 | v12 |
+|---|---:|---:|---:|---:|---:|
+| success, cross-floor | 0 | 2 | 0 | 0 | 0 |
+| reached the object's floor | 1 | 1 | 0 | 0 | 0 |
+| climbs started | 0 | 0 | 4 | 11 | 11 |
+| climbs that committed a storey | 0 | 0 | 0 | 0 | 0 |
+| most height gained inside a climb | 0 | 0 | 0.34 m | 0.34 m | 0.34 m |
+| floor switch attempts | 76 | 9 | 96 | 18 | 15 |
+| look-downs | 0 | 0 | 87 | 83 | 69 |
+| stair regions offered | 0 | 0 | 17 | 18 | 21 |
+
+Every mechanism is live and measurable. Eleven climbs engaged, each ended
+properly and was remembered, switch attempts fell from 76 to 15, the agent
+looked down 69 times and was offered 21 stair regions. And the best any climb
+managed was 0.34 m.
+
+**Why it does not ascend.** On 00821's cracker box, where the navmesh climbs
+the 3.6 m storey in one attempt, the stair target the detector produced sat at
+(2.98, 2.62) against a true foot near (0.37, 2.0): about 2.7 m to the side of
+the flight. v12's cell carrot then spent 386 steps steering at stamped cells
+around that wrong position, with no forced-forwards logged, so the mover was
+moving and simply never on a tread. The detector's `stairs` mask, seen from
+below, stamps cells under the upper flight rather than at its foot. The depth
+ray (v9-v11) has the same problem from a different direction: it works from ON
+the flight, and the agent is never on it.
+
+**The other half never opens.** On 00878's tin can, where the navmesh climbs
+3.0 m and the prior map records two traversals, no sensor-only arm made a single
+switch attempt. The posterior asked once, the model answered "stay", and that
+settled it; the geometric gate stayed closed; and the gate override never ran
+because the agent spent almost all 500 steps in approach and surface states,
+where the storey question is never asked. The commit table says why: on all
+twelve episodes the first commit is to a live detection of the target on the
+start floor, a false positive on the wrong storey, and the prior anchor is
+chosen in three.
+
+**What is worth keeping.** v11's plumbing: reach outside the mover's radius,
+`hold_pursuit`, portal failure memory, evidence every keyframe, look-down. Those
+are correct regardless of the carrot and they cut the thrash from 76 attempts
+to 15. Leave `climb_targets: stairs_first` and `climb_cell_carrot` off until the
+stair evidence can be shown to land at a foot: on the two scenes checked it
+does not.
+
+**What would actually climb.** The navmesh arm shows the rest of the pipeline
+can reach the floor once a mover can take stairs. The sensor-only mover cannot:
+a frozen PointNav policy trained on flat point-goals treats a flight as a wall,
+and the only thing that has moved an agent up one here is the depth carrot for
+0.34 m. Three options, in order of evidence: a local planner on a costmap that
+represents the flight as traversable (the stair cells are already detected;
+they are masked out, not used); a stair-following controller that keeps the
+agent square to the risers and pushes; or stair evidence taken from the height
+layer's rising-tread signature rather than from the detector's mask, so the
+target is the foot and not the balustrade.
