@@ -192,6 +192,10 @@ class CandidatePolicy:
             "proposal_commits": bool(getattr(rp, "commits", True)),
             "proposal_min_obs": int(getattr(rp, "commit_min_obs", 1)),
             "proposal_tau": float(getattr(rp, "commit_tau", -1.0)),
+            "proposal_tau_by_class": {
+                str(k).lower().replace(" ", "_"): float(v)
+                for k, v in dict(getattr(rp, "commit_tau_by_class", {}) or {}).items()
+            },
         }
 
     def _appearance_pick(self):

@@ -340,6 +340,7 @@
   "region_proposal.checkpoint": "",
   "region_proposal.commit_min_obs": 1,
   "region_proposal.commit_tau": -1.0,
+  "region_proposal.commit_tau_by_class": {},
   "region_proposal.commits": true,
   "region_proposal.conf": 0.25,
   "region_proposal.device": "cuda",

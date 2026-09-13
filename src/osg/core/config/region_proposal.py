@@ -1,7 +1,7 @@
 """Class-agnostic region proposal: find the object the detector will not name."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -86,3 +86,11 @@ class RegionProposalConfig:
     commits: bool = True
     commit_min_obs: int = 1
     commit_tau: float = -1.0
+    # A per-class bar over `commit_tau`, keyed by the normalised target label
+    # ("bowl", "red_plate", "mug"). Calibrated OFF-RUN, on the offline
+    # false-admission probe (docs/REGION_FALSE_ADMISSION.md): the classes whose
+    # text vector admits on more than 15% of object-free frames -- bowl 42%,
+    # plate 26%, mug 16% -- are the classes whose phantoms cleared 0.28 on the
+    # full 107 (13 of 15), while every true track of theirs that scored sat
+    # at or above 0.30. Empty means one bar for every class.
+    commit_tau_by_class: dict = field(default_factory=dict)
