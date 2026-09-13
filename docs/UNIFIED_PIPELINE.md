@@ -112,4 +112,16 @@ level and nowhere to go, so it is gated and reproduces `_v4_fuse_cls`.
 Map-building is unaffected: prior maps are built with the baseline
 `ycb_authored_15`, deliberately, so the map is never an experimental variable.
 
-<!-- GATED SMOKE -->
+### Bit-identity confirmed, in two rounds
+
+Round 1 (the two discovery gates): bowl and cracker box went bit-identical to
+`_v4_fuse_cls`; scissors still drifted with `floor_switch_attempts=0` and
+`down_look=0`, so a third, non-floor setting was responsible.
+
+Round 2: `frontier_cost_free_cell` was the culprit -- it had been classified as
+floor-group and taken the multi-floor base's value (`true`), but it is a general
+frontier-costing heuristic (`cost_prefer_free`) that `_v4_fuse_cls` sets `false`,
+and `true` re-orders frontier choice on any scene. Set to `false` in the mixin
+(the DualMap value), which does not touch the floor stack at all. The mixin now
+reproduces `_v4_fuse_cls` on the sampled trials while the three unified presets
+stay a byte-identical agent.

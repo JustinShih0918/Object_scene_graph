@@ -37,7 +37,10 @@ exploration:
   floor_mass_margin: 1.15
   floor_mass_rule: mean
   floor_min_steps: 60
-  frontier_cost_free_cell: true
+  # DualMap's value (fuse_cls), not the multi-floor base's: it is a general
+  # frontier-costing heuristic, not a floor mechanism, and true perturbs
+  # single-floor exploration (measured: broke scissors' bit-identity).
+  frontier_cost_free_cell: false
   search_floor_requires_anchor_test: true
   search_surface_when_floor_unreachable: true
   search_proximity_len_m: 100.0
