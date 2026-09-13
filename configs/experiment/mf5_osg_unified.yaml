@@ -1,0 +1,22 @@
+# @package _global_
+#
+# The unified pipeline on the five-scene multi-floor dynamic benchmark
+# (outputs/dualmap_multifloor: 00800, 00808, 00821, 00873, 00878; 26 genuine
+# cross-floor relocations). Same agent as dualmap_osg_unified -- only the
+# dataset differs.
+#
+# Build schema-v2 maps with ycb.map_out over the STATIC layout first, then run
+# the moved layouts with ycb.map_in.
+defaults:
+  - ycb_dynamic_multifloor
+  - osg_unified_pipeline
+  - _self_
+
+ycb:
+  layout_root: /datasets/habitat-data-collector/outputs/dualmap_multifloor
+  scenes:
+    - 00800-TEEsavR23oF
+    - 00808-y9hTuugGdiq
+    - 00821-eF36g7L6Z9M
+    - 00873-bxsVRursffK
+    - 00878-XB4GS9ShBRE

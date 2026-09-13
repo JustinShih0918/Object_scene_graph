@@ -1,0 +1,92 @@
+# The unified pipeline: one agent, three datasets
+
+The fusion branch had grown two arms that were never the same agent:
+
+* `dualmap_protocol_osg_sensor_v4_fuse_cls` — the DualMap released benchmark,
+  **62/107** (in-anchor 34/54, cross-anchor 28/53). Region-proposal fusion,
+  presence, the absence VLM, the search posterior, island snap, the close
+  last-metre approach. No floor machinery.
+* `ycb_authored_15_fused_v16` — the authored 15-scene and multi-floor dynamic
+  benchmarks. The floor stack, per-storey costmaps, stair evidence, the flight
+  climb. No region-proposal fusion, and the DualMap approach tuning turned off.
+
+They shared 32 mechanism settings at non-default and disagreed on 54. This
+document fuses them into **one agent config** carried by a single mixin, so the
+only thing that changes between the three benchmarks is which dataset is loaded.
+
+## The mixin
+
+`configs/experiment/osg_unified_pipeline.yaml` carries every mechanism flag and
+nothing about the dataset. It is the union of:
+
+* the **floor / climb group** (32 keys), taken from `_fused_v16`:
+  `floor.enabled`, `per_floor_costmap`, `stairs`, `use_prior_stairs`,
+  `cross_floor`, `climb_targets: flights_first`, `no_level_on_flight`,
+  `climb_enabled`, `climb_relink_flights`, `navmesh_3d_goals`,
+  `mapping.multi_floor`, `scene_graph.containers_floor_relative`,
+  `floor_mass_rule: mean` + `floor_mass_margin: 1.15`, `floor_llm`,
+  `frontier_cost_free_cell`, and the rest;
+* the **DualMap perception tuning** (22 keys), taken from `_v4_fuse_cls`:
+  the region-proposal fusion (`enabled`, `every_keyframe`, `commit_min_obs 4`,
+  `commit_tau 0.28`, `commit_tau_by_class` for bowl/plate/mug), `agent_radius 0.1`,
+  `navmesh_snap_on_agent_island`, the close approach, the stale-anchor
+  verification group;
+* the **shared approach/search tuning** (4 keys) the DualMap and 15-scene bases
+  carried but the bare multi-floor base did not: the fine viewpoint rings,
+  `ring_radius_extent_aware`, `close_look_before_absence`,
+  `search_proximity_len_m: 100`.
+
+Three dataset presets include it:
+
+| preset | eval base | dataset |
+|---|---|---|
+| `dualmap_osg_unified` | `dualmap_protocol_osg_sensor_v2` | DualMap released, 107 trials |
+| `mf5_osg_unified` | `ycb_dynamic_multifloor` | 5-scene multi-floor, `outputs/dualmap_multifloor` |
+| `ycb15_osg_unified` | `ycb_authored_15` | 15-scene authored, `outputs/dualmap_authoring` |
+
+## The agent is provably identical across the three
+
+Composing the three presets and diffing every key that is not under
+`eval.` / `dualmap.` / `ycb.`:
+
+```
+dualmap_unified vs mf5_unified  : 0 mechanism differences
+dualmap_unified vs ycb15_unified: 0 mechanism differences
+```
+
+And `dualmap_osg_unified` differs from the locked `_v4_fuse_cls` in **exactly
+the 32 floor-group keys and nothing else** — the region-proposal fusion,
+verification, and approach tuning that produce 62/107 are untouched. So the
+whole question of whether the fusion preserves the DualMap result reduces to one
+thing: is the floor group inert on a single-floor scene?
+
+## Why the floor group is inert on one storey
+
+Every floor-group flag either gates on more than one level existing, or is a
+no-op when the single level sits at the agent's own standing height:
+
+* `floor.enabled` + `estimate_only: false` runs the estimator, which finds one
+  level on a single-floor scene and never emits a switch.
+* `navmesh_3d_goals` snaps a goal at its floor height; on one floor that height
+  equals the agent's standing height, which the code notes is "a genuine no-op
+  there".
+* `containers_floor_relative` subtracts the storey height from a surface's top;
+  on floor 0 that height is 0, so the band is unchanged.
+* `floor_mass_rule: mean` + `floor_mass_margin` only change how a *second*
+  storey is scored against this one; with one storey there is nothing to score.
+* `climb_*`, `cross_floor`, `use_prior_stairs`, `no_level_on_flight` all require
+  a stair or a second level to fire.
+
+The two that touch single-floor code paths regardless are
+`frontier_cost_free_cell` (sets `cost_prefer_free` in the frontier scorer) and
+`per_floor_costmap` (wraps the costmap in a stack). The bit-identity smoke below
+is what actually decides them.
+
+## Bit-identity smoke (the check that matters)
+
+<!-- SMOKE -->
+
+If the trajectories match `_v4_fuse_cls` on the sampled DualMap trials, the
+floor group is confirmed inert and the full 107 will reproduce 62. If they
+diverge, the culprit is one of the two always-on flags, and it is moved out of
+the mixin into `mf5_osg_unified` only.
