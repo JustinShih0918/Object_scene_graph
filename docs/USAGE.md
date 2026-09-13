@@ -14,7 +14,7 @@ the GroundingDINO CUDA extension that must be compiled, ~5 GB of model weights,
 and the datasets. In short:
 
 ```bash
-git submodule update --init --recursive     # ASCENT + its nested submodules
+git submodule update --init --recursive     # ASCENT + its nested submodules (also needed to build)
 bash scripts/fetch_ascent_weights.sh
 python scripts/download_weights.py --pointnav --rednet
 docker exec docker-ollama-1 ollama pull qwen2.5:7b

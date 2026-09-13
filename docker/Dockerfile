@@ -1,11 +1,11 @@
 # One image, every experiment: OSG's agent, the ASCENT reference, and all five
 # perception servers.
 #
+#   git submodule update --init --recursive        # REQUIRED: the build COPYs it
 #   docker compose -f docker/compose.yaml --env-file docker/.env build nav
 #
-# The build context is `docker/` and everything else is fetched, so no working
-# tree state is required -- the ASCENT reference is cloned at the pin in
-# ASCENT_REF below.
+# The build context is the REPO ROOT (compose sets `context: ..`), kept to
+# ~264 MB by /.dockerignore rather than the 35 GB on disk.
 #
 # TWO CONDA ENVS, ONE IMAGE. They cannot be merged into one interpreter and
 # every attempt is encoded below:
@@ -99,20 +99,16 @@ RUN conda install -y -n ascent habitat-sim=0.3.1 withbullet headless \
 # requires <1.24; scipy 1.10.1 is the last release built against that line.
 RUN pip install --no-cache-dir "numpy==1.23.5" "scipy==1.10.1" "pandas==1.5.3"
 
-# The reference source, CLONED rather than COPYed. compose sets the build
-# context to `docker/`, so the submodule is not in it -- and widening the
-# context to the repo root would ship outputs/, data/ and 4.6 GB of weights to
-# the daemon on every build. Cloning also means the image matches the pin
-# regardless of the state of anyone's working tree.
+# The reference source. `relative_work/ascent` is a git submodule, so the build
+# FAILS HERE unless it was checked out recursively first:
 #
-# ASCENT_REF must equal the submodule pin recorded in git. That is enforced by
-# tests/unit/test_dockerfile_pins.py, so the two cannot drift silently.
-ARG ASCENT_REF=8f7bbf906c8433a47c4d2c46a268cd1258c4057c
-RUN git clone https://github.com/Zeying-Gong/ascent.git /opt/ascent \
-    && cd /opt/ascent \
-    && git checkout -q "$ASCENT_REF" \
-    && git submodule update --init --recursive \
-    && rm -rf /opt/ascent/.git
+#     git submodule update --init --recursive
+#
+# That is deliberate. The alternative -- cloning the pin inside the image --
+# duplicates the commit into a Dockerfile ARG that can drift from what the repo
+# actually points at, and hides any local change to the reference. One source
+# of truth is worth one setup step.
+COPY relative_work/ascent /opt/ascent
 WORKDIR /opt/ascent
 
 RUN pip install --no-cache-dir -e third_party/habitat-lab/habitat-lab \
@@ -211,11 +207,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
 
 RUN printf '\n# habitat env for `docker exec -it ... bash`\nif [ -z "$CONDA_DEFAULT_ENV" ]; then\n  source /opt/conda/etc/profile.d/conda.sh\n  conda activate habitat\nfi\n' >> /etc/bash.bashrc
 
-COPY modules/install_x11_opengl_vulkan.sh /tmp/install_x11_opengl_vulkan.sh
+COPY docker/modules/install_x11_opengl_vulkan.sh /tmp/install_x11_opengl_vulkan.sh
 RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
     /tmp/install_x11_opengl_vulkan.sh && rm /tmp/install_x11_opengl_vulkan.sh
 
-COPY /entrypoint.sh /entrypoint.sh
+COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ARG USERNAME=user
@@ -232,7 +228,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
 USER $USERNAME
 
 COPY --chown=$USERNAME:$USERNAME \
-    modules/install_claude_code.sh /tmp/install_claude_code.sh
+    docker/modules/install_claude_code.sh /tmp/install_claude_code.sh
 RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
     /tmp/install_claude_code.sh && rm /tmp/install_claude_code.sh
 
