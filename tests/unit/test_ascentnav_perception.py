@@ -159,7 +159,7 @@ def test_the_probe_names_every_dead_server(monkeypatch):
 
 
 def test_tag_scene_writes_both_maps_keyed_by_the_floor_step():
-    from ascentnav.perception import tag_scene
+    from navigation.perception import tag_scene
 
     class _Obj:
         def __init__(self):
@@ -195,7 +195,7 @@ def test_filter_depth_fills_only_the_zeros():
     """F10: on habitat's normalised depth with `recover_nonzero`, every
     non-zero pixel is restored verbatim and every zero is filled from its
     neighbours."""
-    from ascentnav.depth_filter import filter_depth
+    from navigation.depth_filter import filter_depth
 
     d = np.full((40, 40), 0.6, np.float32)
     d[10:14, 10:14] = 0.0                            # a hole

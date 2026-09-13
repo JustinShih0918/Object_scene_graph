@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ascentnav.planner import REPEATED_SELECTION_THRESHOLD, STICKY_FRONTIER_STEP_THRESHOLD
+from navigation.planner import REPEATED_SELECTION_THRESHOLD, STICKY_FRONTIER_STEP_THRESHOLD
 
 from .test_ascentnav_stairs import DEPTH, _agent
 
@@ -155,7 +155,7 @@ def test_a_policy_stop_on_a_frontier_forces_forward():
 def test_the_multi_floor_sentinel_routes_to_the_stairs():
     """`:745-752`: GO_UP tries the up-staircase and falls through when there
     is none."""
-    from ascentnav.planner import GO_UP
+    from navigation.planner import GO_UP
 
     a = _explorer([[3.0, 0.0], [1.0, 0.0]])
     a.planner.get_best_frontier = lambda *args, **kw: (np.array([3.0, 0.0]), GO_UP)

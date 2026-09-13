@@ -6,7 +6,7 @@ import json
 import numpy as np
 import pytest
 
-from ascentnav.planner import AscentLLMPlanner, KnowledgeGraph
+from navigation.planner import AscentLLMPlanner, KnowledgeGraph
 
 
 class _OM:

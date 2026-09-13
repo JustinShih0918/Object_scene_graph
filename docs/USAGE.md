@@ -1,7 +1,7 @@
 # How to run OSG's ObjectNav pipeline
 
 The default configuration is the S71 arm: ASCENT's control flow
-(`src/ascentnav/`) on ASCENT's served perception models, sensor-only, on the
+(`src/navigation/`) on ASCENT's served perception models, sensor-only, on the
 frozen PointNav mover. On the 100-episode HM3D v1 split `scenes20_ep0to4` it
 scores **63.0% SR / 0.36 SPL**; native ASCENT on the same episodes scores
 65.0% / 0.36 (`docs/AB_RESULTS.md`, S71). Everything below runs inside the
@@ -14,16 +14,15 @@ the GroundingDINO CUDA extension that must be compiled, ~5 GB of model weights,
 and the datasets. In short:
 
 ```bash
-git submodule update --init --recursive
-/workspace/.conda-envs/ascent/bin/pip install -e relative_work/ascent/third_party/GroundingDINO
+git submodule update --init --recursive     # required before the image build too
 bash scripts/fetch_ascent_weights.sh
 python scripts/download_weights.py --pointnav --rednet
 docker exec docker-ollama-1 ollama pull qwen2.5:7b
 ```
 
 The five ASCENT models run in the `ascent` conda env
-(`/workspace/.conda-envs/ascent`; recipe in `docker/Dockerfile.ascent`, see
-docs/SETUP.md §5), not in
+(the `ascent` env, built by `docker/Dockerfile` alongside `habitat`; see
+docs/SETUP.md §4), not in
 habitat's — BLIP-2's `lavis` and habitat-sim cannot share an interpreter.
 
 ## 2. Start the model servers
@@ -146,11 +145,11 @@ was transcribed from.
 
 | | |
 |---|---|
-| the agent | `src/ascentnav/agent.py` (dispatch, `_navigate`, `_explore`), `stairs.py`, `planner.py`, `perception.py` |
-| the maps | `src/ascentnav/mapping/` (vendored from ASCENT) |
+| the agent | `src/navigation/agent.py` (dispatch, `_navigate`, `_explore`), `stairs.py`, `planner.py`, `perception.py` |
+| the maps | `src/navigation/mapping/` (vendored from ASCENT) |
 | served-model clients | `src/osg/perception/ascent_models.py`, `detector.py` (`DFineDetector`), `image_text.py` (`Blip2ItmScorer`) |
 | the mover | `src/osg/planning/pointnav_driver.py` (weights bit-identical to ASCENT's) |
 | config | `configs/config.yaml` → `agent/s71`, `exploration/s71`, `verification/s71`, `detector/dfine`, `llm/qwen_local`, `scene_graph/place365`, `eval/scenes20_ep0to4` |
 | setup | `docs/SETUP.md` — submodule, CUDA extension, weights, datasets |
-| results log | `docs/AB_RESULTS.md` (S71 is the current record), `src/ascentnav/README.md` (fidelity notes F1–F14) |
+| results log | `docs/AB_RESULTS.md` (S71 is the current record), `src/navigation/README.md` (fidelity notes F1–F14) |
 | methodology | `docs/METHODOLOGY.md` — protocol, evidence rules, differences from native ASCENT |

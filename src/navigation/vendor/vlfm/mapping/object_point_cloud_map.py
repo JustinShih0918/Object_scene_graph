@@ -5,7 +5,7 @@ from typing import Dict, Union
 import cv2
 import numpy as np
 
-from ascentnav.vendor.vlfm.utils.geometry_utils import (
+from navigation.vendor.vlfm.utils.geometry_utils import (
     extract_yaw,
     get_point_cloud,
     transform_points,

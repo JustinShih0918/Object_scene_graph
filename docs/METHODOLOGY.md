@@ -56,7 +56,7 @@ not a workaround around it.
 | prompt content | RAM++ tags, per step | 13185 |
 | frontier planner | Qwen2.5-7B on local ollama | — |
 
-Each step, in this order (`src/ascentnav/agent.py::_act_inner`):
+Each step, in this order (`src/navigation/agent.py::_act_inner`):
 
 1. Normalise and hole-fill depth (`filter_depth`, zeros only); compute the
    camera→episodic transform from the episode-start anchor.
@@ -81,7 +81,7 @@ Two rules carry most of the behaviour and are easy to get wrong:
   counter, and returns the *exploration* action on the same step. The gate
   stays latched.
 
-`src/ascentnav/README.md` lists the fidelity findings (F1–F14) behind these.
+`src/navigation/README.md` lists the fidelity findings (F1–F14) behind these.
 
 ---
 

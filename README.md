@@ -27,13 +27,12 @@ Object-goal navigation in Habitat, sensor-only. Two benchmarks live here:
 | the dynamic-scene benchmark | **[docs/DYNAMIC_SCENES.md](docs/DYNAMIC_SCENES.md)**, [docs/MULTI_FLOOR.md](docs/MULTI_FLOOR.md) |
 
 ```bash
+git submodule update --init --recursive     # REQUIRED before the build
 cp docker/.env.example docker/.env          # set LOCAL_UID/LOCAL_GID and the collector paths
-docker compose -f docker/compose.yaml --env-file docker/.env build nav
+docker compose -f docker/compose.yaml --env-file docker/.env build nav   # both conda envs
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
 docker exec -it docker-nav-1 bash           # everything below runs in here
 
-git submodule update --init --recursive     # ASCENT + its nine nested submodules
-/workspace/.conda-envs/ascent/bin/pip install -e relative_work/ascent/third_party/GroundingDINO
 bash scripts/fetch_ascent_weights.sh        # ~4.6 GB
 python scripts/download_weights.py --pointnav --rednet
 docker exec docker-ollama-1 ollama pull qwen2.5:7b
@@ -42,19 +41,21 @@ bash scripts/serve_perception.sh            # five model servers, ~60 s
 python scripts/run_eval.py eval.num_episodes=1      # one live episode
 ```
 
-Two setup traps, both of which fail late and confusingly:
+One image, **two conda envs**: `habitat` (habitat-sim, OSG, YOLOE — active on
+shell entry) and `ascent` (BLIP-2, MobileSAM, GroundingDINO, RAM++, D-FINE).
+They cannot be one interpreter — habitat-sim pins numpy < 1.24 and lavis needs
+a different transformers — which is why the models are served over HTTP.
 
-- **`--recursive` is mandatory.** Without it ASCENT's nine nested submodules
-  are empty directories and the servers import nothing.
-- **GroundingDINO's CUDA op must be compiled** (the `pip install -e` above).
-  A fresh clone starts the stair server fine and then returns HTTP 500 on the
-  first frame with `NameError: name '_C' is not defined`.
+**`--recursive` is mandatory, including before the build.** The Dockerfile
+copies the ASCENT submodule to compile GroundingDINO's CUDA kernel, and fails
+outright without it. Skipping the recursive checkout at *run* time instead
+leaves nine empty directories and servers that import nothing.
 
 ---
 
 ## The HM3D pipeline (the default)
 
-`src/ascentnav/` is a transcription of ASCENT's `Ascent_Policy.act` and the
+`src/navigation/` is a transcription of ASCENT's `Ascent_Policy.act` and the
 `Map_Controller` it drives, on ASCENT's vendored maps, with every rule cited to
 its reference line. It replaced a port that scored 54.0% where the reference
 scored 65.0%; a paired trace diagnosis showed the gap was **before the target
@@ -66,7 +67,7 @@ detection, *every* detection ingested) → obstacle map and the stair state
 machine → one BLIP-2 cosine for the value map → dispatch (stairs → pitch →
 13-turn opening scan → explore → navigate).
 
-Five models are served over HTTP from a separate conda env, because BLIP-2's
+Five models are served over HTTP from the `ascent` env, because BLIP-2's
 `lavis` and habitat-sim cannot share an interpreter. Process-per-model is
 ASCENT's own architecture, not a workaround.
 
@@ -174,7 +175,7 @@ SR/SPL must never be quoted against sensor-only methods).
 
 ## Layout
 
-- `src/ascentnav/` — **the default HM3D policy.** `agent.py` (dispatch,
+- `src/navigation/` — **the default HM3D policy.** `agent.py` (dispatch,
   `_navigate`, `_explore`), `stairs.py`, `planner.py`, `perception.py`,
   `depth_filter.py`, `geometry.py`, and `mapping/` (ASCENT's obstacle, value
   and object-cloud maps, vendored).

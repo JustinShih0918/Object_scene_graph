@@ -238,7 +238,7 @@ def build_agent(
 
         agent_cls = AscentAgent
     else:
-        from ascentnav.agent import AscentNavAgent
+        from navigation.agent import AscentNavAgent
 
         agent_cls = AscentNavAgent
     return agent_cls(

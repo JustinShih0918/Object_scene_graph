@@ -5,17 +5,17 @@ from typing import Dict, Union
 import cv2
 import numpy as np
 
-from ascentnav.vendor.vlfm.utils.geometry_utils import (
+from navigation.vendor.vlfm.utils.geometry_utils import (
     extract_yaw,
     get_point_cloud,
     transform_points,
     within_fov_cone,
 )
 
-from ascentnav.vendor.vlfm.mapping.base_map import BaseMap
-from ascentnav.vendor.vlfm.utils.img_utils import fill_small_holes
-from ascentnav.vendor.vlfm.vlm.detections import ObjectDetections
-from ascentnav.constants import MPCAT40_RGB_COLORS, MPCAT40_NAMES
+from navigation.vendor.vlfm.mapping.base_map import BaseMap
+from navigation.vendor.vlfm.utils.img_utils import fill_small_holes
+from navigation.vendor.vlfm.vlm.detections import ObjectDetections
+from navigation.constants import MPCAT40_RGB_COLORS, MPCAT40_NAMES
 
 class ObjectPointCloudMap(BaseMap):
     # clouds: Dict[str, np.ndarray] = {}

@@ -4579,6 +4579,12 @@ remaining work splits cleanly: **stair recall** for the 19% (see the S3
 decomposition — traversal already works, 13 of the 16 episodes that attempt a
 climb complete it), and everything else for the 81%.
 
+## A note on paths
+
+Entries before September 2026 refer to `src/ascentnav/`; that package is now
+`src/navigation/`. The policy is still named `ascentnav` in configs and in
+`agent.policy`, so every command in this log still runs.
+
 ## A note on reproducing the older arms
 
 The S8-S70 arms ran on presets that have since been removed

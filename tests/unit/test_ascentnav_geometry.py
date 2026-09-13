@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ascentnav.geometry import (
+from navigation.geometry import (
     camera_pitch,
     normalise_depth,
     robot_xy_heading,
@@ -66,7 +66,7 @@ def _centre_pixel_cloud(depth_m):
     the (x right, y down, z forward) an OpenCV habit would assume, and guessing
     it wrong is exactly the error this file exists to catch.
     """
-    from ascentnav.vendor.vlfm.utils.geometry_utils import get_point_cloud
+    from navigation.vendor.vlfm.utils.geometry_utils import get_point_cloud
 
     d = np.zeros((480, 640), np.float32)
     d[240, 320] = depth_m
@@ -83,7 +83,7 @@ def test_camera_frame_is_x_forward_y_left_z_up():
 def test_transform_places_a_forward_point_ahead_of_the_agent():
     """The end-to-end check that matters: a return straight ahead of the camera
     must land ahead of the agent in the episodic frame, with no lateral drift."""
-    from ascentnav.vendor.vlfm.utils.geometry_utils import transform_points
+    from navigation.vendor.vlfm.utils.geometry_utils import transform_points
 
     f = _frame([2.0, 0.88, -1.0], [3.0, 0.88, -1.0])  # at (2,-1) facing world +x
     world = transform_points(tf_camera_to_episodic(f, 0.88), _centre_pixel_cloud(3.0))[0]
@@ -94,7 +94,7 @@ def test_transform_places_a_forward_point_ahead_of_the_agent():
 
 
 def test_turning_right_moves_the_forward_point_right():
-    from ascentnav.vendor.vlfm.utils.geometry_utils import transform_points
+    from navigation.vendor.vlfm.utils.geometry_utils import transform_points
 
     f = _frame([0, 0.88, 0], [0, 0.88, 1])  # facing world +z = OSG's "right"
     world = transform_points(tf_camera_to_episodic(f, 0.88), _centre_pixel_cloud(3.0))[0]
@@ -105,7 +105,7 @@ def test_turning_right_moves_the_forward_point_right():
 
 def test_looking_down_puts_the_point_below_the_camera():
     """The sign check the stair probe uses, applied to this transform."""
-    from ascentnav.vendor.vlfm.utils.geometry_utils import transform_points
+    from navigation.vendor.vlfm.utils.geometry_utils import transform_points
 
     level = _frame([0, 0.88, 0], [1, 0.88, 0])
     down = _frame([0, 0.88, 0], [1, 0.38, 0])
@@ -136,21 +136,21 @@ def test_transform_matches_the_ascent_helper_exactly():
 # that start 23 m from the world origin.
 
 def test_the_start_pose_maps_to_the_origin_facing_forward():
-    from ascentnav.geometry import EpisodeAnchor
+    from navigation.geometry import EpisodeAnchor
     anchor = EpisodeAnchor(np.array([5.0, -3.0]), np.radians(90.0))
     assert np.allclose(anchor.to_episodic(np.array([5.0, -3.0])), [0.0, 0.0])
     assert anchor.heading_to_episodic(np.radians(90.0)) == pytest.approx(0.0)
 
 
 def test_a_point_ahead_at_the_start_is_on_the_positive_x_axis():
-    from ascentnav.geometry import EpisodeAnchor
+    from navigation.geometry import EpisodeAnchor
     anchor = EpisodeAnchor(np.array([5.0, -3.0]), np.radians(90.0))
     ahead = np.array([5.0, -2.0])                     # one metre along heading 90 deg (+y)
     assert np.allclose(anchor.to_episodic(ahead), [1.0, 0.0], atol=1e-9)
 
 
 def test_anchoring_round_trips():
-    from ascentnav.geometry import EpisodeAnchor
+    from navigation.geometry import EpisodeAnchor
     anchor = EpisodeAnchor(np.array([-2.0, 7.0]), 0.7)
     for p in ([0.0, 0.0], [3.0, -1.0], [-4.5, 2.25]):
         assert np.allclose(anchor.to_world(anchor.to_episodic(np.array(p))), p, atol=1e-9)
@@ -158,7 +158,7 @@ def test_anchoring_round_trips():
 
 def test_rho_theta_is_invariant_under_anchoring():
     """The mover's polar goal must not depend on which frame the map used."""
-    from ascentnav.geometry import EpisodeAnchor
+    from navigation.geometry import EpisodeAnchor
     from osg.planning.pointnav_driver import rho_theta
     anchor = EpisodeAnchor(np.array([1.0, 2.0]), 0.4)
     agent_w, head_w, goal_w = np.array([2.0, 3.0]), 1.1, np.array([4.0, 1.0])

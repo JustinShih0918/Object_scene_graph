@@ -18,12 +18,20 @@ git clone --recursive <this repo>
 git submodule update --init --recursive
 ```
 
-**`--recursive` is not optional.** ASCENT itself carries nine nested
+**`--recursive` is not optional, and the image build needs it too** — the
+Dockerfile does `COPY relative_work/ascent /opt/ascent` and fails outright if
+the submodule is not checked out, which is deliberate: a silently partial image
+would fail much later and far less clearly. ASCENT itself carries nine nested
 submodules (GroundingDINO, MobileSAM, D-FINE, RAM++, places365, vlfm,
 frontier_exploration, depth_camera_filtering, habitat-lab), and a non-recursive
 clone leaves all nine as empty directories. The servers import from them.
 
-### The compiled CUDA extension
+### The compiled CUDA extension (only for pre-merge containers)
+
+The merged image builds it at image-build time, so a container from
+`docker/Dockerfile` already has it. The rest of this section applies only if
+you are on an older container or building the extension by hand.
+
 
 GroundingDINO ships a CUDA op (`MultiScaleDeformableAttention`) that must be
 **built in the working tree**. It is not in git, so a fresh clone does not have
@@ -125,40 +133,40 @@ scenes (~10 GB for val).
 
 ---
 
-## 4. The `ascent` conda environment
+## 4. The two conda environments
 
-The five servers do **not** run in habitat's interpreter. They run from
-`/workspace/.conda-envs/ascent`, a python 3.9 env with torch 2.1.0+cu118,
-numpy 1.23.5 and transformers 4.37.0 — a combination habitat-sim cannot share,
-which is the whole reason for process-per-model over HTTP.
+One image, two environments — `docker/Dockerfile` builds both:
 
-**That directory is gitignored and exists only on this machine.** It was cloned
-from a container built by `docker/Dockerfile.ascent`, and the clone source is
-already gone. If it is lost, rebuild it:
+| env | python | torch | for |
+|---|---|---|---|
+| `habitat` (default on shell entry) | 3.9 | 2.4.1+cu121 | habitat-sim, OSG, YOLOE, the eval harness |
+| `ascent` | 3.9 | 2.1.0+cu118 | BLIP-2, MobileSAM, GroundingDINO, RAM++, D-FINE, and the native reference |
 
-```bash
-docker build -f docker/Dockerfile.ascent -t ascent:native .
-# then copy /opt/conda/envs/ascent out of a container from that image into
-# /workspace/.conda-envs/ascent, or run the servers inside it with
-# relative_work/ascent and pretrained_weights mounted.
-```
+They cannot be one interpreter: habitat-sim 0.3.1 pins numpy < 1.24, lavis
+needs a transformers the OSG side does not want, and the torch builds differ.
+That is exactly why the models are served over HTTP rather than imported.
 
-`docker/Dockerfile.ascent` is therefore **not part of the running HM3D
-pipeline** — `docker/compose.yaml` never builds it and nothing imports from the
-image — but it is the only record of how that environment resolves. Its header
-documents each pin against the failure that forced it: no nvcc in a `-runtime-`
-base, lavis's unsatisfiable `spacy` chain on python 3.9, the numpy <1.24 floor,
-D-FINE's hidden training-stack imports, and transformers installed last. Do not
-delete it.
+`scripts/serve_perception.sh` finds the ascent env at
+`/opt/conda/envs/ascent`, falling back to a workspace-local
+`.conda-envs/ascent` for containers built before the two Dockerfiles were
+merged. Override with `ASCENT_PYTHON=…`.
 
-Verify the env is intact:
+Verify both are intact:
 
 ```bash
-/workspace/.conda-envs/ascent/bin/python -c "
+python -c "import habitat_sim, torch, ultralytics; print('habitat env OK')"
+$ASCENT_PYTHON -c "
 import habitat_sim, lavis, mobile_sam, groundingdino.util.inference, ram
 from groundingdino import _C
 print('ascent env OK')"
 ```
+
+The base image is `nvidia/cuda:11.8.0-cudnn8-devel`, not a `-runtime-` one:
+GroundingDINO's kernel needs nvcc, and torch refuses to build an extension when
+nvcc's version differs from `torch.version.cuda` — so nvcc must be 11.8 to
+match ASCENT's cu118 torch. The habitat env's cu121 torch is unaffected because
+torch wheels bundle their own CUDA runtime and nothing on the OSG side compiles
+an extension.
 
 ## 5. What the submodule does and does not carry
 

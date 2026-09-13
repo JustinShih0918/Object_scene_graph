@@ -20,9 +20,9 @@ Every path reported as `A` by
 - Split provenance: `data/splits/{dev50,dev50_mf}.json` (formatting normalized; episode IDs and metadata retained).
 - Results/protocol documentation: `docs/AB_RESULTS.md`.
 - Tools: `scripts/{analyze_climb,calibrate_approach_recheck,make_dev_split,make_priors,measure_room_seg,measure_stair_accumulation,measure_stair_recall,smoke_clip}.py`.
-- Complete alternative policy: every file under `src/ascentnav/**`, including
+- Complete alternative policy: every file under `src/navigation/**`, including
   its `mapping`, `vendor/frontier_exploration`, and `vendor/vlfm` trees.
-  `src/ascentnav/vendor/LICENSES.md` additionally retains upstream attribution
+  `src/navigation/vendor/LICENSES.md` additionally retains upstream attribution
   and MIT notices.
 - Imported OSG components:
   `src/osg/agent/ascent_agent.py`,

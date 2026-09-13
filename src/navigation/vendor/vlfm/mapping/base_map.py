@@ -4,7 +4,7 @@ from typing import Any, List
 
 import numpy as np
 
-from ascentnav.vendor.vlfm.mapping.traj_visualizer import TrajectoryVisualizer
+from navigation.vendor.vlfm.mapping.traj_visualizer import TrajectoryVisualizer
 
 
 class BaseMap:

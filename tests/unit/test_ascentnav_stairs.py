@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ascentnav.stairs import (
+from navigation.stairs import (
     CLIMB_PAUSED_ABANDON,
     StairController,
     carrot_waypoint,
@@ -99,7 +99,7 @@ def test_no_recorded_end_means_no_ratchet():
 # These drive `AscentNavAgent` directly. The agent is built with a stub
 # detector and a scripted mover, so no weights and no servers are touched.
 
-from ascentnav.agent import AscentNavAgent  # noqa: E402
+from navigation.agent import AscentNavAgent  # noqa: E402
 from osg.perception.detector import StubDetector  # noqa: E402
 
 from .test_ascent_agent import _Driver  # noqa: E402
@@ -154,7 +154,7 @@ def test_each_map_owns_its_trajectory():
     appends to in place. Two maps in one process would then share one path --
     which is what painted episode N-1's trajectory onto episode N's map, and
     floor 0's onto floor 1's."""
-    from ascentnav.mapping.obstacle_map import ObstacleMap
+    from navigation.mapping.obstacle_map import ObstacleMap
 
     a = ObstacleMap(min_height=0.61, max_height=0.88, agent_radius=0.18, size=200)
     b = ObstacleMap(min_height=0.61, max_height=0.88, agent_radius=0.18, size=200)
@@ -186,7 +186,7 @@ def test_a_new_floor_starts_with_an_empty_trajectory():
 # seen in a video is attributable to the map.
 
 def test_a_painted_stair_cell_renders_where_the_world_says_it_is():
-    from ascentnav.viz import _vis_px, obstacle_panel
+    from navigation.viz import _vis_px, obstacle_panel
 
     a = _agent()
     om = a.obstacle_map
@@ -206,7 +206,7 @@ def test_a_painted_stair_cell_renders_where_the_world_says_it_is():
 def test_the_agent_marker_and_the_map_share_one_frame():
     """A marker drawn 1 m ahead of a north-facing agent must land 20 px (one
     metre at 20 px/m) above it in the image, not beside it."""
-    from ascentnav.viz import _vis_px
+    from navigation.viz import _vis_px
 
     a = _agent()
     om = a.obstacle_map
@@ -235,9 +235,9 @@ def _wall_frame(pos, look_at, range_m=3.0):
 
 def _paint(det_mask_dtype, range_m=3.0, patch=(200, 280, 280, 360)):
     """Project one patch of a fronto-parallel wall and return the painted xy."""
-    from ascentnav.constants import STAIR_CLASS_ID
-    from ascentnav.geometry import camera_pitch, normalise_depth, tf_camera_to_episodic
-    from ascentnav.mapping.obstacle_map import ObstacleMap
+    from navigation.constants import STAIR_CLASS_ID
+    from navigation.geometry import camera_pitch, normalise_depth, tf_camera_to_episodic
+    from navigation.mapping.obstacle_map import ObstacleMap
 
     f = _wall_frame([0, 0.88, 0], [1, 0.88, 0], range_m)
     tf = tf_camera_to_episodic(f, 0.88)
@@ -571,8 +571,8 @@ def _drop_off(edge_m, look_at=None, hole_range=3.8, size=800):
     """Render the depth image a camera really would see of a floor that stops at
     `edge_m`, run it through the map, and return the painted down-stair xy."""
     from osg.core.types import CameraIntrinsics, FrameData
-    from ascentnav.geometry import camera_pitch, normalise_depth, tf_camera_to_episodic
-    from ascentnav.mapping.obstacle_map import ObstacleMap
+    from navigation.geometry import camera_pitch, normalise_depth, tf_camera_to_episodic
+    from navigation.mapping.obstacle_map import ObstacleMap
     from .conftest import make_camera
 
     W, H, cam_h = 640, 480, 0.88

@@ -1,6 +1,6 @@
 # Vendored-code attribution
 
-`src/ascentnav` is derived from ASCENT (commit
+`src/navigation` is derived from ASCENT (commit
 `8f7bbf906c8433a47c4d2c46a268cd1258c4057c`). Files under
 `vendor/frontier_exploration` derive from `naokiyokoyama/frontier_exploration`
 commit `8523aa857e4b81d15e14a506fe94a77d5f2e7d5d`; files under `vendor/vlfm`
