@@ -100,6 +100,44 @@ def test_the_heavy_directories_are_excluded():
     assert not leaked, f"/.dockerignore lets these into the context: {leaked}"
 
 
+REQUIREMENTS = ROOT / "docker" / "ascent-requirements.txt"
+
+
+def _requirement_lines() -> list:
+    return [l.strip() for l in REQUIREMENTS.read_text().splitlines()
+            if l.strip() and not l.startswith("#")]
+
+
+def test_the_ascent_requirements_parse_and_are_uniquely_named():
+    """pip refuses a file that names one package twice -- and the environment
+    this was generated from really does carry two setuptools metadata dirs (a
+    live .egg-info beside a stale .egg), which is exactly how that shipped."""
+    from packaging.requirements import Requirement
+
+    seen = {}
+    for line in _requirement_lines():
+        req = Requirement(line)          # raises on anything pip cannot read
+        key = re.sub(r"[-_.]+", "-", req.name).lower()
+        seen.setdefault(key, []).append(line)
+    dups = {k: v for k, v in seen.items() if len(v) > 1}
+    assert not dups, f"pip will reject these duplicate pins: {dups}"
+
+
+def test_the_bootstrap_packages_are_not_pinned():
+    """pip, setuptools and wheel come with the interpreter; pinning them under
+    --no-deps fights the copies already installed."""
+    names = {re.sub(r"[-_.]+", "-", l.split("==")[0]).lower() for l in _requirement_lines()}
+    clash = names & {"pip", "setuptools", "wheel", "habitat-sim"}
+    assert not clash, f"these must not be in the requirements file: {sorted(clash)}"
+
+
+def test_every_requirement_is_pinned():
+    """The list is installed with --no-deps, so an unpinned entry would resolve
+    to whatever is newest and silently diverge from the measured environment."""
+    loose = [l for l in _requirement_lines() if "==" not in l]
+    assert not loose, f"unpinned requirements: {loose}"
+
+
 def test_the_submodule_is_a_recorded_pin():
     """The build COPYs a submodule, so the commit it ships is whatever git
     records -- there is no second copy of the pin to drift."""
