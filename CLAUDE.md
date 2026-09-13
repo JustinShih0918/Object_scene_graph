@@ -1,0 +1,148 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+`AGENTS.md` holds the shorter contributor guide (style, commit/PR conventions); this file covers
+the architecture and the workflows that need more than one file to understand.
+
+## Environment
+
+Everything runs **inside the `nav` container** — `PYTHONPATH`, `NVIDIA_API_KEY`, the habitat conda
+env and the `OSG_*` dataset roots are set by the image/compose env, so no `docker exec` prefix or
+`PYTHONPATH=src` is needed once you are in the shell:
+
+```bash
+docker compose -f docker/compose.yaml --env-file docker/.env build nav
+docker compose -f docker/compose.yaml --env-file docker/.env up -d
+docker exec -it docker-nav-1 bash
+```
+
+The five ASCENT perception models run in a *second* conda env (`/workspace/.conda-envs/ascent`,
+built by the single `docker/Dockerfile`) because BLIP-2's `lavis` and habitat-sim cannot share an
+interpreter. They are served over HTTP on ports 13182–13186 by `bash scripts/serve_perception.sh`
+(tmux session `osg_models`; `--stop` to tear down).
+
+For CPU-only work: `pip install -e '.[dev]'`.
+
+## Commands
+
+```bash
+pytest tests/unit -q                                   # ~20 s, no GPU or data
+pytest tests/unit/test_floors.py -q                    # one file
+pytest tests/unit/test_floors.py::test_name -q         # one test
+pytest -m sim                                          # tests/integration; needs Habitat + HM3D
+python tests/unit/test_config_snapshot.py              # REGENERATE the config golden (see below)
+
+python scripts/run_eval.py                             # the default arm (S71), 100 episodes, ~3.5 h
+python scripts/run_eval.py eval.num_episodes=3         # smoke
+python scripts/run_eval.py +experiment=<preset>        # compose a whole preset
+python scripts/run_eval.py detector=yoloe_small llm=ollama verification=off   # override groups
+python scripts/smoke_habitat.py                        # EGL rendering
+python scripts/smoke_ollama.py                         # LLM round-trip
+```
+
+A run **refuses to start** if a model server or ollama it needs is down (`PerceptionUnavailable`,
+raised by `probe_served_models` before Habitat loads), and a server that goes quiet mid-run raises
+rather than returning a neutral value. This is deliberate: a silent 0 from BLIP-2 under ASCENT's
+commit gate is an agent that never STOPs, and a 0% run looks like a bad algorithm rather than a
+dead server. Do not "fix" this by falling back to a default score.
+
+## Architecture
+
+### Two agent stacks, not one
+
+- `src/osg/` — the project's own pipeline: open-vocab perception → a `floor → room → container →
+  object` 3D scene graph → frontier exploration → approach + verify.
+- `src/navigation/` — a line-by-line **transcription** of ASCENT's control flow (`Ascent_Policy.act`
+  + `Map_Controller`) plus its vendored maps, running in OSG's harness. It is the current default
+  arm, and it is an attributed alternative policy, *not* a replacement for OSG's dynamic hierarchy.
+  Its rules cite the reference line they came from; `src/navigation/README.md` carries the F1–F14
+  fidelity notes. Changing behaviour here means breaking the transcription — do it knowingly, and
+  the `test_ascentnav_*.py` tests will tell you.
+
+Three orthogonal axes select what actually runs:
+
+| axis | flag | options |
+|---|---|---|
+| mover | `agent.navigation` | `costmap` (own A*/Voronoi planner), `pointnav` (frozen depth + point-goal policy), `navmesh` (Habitat `ShortestPathFollower`) |
+| policy | `agent.policy` | `nav_agent` (OSG FSM + dynamic world model), `ascent`, `ascentnav` |
+| benchmark | `eval.mode` | `objectnav` (HM3D), `ycb_authored` (authored dynamic layouts), `dualmap_protocol` (DualMap's released benchmark and scoring rule) |
+
+**`navmesh` is privileged navigation** — it is the only mover given simulator geometry
+(`action_to_goal` / `is_reachable`). Its SR/SPL must never be compared against sensor-only methods
+(`costmap`, `pointnav`). `agent.use_habitat_navmesh` is a legacy alias for it.
+
+### What the OSG pipeline is built for
+
+The premise is not an *incomplete* map but a map that is **actively wrong**: pass 1 explores a
+static layout and snapshots it, objects are moved, pass 2 starts from that snapshot believing the
+target is at A when it is at B. Every mechanism exists to let a map be wrong, notice, and recover —
+a presence Bayes filter with a separate "would we have seen it" channel (`objects/presence.py`), an
+identity channel (`agent/candidate.py`), absence-as-evidence (`verification/absence.py`), and a
+search posterior over mapped surfaces (`exploration/search_belief.py`). `docs/ARCHITECTURE.md`
+explains each and why its constants are what they are.
+
+Dataflow: `perception` → `objects` (ellipsoid layer: dual-quadric projection, association,
+Wasserstein refine) → `mapping` (per-floor costmaps, floor estimation, frontiers, portals) →
+`graph` (hierarchy + priors + LLM serialization) → `exploration` → `planning` → `verification` →
+`agent` (FSM) → `sim` / `eval`.
+
+`agent/nav_agent.py` owns the FSM state and nothing else; each line of its control loop delegates
+to one module. Keep it that way.
+
+### The eval layering
+
+`eval/runner.py` is deliberately thin: what a run is *made of* is `pipeline/components.py` (the
+swappable detector / scorer / verifier / env, each an A/B axis), what one episode *does* is
+`eval/episode.py`, what gets written down is `eval/record.py`. Adding a model or a benchmark should
+not touch the file that drives the episode loop.
+
+Outputs land in `output_dir` (default `outputs/<timestamp>/`): `summary.json` (SR/SPL + per-module
+FPS + config fingerprint), `episodes.jsonl` (rich per-episode diagnostics — `state_log`,
+`frontier_select_log`, `approach_diag`, `verify_calls`, and with `eval.behaviour_log=true` a full
+`step_trace`), `timing.csv`, `viz/*.png`, and with `eval.debug_frames=true` per-step
+`viz/debug/<scene>_ep<ID>.mp4` plus `verify_debug/` (the exact image sent to the VLM). Artifact
+names carry the scene because HM3D episode ids repeat across scenes.
+
+### Configuration
+
+Hydra groups live in `configs/` (`agent`, `detector`, `llm`, `exploration`, `verification`,
+`scene_graph`, `eval`, `floor`, …); `configs/experiment/*.yaml` are composable presets applied with
+`+experiment=name`. Every group is backed by a **structured dataclass** under
+`src/osg/core/config/` (one module per group) registered with Hydra's ConfigStore, so a typo in a
+YAML or CLI override fails fast instead of silently creating a key.
+
+Two base mixins matter:
+
+- `configs/s71_defaults.yaml` — the values the current default arm needs that live outside a group.
+- `configs/legacy_defaults.yaml` — the pre-S71 base (YOLOE-11s, NIM, the VLM verifier, the text-LLM
+  frontier scorer). Every pre-S71 preset lists it **first** so it still composes to exactly what it
+  was measured with.
+
+Nearly every default was chosen by an experiment and carries the measurement in a comment beside
+it. Two golden files pin this:
+
+- `tests/unit/golden/config_snapshot.json` — every calibrated constant, flattened. A refactor that
+  moves a file must not move a number; when you change a default *on purpose*, run
+  `python tests/unit/test_config_snapshot.py` so the change appears in the diff as what it is.
+- `tests/unit/golden/experiment_fingerprints.json` — pins what each preset composes to, so a base
+  change cannot silently redefine a measured arm.
+
+## Working on this repo
+
+- **Reproducibility:** runs are not reproducible while the VLM verifier is on. Use
+  `verification=off` for any A/B meant to prove two configs equivalent.
+- **Claiming a result:** the repo's currency is measured behaviour, not plausible reasoning. At
+  n=100 SR moves ±3 points on noise, so a change should move one of the paired trace metrics
+  (`scripts/compare_ascent_osg.py` prints them) and not just SR. `docs/AB_RESULTS.md` is the results
+  log; `docs/INVESTIGATION.md`, `docs/MULTI_FLOOR.md`, `docs/UNIFIED_PIPELINE.md` carry the history
+  of why the pipeline is shaped as it is — read the relevant one before re-litigating a decision.
+- **Diagnostics before guesses:** `scripts/analyze_*.py` decompose a run's `episodes.jsonl` —
+  `analyze_stages.py` (explore vs approach failure), `analyze_floors.py` (SR by floor class,
+  floor-estimator audit), `analyze_localization.py` / `analyze_trackloc.py` (stop pose vs GT),
+  `analyze_approach.py` (why the terminal approach failed).
+- **Generated, not source:** `outputs/`, downloads under `data/`, `relative_work/` (the ASCENT
+  checkout and its recorded reference runs) are all ignored. Keep secrets and machine-specific
+  dataset paths in `docker/.env`.
+- The LLM/VLM is queried **asynchronously** — the control loop never blocks on it, which is what
+  keeps the pipeline real-time. Preserve that when touching the scorer or verifier.
