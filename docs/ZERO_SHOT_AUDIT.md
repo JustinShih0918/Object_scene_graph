@@ -16,6 +16,35 @@ classes and none of the seven YCB-only classes.**
 | `CONTAINER_AFFINITY` | bowl, mug, red plate, cup, bottle, cracker box, tin can, pitcher, scissors, banana, book, pillow | 7/7 | 0/7 |
 | `AFFORDANCE` | same 10 | 7/7 | 0/7 |
 
+## 0. Privileged simulator geometry: checked, and the sensor arm is clean
+
+The obvious worry, raised before the affinity tables: does the pipeline ask
+Habitat's navmesh -- ground-truth geometry -- anything? Several navmesh flags are
+set in the preset chain (`navmesh_snap_on_agent_island: true`,
+`navmesh_3d_goals`), inherited from the navmesh-mover era, so the config alone
+looks like it does.
+
+It does not. `eval/runner.py` wires both consumers only under the navmesh mover:
+
+```
+nav_fn      = env.action_to_goal if navigation == "navmesh" else None
+reachable_fn= env.is_reachable   if navigation == "navmesh" else None
+```
+
+The fused arms run `navigation: pointnav`, so both are `None`. `is_reachable` is
+the only route to `_snap_goal`/`pathfinder`, and `candidate.py` guards its
+reachability check on `_reachable_fn is not None`. Empirically the 62/107
+reference run logs **zero** `candidate_reject_log` entries -- no "unreachable"
+rejections at all, which is what a never-queried reachability test looks like.
+The closing walk was moved off the mesh separately (`approach_close_source:
+costmap`).
+
+So those flags are dead config in this arm, not live privilege, and the
+sensor-only line is genuinely navmesh-free -- consistent with the measured
+result that it matches the privileged navmesh arm (57 vs 56 on the full 107).
+**Nothing to remove here.** Worth leaving this written down, because the config
+reads as though there were.
+
 ## The findings, worst first
 
 ### 1. `AFFORDANCE` — hand per-class, and a hard veto  (graph/priors.py)

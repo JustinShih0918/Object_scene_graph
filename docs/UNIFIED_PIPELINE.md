@@ -112,38 +112,44 @@ level and nowhere to go, so it is gated and reproduces `_v4_fuse_cls`.
 Map-building is unaffected: prior maps are built with the baseline
 `ycb_authored_15`, deliberately, so the map is never an experimental variable.
 
-### Bit-identity: two of three, and what the residue is
+### Bit-identity: two of three, and the residue is the container fix
 
-Round 1 -- the two discovery gates (`switch_requires_second_level`):
+Round 1 -- the two discovery gates (`switch_requires_second_level`) -- made bowl
+and cracker box bit-identical to the locked `_v4_fuse_cls`. Scissors still
+differed, so it was bisected: seven single-trial arms, each disabling one part of
+the floor group.
 
-| trial | ungated | gated |
-|---|---|---|
-| bowl | differs (448 vs 500 steps, 1.04 m vs 2.73 m) | **identical** |
-| cracker box | differs (244 vs 242 steps) | **identical** |
-| scissors | differs (10.99 m vs 9.87 m) | still differs (8.45 m) |
+| arm | scissors distance | containers | vs lock |
+|---|---:|---:|---|
+| lock (`_v4_fuse_cls`) | 9.8697 | **85** | -- |
+| `navmesh_3d_goals=false` | 8.4463 | 87 | differs |
+| `exploration.floor_*` all off | 8.4463 | 87 | differs |
+| `stair_evidence/down_look` off | 8.4463 | 87 | differs |
+| `estimate_only=true` | 8.4463 | 87 | differs |
+| `per_floor_costmap=false` | 8.4463 | 87 | differs |
+| `mapping.multi_floor=false` | 8.4463 | 87 | differs |
+| **`floor.enabled=false`** (whole stack off) | 8.4463 | 87 | **still differs** |
 
-Round 2 tested `frontier_cost_free_cell`, which the fusion had taken from the
-multi-floor base (`true`) while `_v4_fuse_cls` sets it `false`. **It was not the
-cause**: flipping it to `false` reproduced the round-1 scissors numbers exactly
-(8.446324780034837, the same `final_xy`, 23 in-view frames), so on these trials
-it changes nothing. It is left at the DualMap value anyway, because it is a
-general frontier-costing heuristic rather than a floor mechanism and the mixin
-should not silently import the multi-floor base's opinion on it.
+Every arm returns the same number, and disabling the entire floor stack does not
+restore the lock -- so the cause was never in the floor group. The container
+count names it: 87 against the lock's 85.
 
-The residue on scissors is the floor stack itself, not a discovery behaviour:
-`_v4_fuse_cls` runs `floor.estimate_only: true` ("log the estimated floor but
-keep using the latched floor_y"), while the unified mixin must set it `false` so
-that the estimated storey is the one actually used -- which is the whole point on
-a multi-floor scene. On one storey the estimated height differs from the latched
-one by centimetres, which shifts the mapping height band and therefore which
-points become obstacles. That is an unavoidable consequence of running a
-floor-estimating pipeline at all, and it cannot be gated away without disabling
-the thing multi-floor needs.
+It is `scene_graph.containers_floor_relative`, the one flag in the mixin that is
+**not** gated by `floor.enabled`. It measures a support surface's height from its
+own storey instead of from y=0 -- and 00829's single floor sits at y=0.1357, not
+zero. The qualification band is therefore shifted by 13.6 cm, two more surfaces
+qualify, the search ranks a different set, and the trajectory diverges.
 
-So the honest position is: the fusion is bit-identical on the trials where the
-floor stack has nothing to say, and perturbs the mapping slightly where the
-estimated floor height differs from the latched one. Scissors fails in both arms
-(it is 0/9 cross-anchor in the reference table -- the known-undetectable class),
-so the drift changed no outcome here. Whether it changes any outcome across the
-107 is what the full run measures, and that is the number that matters for
-"keep 62/107", not bit-identity.
+That is a **correctness fix, not a regression**: measuring a surface from its own
+floor is the right rule, and on a scene whose floor is 13.6 cm off the origin the
+absolute band was systematically wrong. It is also the fix that made upstairs
+containers exist at all (00808 floor 1: 0 -> 62). So the residue is not something
+to gate away -- it is the unified pipeline being more correct than the arm it is
+being compared against.
+
+**Conclusion.** Bit-identity with `_v4_fuse_cls` is not achievable while keeping
+the floor-relative container rule, and should not be the bar. Two of three trials
+are identical; the third differs because two extra (correctly qualified) surfaces
+enter the search, and it fails in both arms regardless (scissors is 0/9
+cross-anchor, the known-undetectable class). The test of "keep 62/107" is the
+paired SR over the full 107, which is the run to do next.
