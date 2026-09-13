@@ -136,13 +136,21 @@ ENV CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0"
 # environment, which has neither torch nor pip, and GroundingDINO's setup.py
 # tries to `pip install torch` from inside it. Nothing here needs the
 # distribution metadata -- only `import groundingdino`.
+#
+# TORCH MUST BE IMPORTED FIRST in the check below. _C.so is linked against
+# libc10 with no RPATH, so it only resolves once torch has loaded libc10.so
+# into the process; a bare `from groundingdino import _C` fails with
+# "libc10.so: cannot open shared object file" even on a perfectly good install
+# (confirmed against the known-working env). The servers are unaffected --
+# groundingdino/util/inference.py imports torch at its top.
 RUN cd third_party/GroundingDINO \
     && python setup.py build_ext --inplace \
     && python -c "import site, pathlib; \
        pathlib.Path(site.getsitepackages()[0], 'groundingdino.pth') \
        .write_text('/opt/ascent/third_party/GroundingDINO\n')" \
-    && cd / && python -c "from groundingdino import _C; \
-       import groundingdino.util.inference; print('GroundingDINO CUDA extension: OK')"
+    && cd / && python -c "import torch; from groundingdino import _C; \
+       import groundingdino.util.inference; \
+       print('GroundingDINO CUDA extension: OK')"
 
 RUN pip install --no-cache-dir -e third_party/MobileSAM \
     && pip install --no-cache-dir -e third_party/vlfm
