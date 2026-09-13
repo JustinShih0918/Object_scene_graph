@@ -113,7 +113,7 @@ def run_eval(cfg) -> dict:
             # "approach_retarget_max" "approach_scan_turns" "approach_to_viewpoint"
             # "area_thresh_m2" "ascent_max_obstacle_h" "ascent_min_obstacle_h"
             # "climb_carrot" "climb_carrot_m" "climb_exit_rule"
-            # "verify_on_stop"
+            # "verify_on_stop" "verify_stop_view"
             # "blip_gate_threshold" "passive_stair_entry" "initialize_turns"
             # "downstair_detector" "value_use_max_confidence" "value_strict"
             # "ram_url" "ram_tags" "llm_multi_floor"

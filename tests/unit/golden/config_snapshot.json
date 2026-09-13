@@ -68,6 +68,7 @@
   "agent.unreachable_restrike_m": 0.0,
   "agent.use_habitat_navmesh": false,
   "agent.verify_on_stop": false,
+  "agent.verify_stop_view": "live",
   "agent.viewpoint_stop_m": 0.0,
   "detector.class_conf": {},
   "detector.conf": 0.3,

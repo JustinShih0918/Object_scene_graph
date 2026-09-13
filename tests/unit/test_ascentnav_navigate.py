@@ -187,6 +187,43 @@ def test_no_detection_in_hand_means_no_call_and_no_block():
     assert a.stats["verify_no_view"] == 1 and "verify_calls" not in a.stats
 
 
+def test_the_stored_view_is_the_best_look_not_the_last_one():
+    """S76: the live gate is blind when the detection has left the frame. The
+    stored view is the highest-scoring look at the cloud being stopped on."""
+    import numpy as np
+    v = _Verifier(verdict=True)
+    a = _at_stop(verifier=v, verify_on_stop=True, verify_stop_view="stored")
+    strong, weak = np.full((480, 640, 3), 7, np.uint8), np.full((480, 640, 3), 9, np.uint8)
+    a._remember_best_view([_det(score=0.55)], weak)
+    a._remember_best_view([_det(score=0.95, box=(10, 10, 60, 60))], strong)
+    a._remember_best_view([_det(score=0.60)], weak)          # later, but worse
+    a._last_dets, a._last_rgb = [], None                     # nothing in frame now
+    assert a._navigate(np.zeros(2), 0.0, np.array([0.5, 0.0])) == "stop"
+    assert a.stats["verify_calls"] == 1 and a.stats["verify_view_stored"] == 1
+    assert v.calls[0][0] == strong.shape and v.calls[0][1] == (10, 10, 60, 60)
+
+
+def test_the_live_gate_would_have_had_nothing_to_ask_about():
+    """The same situation on S75's setting: no live detection, no call."""
+    import numpy as np
+    v = _Verifier(verdict=False)
+    a = _at_stop(verifier=v, verify_on_stop=True)            # verify_stop_view defaults live
+    a._remember_best_view([_det(score=0.95)], np.zeros((480, 640, 3), np.uint8))
+    a._last_dets, a._last_rgb = [], None
+    assert a._navigate(np.zeros(2), 0.0, np.array([0.5, 0.0])) == "stop"
+    assert a.stats["verify_no_view"] == 1 and v.calls == []
+
+
+def test_burning_the_cloud_drops_the_view_it_described():
+    """A stored view must never outlive the cloud it was evidence for."""
+    import numpy as np
+    a = _at_stop(verifier=_Verifier(), verify_on_stop=True, verify_stop_view="stored")
+    a._remember_best_view([_det(score=0.9)], np.zeros((480, 640, 3), np.uint8))
+    a.obstacle_map.frontiers = np.array([[3.0, 0.0]])
+    a._give_up_target("unverified", np.zeros(2), 0.0)
+    assert a._best_view is None
+
+
 def test_the_gate_latches_only_on_a_step_after_navigation_began():
     """`map_controller.py:771-776`: the latch needs `try_to_navigate` set on a
     PRIOR dispatch, a target detection this frame, and the PREVIOUS step's

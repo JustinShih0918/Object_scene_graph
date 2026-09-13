@@ -224,6 +224,11 @@ class AgentConfig:
     # error, so check `verify_errors` against `verify_calls` before believing a
     # null.
     verify_on_stop: bool = False
+    # Which view the stop check is asked about. `live` is the frame at the
+    # moment of stopping (S75, blind on the 42% of stops where the detection
+    # has left the frame); `stored` is the best look the agent had at the cloud
+    # it is stopping on, dropped whenever that cloud is burned (S76).
+    verify_stop_view: str = "live"
     terminal_requires_detection: bool = True
     frontier_reachability_gate: bool = True
     check_candidates_all_states: bool = False
