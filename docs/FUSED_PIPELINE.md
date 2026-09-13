@@ -163,7 +163,7 @@ success rate looks flat.
 `scripts/run_fusion_ab.sh` runs the arms paired, and
 `scripts/report_fusion_ab.py` compares them episode for episode.
 
-## The merged perception layer (b94fa81)
+## The merged perception layer (b94fa81, d8afa65)
 
 `experiment/sr-70-50` brought seven commits: a class-agnostic FastSAM +
 MobileCLIP proposal stage for objects the detector will not name, an
@@ -213,3 +213,36 @@ start a climb because they spend the budget chasing a live false positive on the
 start floor, and a stage that makes false positives harder to disbelieve could
 deepen that. If `region_proposal` is ever switched on in a cross-floor arm, read
 `region_admits` and the directed-switch counters before reading SR.
+
+### The proposal refusion (d8afa65)
+
+Nine further commits replaced the stage's output: a region no longer enters as a
+same-label `Detection` (which had cost 18 trials on the full 107) but as a
+*proposal observation*, matched on the track's running-mean feature. Proposals
+form a second population -- their own generator, ids from 1,000,000 up, hidden
+from `tracks()` by default, never linked, invisible to the presence filter -- and
+the commit bar moved onto tracks at `min_obs 4, tau 0.28`.
+
+None of the floor, stair, portal or climb files are touched by it, and all 89
+fusion-specific tests pass. The one shared file that changes substantially is
+`object_layer.py`. It is safe here for three reasons worth recording, because
+each is the kind of thing that would silently break a trajectory lock:
+
+* `_rng_prop` is `default_rng(rng_seed + 1_000_003)` -- an independent generator,
+  not a draw from `_rng`, so the detector's random stream is unchanged.
+* `_note_best_detection` is a faithful extraction of the old inline block.
+* One hunk IS a genuine behaviour change: `track.clip_ft` now accumulates even
+  when `feature_memory` is None. It cannot fire in these arms, because
+  `det.clip_ft` is only ever set by feature memory or the proposer and both are
+  off in every fused preset.
+
+v16 on 00808 reproduces all three episodes bit-for-bit against the pre-merge
+baseline after both merges.
+
+### Borrow their identity floor before blaming a merge
+
+Their round-4 identity check found one trial diverging where the detector's own
+scores differed on identical frames (0.596 -> 0.527) under two co-resident GPU
+workers, and reproducing exactly when rerun alone. Run-to-run numerics, not a
+leak. A trajectory diff on a busy GPU is not evidence until the episode has been
+rerun on an idle one.
