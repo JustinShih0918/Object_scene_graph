@@ -1,273 +1,202 @@
 # Object Scene Graph ObjectNav
 
-Open-vocabulary, object-goal navigation on HM3D ObjectNav (Habitat). A
-from-scratch Python `osg` package: open-vocab perception → a `floor → room →
-container → object` 3D scene graph → frontier exploration → approach + verify.
-The pipeline has three navigation modes and three policies, including the
-sensor-only ASCENT path and a floor-aware dynamic-scene path.
+Object-goal navigation in Habitat, sensor-only. Two benchmarks live here:
 
-The current pipeline (see **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)** for
-how it got here):
+| | task | policy | measured |
+|---|---|---|---|
+| **HM3D ObjectNav** | find a `chair`/`bed`/`toilet`/`sofa`/`plant`/`tv_monitor` in an unseen house | `ascentnav` — a line-cited transcription of ASCENT's control flow | **63.0% SR / 0.36 SPL** on 100 v1 episodes (native ASCENT: 65.0% / 0.36) |
+| **Authored YCB dynamic scenes** | find an object that has been *moved* since the map was built | `nav_agent` — OSG's scene graph, presence beliefs and container posterior | see [docs/DYNAMIC_SCENES.md](docs/DYNAMIC_SCENES.md) |
 
-- **Perception — YOLOE** (open-vocab detection **and** segmentation in one
-  model; no SAM) → ellipsoid object layer (dual-quadric + Wasserstein refine).
-- **Navigation — `agent.navigation`**:
-  - `costmap`: the from-scratch A*/Voronoi planner and waypoint controller.
-  - `pointnav`: ASCENT's frozen depth + point-goal policy; sensor-only.
-  - `navmesh`: Habitat's ground-truth `ShortestPathFollower`. This is
-    privileged navigation and its SR/SPL must not be compared with sensor-only
-    methods. `agent.use_habitat_navmesh` remains a compatible alias.
-- **Policy — `agent.policy`**: `nav_agent` is the OSG state machine and dynamic
-  world model; `ascent` keeps OSG maps with ASCENT-style control flow;
-  `ascentnav` uses the alternative ASCENT map/control pipeline under
-  `src/ascentnav/`.
-- **Exploration — continuous sweep** (`exploration=sweep`): nearest frontier +
-  a momentum bonus that prefers frontiers ahead of the heading, so the agent
-  sweeps continuously instead of ping-ponging. **LLM-free** (the LLM frontier
-  scorer was found redundant on single-floor).
-- **Verification — forced-choice VLM** (`verification=nim`, default): shows the
-  VLM the whole frame with the target boxed and makes it pick the category from
-  the goal list; rejects detector mislabels (e.g. a stool detected as a chair)
-  and unreachable / non-goal instances, then keeps exploring.
+> **Read this if nothing else.** The default configuration changed in
+> September 2026. `python scripts/run_eval.py` with no arguments no longer runs
+> OSG's own agent with YOLOE and a hosted VLM verifier — it runs the **S71
+> arm**: ASCENT's control flow on ASCENT's five served perception models, on
+> the 100-episode HM3D split. It needs those five servers and a local ollama,
+> and it refuses to start without them. See [docs/SETUP.md](docs/SETUP.md).
 
-> **Status (2026-09):** the default config is the S71 arm — ASCENT's control
-> flow (`src/ascentnav/`) on ASCENT's served perception models, sensor-only —
-> at **63.0% SR / 0.36 SPL on `scenes20_ep0to4`** (100 HM3D v1 episodes);
-> native ASCENT scores 65.0% / 0.36 on the same episodes, the previous port
-> 54.0%. Same-floor 75.6%, cross-floor 18.2%.
->
-> **[docs/SETUP.md](docs/SETUP.md)** is the install: the pinned ASCENT
-> submodule, the GroundingDINO CUDA extension, and ~5 GB of model weights.
-> **[docs/USAGE.md](docs/USAGE.md)** is the how-to: model servers, running,
-> comparing against ASCENT, variants. **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**
-> is the what-and-why: the protocol, how claims are established, and every
-> verified difference from native ASCENT. **[docs/AB_RESULTS.md](docs/AB_RESULTS.md)**
-> (S71) has the diagnosis and the paired result; **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)**
-> and **[docs/MULTI_FLOOR.md](docs/MULTI_FLOOR.md)** the earlier work. Note from
-> that work: **runs are not reproducible while the VLM verifier is on** — the
-> default has it off; use `verification=off` on legacy presets for any A/B
-> meant to prove two configs equivalent.
+---
 
-## Quick start
+## Start here
 
-Build the image, start the containers, and drop into a shell — everything
-after that runs **inside the `nav` container** (PYTHONPATH, NVIDIA_API_KEY,
-etc. are already set by the image/compose env, so no `docker exec` prefix or
-`PYTHONPATH=src` is needed below).
+| you want to… | read |
+|---|---|
+| install it (submodule, CUDA extension, ~5 GB of weights, datasets) | **[docs/SETUP.md](docs/SETUP.md)** |
+| run it, compare against ASCENT, try a variant | **[docs/USAGE.md](docs/USAGE.md)** |
+| know what is measured and how claims are established | **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)** |
+| see every A/B and why it won or lost | **[docs/AB_RESULTS.md](docs/AB_RESULTS.md)** |
+| the dynamic-scene benchmark | **[docs/DYNAMIC_SCENES.md](docs/DYNAMIC_SCENES.md)**, [docs/MULTI_FLOOR.md](docs/MULTI_FLOOR.md) |
 
 ```bash
-cp docker/.env.example docker/.env
-# Set the two collector paths and LOCAL_UID=$(id -u), LOCAL_GID=$(id -g).
+cp docker/.env.example docker/.env          # set LOCAL_UID/LOCAL_GID and the collector paths
 docker compose -f docker/compose.yaml --env-file docker/.env build nav
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
-docker exec -it docker-nav-1 bash       # habitat conda env is active through the entrypoint
+docker exec -it docker-nav-1 bash           # everything below runs in here
+
+git submodule update --init --recursive     # ASCENT + its nine nested submodules
+/workspace/.conda-envs/ascent/bin/pip install -e relative_work/ascent/third_party/GroundingDINO
+bash scripts/fetch_ascent_weights.sh        # ~4.6 GB
+python scripts/download_weights.py --pointnav --rednet
+docker exec docker-ollama-1 ollama pull qwen2.5:7b
+
+bash scripts/serve_perception.sh            # five model servers, ~60 s
+python scripts/run_eval.py eval.num_episodes=1      # one live episode
 ```
 
-Compose mounts the collector's `data/` and `outputs/dualmap_authoring/`
-directories read-write at `/datasets/habitat-data-collector/...`, so `nav` can
-use and update the collector data directly. The host-matched UID/GID keeps new
-files accessible outside Docker without a second user setup. Generated episode
-manifests and experiment artifacts still default to this repository's ignored
-`outputs/` directory. The entrypoint repairs ownership only for `outputs/` and
-the named detector-weight volume; it does not recursively chown collector data.
+Two setup traps, both of which fail late and confusingly:
 
-### Smoke tests
+- **`--recursive` is mandatory.** Without it ASCENT's nine nested submodules
+  are empty directories and the servers import nothing.
+- **GroundingDINO's CUDA op must be compiled** (the `pip install -e` above).
+  A fresh clone starts the stair server fine and then returns HTTP 500 on the
+  first frame with `NameError: name '_C' is not defined`.
+
+---
+
+## The HM3D pipeline (the default)
+
+`src/ascentnav/` is a transcription of ASCENT's `Ascent_Policy.act` and the
+`Map_Controller` it drives, on ASCENT's vendored maps, with every rule cited to
+its reference line. It replaced a port that scored 54.0% where the reference
+scored 65.0%; a paired trace diagnosis showed the gap was **before the target
+was ever in frame**, not in the models — so the fix was control flow, not
+tuning. `docs/AB_RESULTS.md` S71 has the full story.
+
+Per step: hole-filled depth → object map (D-FINE at 0.8, one MobileSAM mask per
+detection, *every* detection ingested) → obstacle map and the stair state
+machine → one BLIP-2 cosine for the value map → dispatch (stairs → pitch →
+13-turn opening scan → explore → navigate).
+
+Five models are served over HTTP from a separate conda env, because BLIP-2's
+`lavis` and habitat-sim cannot share an interpreter. Process-per-model is
+ASCENT's own architecture, not a workaround.
+
+| port | model | role |
+|---|---|---|
+| 13182 | BLIP-2 ITM | value map, and the commit gate that latches at ≥ 0.15 |
+| 13183 | MobileSAM | one mask per detection box |
+| 13184 | GroundingDINO | `"stair ."` ≥ 0.60, ANDed with RedNet |
+| 13185 | RAM++ | scene tags for the LLM prompt |
+| 13186 | D-FINE | closed-set COCO detector |
+
+> **Run one evaluation at a time.** The servers cache per-image state on the
+> model object and are not reentrant; two concurrent evals race and one gets an
+> HTTP 500. This killed two multi-hour runs. The client retries once, which
+> covers a transient hit, not sustained concurrency.
+
+The pipeline **fails loud**: all five servers are probed before Habitat loads,
+and one that stops answering raises `PerceptionUnavailable` instead of
+returning a neutral value. That is deliberate — a silently unreachable BLIP-2
+scores 0 every step, which under ASCENT's gate is an agent that never stops,
+and a 0% run would look like a bad algorithm.
+
+---
+
+## Running
 
 ```bash
-python scripts/smoke_habitat.py       # M0: EGL rendering
-python scripts/smoke_ollama.py        # M0: LLM round-trip
-pytest tests/unit -q                  # unit tests (no GPU/data needed)
+python scripts/run_eval.py                                # default: 100 episodes, ~2.5 h
+python scripts/run_eval.py eval.behaviour_log=true        # + per-step trace
+python scripts/run_eval.py output_dir=outputs/my_run
+bash scripts/run_full_split.sh                            # full v1 val (2000 eps), supervised
+python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/my_run
 ```
 
-### Download the dataset (one-time, requires free HM3D license)
+`outputs/<run>/` holds `episodes.jsonl` (per-episode metrics, `agent_stats`
+mechanism counters, `state_log`, `giveup_log`, and the full `step_trace` when
+`behaviour_log=true`), `summary.json` (config + algorithm inventory) and
+`timing.csv`.
 
-Request access at
-https://matterport.com/habitat-matterport-3d-research-dataset for API
-credentials, then:
+The comparison scores both runs against the dataset's own object positions —
+geometry neither agent sees — and reports the metrics that actually separate
+arms: SAW episodes, never-saw→STOP, climb share on same-floor episodes,
+earliest STOP, P(success | committed). **A change that moves SR without moving
+one of those is noise at n=100.**
 
-```bash
-# scenes — minival (~1 GB) is enough for development
-python scripts/download_data.py --username <TOKEN_ID> --password <TOKEN_SECRET> --uids hm3d_minival_v0.2
-# later, for full eval: --uids hm3d_val_v0.2
-python scripts/download_data.py --episodes-only          # ObjectNav v2 episodes (public)
-python scripts/download_weights.py                       # detector + mobileclip weights (offline-safe eval)
-python scripts/download_weights.py --pointnav            # ASCENT sensor-only mover
-python scripts/download_weights.py --rednet              # ASCENT stair segmentation
-python scripts/download_weights.py --clip                # ASCENT/value-map image-text model
-```
-
-See `data/README.md` for the full split layout. LLM/VLM defaults to
-**NVIDIA NIM** (hosted, `NVIDIA_API_KEY` in `.env`); use `llm=ollama` for a
-local model instead.
-
-### Running an eval
-
-```bash
-bash scripts/serve_perception.sh                         # the five ASCENT model servers (once)
-python scripts/run_eval.py                               # the default: S71 on scenes20_ep0to4 (100 eps)
-python scripts/run_eval.py eval.num_episodes=3           # smoke
-python scripts/run_eval.py +experiment=final_sensor      # the full v1 val split
-python scripts/run_eval.py +experiment=matched_single_floor          # a legacy preset (old base, see docs/USAGE.md)
-python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/<run>   # paired vs ASCENT
-```
-
-The default needs the servers and a local ollama with `qwen2.5:7b`; it refuses
-to start if any is down. See [docs/USAGE.md](docs/USAGE.md).
-
-### Authored YCB benchmark
+### The dynamic-scene benchmark
 
 `+experiment=ycb_authored_nav` discovers authored layouts at runtime, creates
-and caches target-visible ObjectNav episodes, injects all authored rigid objects
-after every Habitat reset, and uses YOLOE-11l. The current `00829` scene is a
-fixture, not a hard-coded preset: adding another complete authored scene makes
-it available immediately.
+and caches target-visible episodes, and injects the authored rigid objects after
+every Habitat reset. Layout types are `static`, `in_anchor`, `cross_anchor`.
 
 ```bash
-# Download both explicit detector profiles once (inside docker-nav-1).
-python scripts/download_weights.py --profile large
-python scripts/download_weights.py --profile small
-
-# All complete scenes and their static layouts (default).
 python scripts/run_eval.py +experiment=ycb_authored_nav
-
-# One scene, or an arbitrary subset.
-python scripts/run_eval.py +experiment=ycb_authored_nav \
-  'ycb.scenes=[00829-QaLdnwvtxbs]'
-python scripts/run_eval.py +experiment=ycb_authored_nav \
-  'ycb.scenes=[00829-QaLdnwvtxbs,00900-FutureScene]'
-
-# A specific dynamic relocation slot.
+python scripts/run_eval.py +experiment=ycb_authored_nav 'ycb.scenes=[00829-QaLdnwvtxbs]'
 python scripts/run_eval.py +experiment=ycb_authored_nav \
   'ycb.layout_types=[in_anchor]' 'ycb.layout_indices=[2]'
-
-# Prepare/validate manifests without running the navigation agent.
-python scripts/prepare_ycb_episodes.py +experiment=ycb_authored_nav
-
-# Explicit memory fallback; this is never selected silently.
-python scripts/run_eval.py +experiment=ycb_authored_nav detector=yoloe_small
+python scripts/prepare_ycb_episodes.py +experiment=ycb_authored_nav   # manifests only
 ```
 
-Valid layout types are `static`, `in_anchor`, and `cross_anchor`. Wildcard
-selection skips incomplete scene directories and records the reason in
-`summary.json`; explicitly selecting an incomplete scene, layout type, or slot
-fails with an actionable error. Cache keys include the scene, layout type/index,
-generator settings, seed, and layout SHA-256, so editing an authoring JSON
-automatically regenerates its manifest. Each layout starts with a fresh scene
-graph; memory is not carried between static and dynamic layouts.
+Wildcard selection skips incomplete scene directories and records why in
+`summary.json`; naming an incomplete scene explicitly is an error. Cache keys
+cover the scene, layout, generator settings, seed and layout SHA-256, so editing
+an authoring JSON regenerates its manifest. Each layout starts with a fresh
+scene graph — memory is never carried between static and dynamic layouts.
 
-For the combined benchmark, `+experiment=ycb_dynamic_multifloor` emits only
-authored relocations whose prior/static floor differs from the destination and
-samples every start on the prior floor. It keeps the OSG `nav_agent`, stale-map
-presence beliefs and container posterior, but gives every storey its own map.
-Build the static maps in a separate pass (the combined preset intentionally
-filters its manifests to relocations):
+`+experiment=ycb_dynamic_multifloor` emits only relocations that cross a floor
+and starts every episode on the prior floor. Build the static maps first:
 
 ```bash
 python scripts/run_eval.py +experiment=ycb_dynamic_multifloor \
   'ycb.cross_floor_relocations_only=false' 'ycb.layout_types=[static]' \
   ycb.map_out=outputs/static_maps
-python scripts/run_eval.py +experiment=ycb_dynamic_multifloor \
-  ycb.map_in=outputs/static_maps
+python scripts/run_eval.py +experiment=ycb_dynamic_multifloor ycb.map_in=outputs/static_maps
 ```
 
-Snapshot schema v2 stores all floors, stairs, connectivity and track floor
-keys; v1 single-floor maps still load as floor 0.
+---
 
-### Different configs
+## Configuration
 
-Override any Hydra group on the CLI, standalone or stacked on a preset:
+Hydra groups under `configs/`; override on the CLI (`group=name`) or compose a
+preset (`+experiment=name`).
 
-```bash
-python scripts/run_eval.py detector=yoloe_small llm=ollama exploration=sweep verification=off
-python scripts/run_eval.py +experiment=matched_single_floor \
-    verification=nim eval.num_episodes=35 eval.debug_frames=true
-```
-
-Outputs land in `outputs/<timestamp>/`: `summary.json` (SR/SPL + per-module
-FPS + config fingerprint), `episodes.jsonl` (rich per-episode diagnostics),
-`timing.csv`, `viz/*.png` (top-down maps), and — with `eval.debug_frames=true`
-— `viz/debug/<scene>_ep<ID>.mp4` (per-step RGB+segmentation | costmap). Artifact
-names carry the scene because HM3D episode ids repeat across scenes.
-
-### Config groups & experiments
-
-Hydra groups under `configs/` — override on the CLI (`group=name`) or compose a
-whole preset with `+experiment=name`:
-
-| group | options (**default** = the S71 arm) |
+| group | options (**bold** = default) |
 |---|---|
 | `agent` | **`s71`** (ascentnav policy, PointNav mover), `default` (OSG's `nav_agent`) |
-| `detector` | **`dfine`** (served, strict), `yoloe` (11l, 640px), `yoloe_small` (11s, 512px) |
-| `llm` | **`qwen_local`** (ollama qwen2.5:7b), `nim` (NVIDIA hosted), `ollama` |
-| `exploration` | **`s71`** (ASCENT planner + BLIP-2 value map), `llm_text`, `nearest`, `sweep`, `value` |
-| `verification` | **`s71`** (off), `nim` (forced-choice VLM), `nim_terminal` (verify at STOP), `off` |
+| `detector` | **`dfine`** (served, strict), `yoloe` (11l open-vocab), `yoloe_small`, `yolo_coco` |
+| `exploration` | **`s71`** (ASCENT planner + BLIP-2 value map), `value`, `sweep`, `nearest`, `llm_text` |
+| `verification` | **`s71`** (off), `nim` (forced-choice VLM), `nim_terminal`, `off` |
+| `llm` | **`qwen_local`** (ollama qwen2.5:7b), `nim`, `ollama` |
 | `scene_graph` | **`place365`**, `default` |
-| `eval` | **`scenes20_ep0to4`** (100 v1 eps), `hm3d_val_v1_full`, `hm3d_val` (v2), `hm3d_val_v1`, `hm3d_val_single_floor`, `hm3d_val_mini`, `ycb_authored` |
-| `floor` | multi-floor support; all off by default, enabled by `+experiment=full_v1_navmesh` (see docs/MULTI_FLOOR.md) |
+| `eval` | **`scenes20_ep0to4`** (100 v1 eps), `hm3d_val_v1_full`, `hm3d_val_v1`, `hm3d_val`, `hm3d_val_single_floor`, `hm3d_val_mini`, `ycb_authored` |
 
-Key agent flags (CLI: `agent.<flag>=...`): `navigation`
-(`costmap | navmesh | pointnav`), `policy`
-(`nav_agent | ascent | ascentnav`), `use_habitat_navmesh` (legacy alias),
-`exploration.continuity_weight` (momentum), `verification.choice_mode`.
+Eleven presets remain: `ascentnav` (the default by name),
+`ascentnav_union_stairs` (the stair A/B), `final_sensor` (full split), and
+seven `ycb_*` dynamic arms. The S8–S70 port-chain presets were removed in the
+September 2026 trim; their numbers stand as recorded in `docs/AB_RESULTS.md`
+and re-running them means recovering the yaml from git history.
 
-`configs/experiment/` presets: **`full_v1_navmesh`** (current best — navmesh +
-sweep + verify, full v1, 5 eps/scene), `matched_navmesh` (single-floor),
-`matched_single_floor`, `matched_old`, `matched_verify`,
-`matched_terminal_verify`, `single_floor_navgoal`, `ycb_authored_nav`,
-`ycb_dynamic_multifloor`, and the ASCENT A/B presets documented in
-[docs/AB_RESULTS.md](docs/AB_RESULTS.md).
+Three navigation modes exist (`agent.navigation`): `pointnav` (ASCENT's frozen
+policy, sensor-only, the default), `costmap` (the from-scratch A*/Voronoi
+planner), and `navmesh` (Habitat's ground-truth follower — **privileged**, its
+SR/SPL must never be quoted against sensor-only methods).
 
-### Analysis & debugging
-
-The `scripts/analyze_*.py` tools decompose a run's `episodes.jsonl`:
-`analyze_stages.py` (explore vs approach failure), `analyze_floors.py` (SR by
-floor class, floor-estimator audit, stair-track rate), `analyze_localization.py` /
-`analyze_trackloc.py` (stop-pose / mapped-object vs GT), `analyze_approach.py`
-(why the terminal approach failed). Rich per-episode fields include
-`state_log`, `frontier_select_log` (every frontier choice: step, agent xy,
-chosen frontier, path cost), `approach_diag`, and `verify_calls`.
-
-With `eval.debug_frames=true` a run also writes:
-- `viz/debug/<scene>_ep<ID>.mp4` — per-step **RGB + YOLOE segmentation | costmap** (with
-  the chosen frontier and planned path drawn), and
-- `verify_debug/` (when a verifier is active) — the exact **image sent to the
-  VLM** (whole frame + red box) plus `index.jsonl` with the VLM's response and
-  accept/reject per call.
-
-See **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)** for the full story.
-
-## Hardware profiles
-
-| | detector | VLM | fits |
-|---|---|---|---|
-| default (6 GB, RTX 4050 laptop) | `detector=yoloe_small` (11s, 512px) | `qwen2.5vl:3b` | ~4.5 GB |
-| report-quality (>=10 GB; verified on RTX 3080) | `detector=yoloe` (11l, 640px) | off or hosted | hardware-dependent |
-
-The global default remains the small profile for general use, while
-`+experiment=ycb_authored_nav` deliberately defaults to YOLOE-11l so benchmark
-results stay comparable. Select `detector=yoloe_small` explicitly if memory is
-tight; the benchmark never falls back silently.
-
-The LLM/VLM is queried **asynchronously** — the control loop never blocks on
-it, which is what keeps the pipeline real-time; decision latency is reported
-separately in `timing.csv`.
+---
 
 ## Layout
 
-- `src/osg/` — the pipeline: `perception` (YOLOE, keyframes) → `objects`
-  (ellipsoid layer: dual-quadric projection, association, Wasserstein
-  refinement, linking) → `mapping` (per-floor costmaps, floor estimation,
-  frontiers, cross-floor portals, room watershed) →
-  `graph` (floor/room/object hierarchy + category priors + LLM serialization) →
-  `exploration` (scorers incl. `NullScorer` for geometric, momentum/info-gain
-  selector) → `planning` (A*, waypoint controller — used when *not* on the
-  navmesh) → `verification` (forced-choice VLM verifier) → `agent` (FSM) →
-  `sim` (Habitat env + `ShortestPathFollower` navmesh driving) / `eval`.
-- **Navigation** uses one of the three movers above. Only `navmesh` receives
-  simulator geometry (`action_to_goal` / `is_reachable`); `costmap` and
-  `pointnav` are sensor-only. `src/ascentnav/` is an attributed alternative
-  policy, not a replacement for OSG's dynamic hierarchy.
+- `src/ascentnav/` — **the default HM3D policy.** `agent.py` (dispatch,
+  `_navigate`, `_explore`), `stairs.py`, `planner.py`, `perception.py`,
+  `depth_filter.py`, `geometry.py`, and `mapping/` (ASCENT's obstacle, value
+  and object-cloud maps, vendored).
+- `src/osg/` — the rest of the pipeline, and all of the dynamic-scene agent:
+  `perception` → `objects` (ellipsoid layer) → `mapping` (per-floor costmaps,
+  floors, frontiers, portals) → `graph` (floor/room/container/object) →
+  `exploration` → `planning` → `verification` → `agent` → `sim` / `eval`.
+- `relative_work/ascent/` — the ASCENT reference, a **submodule** pinned to
+  upstream `8f7bbf9`, unpatched. The five model servers live here.
+- `data/reference/ascent_behaviour_100/` — ASCENT's recorded 100-episode trace
+  (65.0%), the baseline every comparison is scored against.
 - `configs/` — Hydra groups; `configs/experiment/*` are composable presets.
-- `scripts/` — eval entry (`run_eval.py`), data/weights download,
-  `analyze_*.py` diagnostics, keyframe/video tools.
-- `tests/unit` — synthetic-data tests, no GPU; `tests/integration` — `-m sim`.
+- `scripts/` — `run_eval.py`, `run_full_split.sh` (supervised long run),
+  `serve_perception.sh`, `compare_ascent_osg.py`, `analyze_*.py` diagnostics.
+- `tests/unit` — 937 tests, no GPU or data needed (~20 s). Every
+  `test_ascentnav_*` names the reference line it was transcribed from, and
+  `tests/unit/golden/` pins every preset's composed config so a default cannot
+  move unnoticed.
+
+## Hardware
+
+Developed on one 24 GB GPU: the five servers take ~11 GB and habitat plus
+RedNet ~2.5 GB, leaving room for exactly one evaluation. The LLM and VLM are
+queried asynchronously — the control loop never blocks on them; decision
+latency is reported separately in `timing.csv`.
