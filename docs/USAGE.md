@@ -59,7 +59,19 @@ python scripts/run_eval.py output_dir=outputs/my_run         # name the run
 python scripts/run_eval.py eval.behaviour_log=true           # + per-step trace for the comparison script
 python scripts/run_eval.py eval.num_episodes=3               # smoke
 python scripts/run_eval.py +experiment=final_sensor          # the full v1 val split (2000 episodes)
+bash scripts/run_full_split.sh                               # ...supervised: restarts itself until done
 ```
+
+The full split takes ~60 h and has twice been killed by things unrelated to the
+agent (a model server returning HTTP 500 under a concurrent eval; a session
+teardown). `scripts/run_full_split.sh` re-derives the unscored episodes from
+`episodes.jsonl` before every attempt and relaunches, so a restart can neither
+re-run a scored episode nor skip an unscored one; it adopts a run already in
+flight, holds a lock so two supervisors cannot race, brings the model servers
+back if they died, and gives up after three attempts that score nothing rather
+than looping on a real fault. `--status` reports what is left. It is a process
+in this container, so it does **not** survive a container restart or a session
+teardown — run it again afterwards and it picks up where the record left off.
 
 `+experiment=ascentnav` names the default explicitly and composes to the
 identical config (pinned by `tests/unit/golden/experiment_fingerprints.json`).
