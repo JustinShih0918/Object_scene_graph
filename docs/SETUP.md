@@ -18,10 +18,11 @@ git clone --recursive <this repo>
 git submodule update --init --recursive
 ```
 
-**`--recursive` is not optional, and the image build needs it too** — the
-Dockerfile does `COPY relative_work/ascent /opt/ascent` and fails outright if
-the submodule is not checked out, which is deliberate: a silently partial image
-would fail much later and far less clearly. ASCENT itself carries nine nested
+**`--recursive` is not optional** for running from a checkout: without it
+ASCENT's nine nested submodules are empty directories. The *image build* does
+not need it — the Dockerfile clones the reference itself at the pin in
+`ARG ASCENT_REF`, which `tests/unit/test_dockerfile_pins.py` keeps equal to the
+submodule commit. ASCENT itself carries nine nested
 submodules (GroundingDINO, MobileSAM, D-FINE, RAM++, places365, vlfm,
 frontier_exploration, depth_camera_filtering, habitat-lab), and a non-recursive
 clone leaves all nine as empty directories. The servers import from them.

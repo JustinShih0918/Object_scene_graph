@@ -27,7 +27,6 @@ Object-goal navigation in Habitat, sensor-only. Two benchmarks live here:
 | the dynamic-scene benchmark | **[docs/DYNAMIC_SCENES.md](docs/DYNAMIC_SCENES.md)**, [docs/MULTI_FLOOR.md](docs/MULTI_FLOOR.md) |
 
 ```bash
-git submodule update --init --recursive     # REQUIRED before the build
 cp docker/.env.example docker/.env
 printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" >> docker/.env   # or the mount is unwritable
 $EDITOR docker/.env                         # point HM3D_SCENES at the scene meshes
@@ -35,6 +34,7 @@ docker compose -f docker/compose.yaml --env-file docker/.env build nav   # both 
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
 docker exec -it docker-nav-1 bash           # everything below runs in here
 
+git submodule update --init --recursive     # ASCENT + its nine nested submodules
 bash scripts/fetch_ascent_weights.sh        # ~4.6 GB
 python scripts/download_weights.py --pointnav --rednet
 docker exec docker-ollama-1 ollama pull qwen2.5:7b
@@ -48,10 +48,11 @@ shell entry) and `ascent` (BLIP-2, MobileSAM, GroundingDINO, RAM++, D-FINE).
 They cannot be one interpreter — habitat-sim pins numpy < 1.24 and lavis needs
 a different transformers — which is why the models are served over HTTP.
 
-**`--recursive` is mandatory, including before the build.** The Dockerfile
-copies the ASCENT submodule to compile GroundingDINO's CUDA kernel, and fails
-outright without it. Skipping the recursive checkout at *run* time instead
-leaves nine empty directories and servers that import nothing.
+**Check out the submodule recursively** (`git submodule update --init
+--recursive`) before running from the checkout — without it ASCENT's nine
+nested submodules are empty directories and the servers import nothing. The
+image build does not need it: the Dockerfile clones the reference at a pinned
+commit, kept in step with the submodule by a test.
 
 ---
 

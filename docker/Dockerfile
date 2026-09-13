@@ -1,8 +1,11 @@
 # One image, every experiment: OSG's agent, the ASCENT reference, and all five
 # perception servers.
 #
-#   git submodule update --init --recursive        # REQUIRED before building
 #   docker compose -f docker/compose.yaml --env-file docker/.env build nav
+#
+# The build context is `docker/` and everything else is fetched, so no working
+# tree state is required -- the ASCENT reference is cloned at the pin in
+# ASCENT_REF below.
 #
 # TWO CONDA ENVS, ONE IMAGE. They cannot be merged into one interpreter and
 # every attempt is encoded below:
@@ -96,10 +99,20 @@ RUN conda install -y -n ascent habitat-sim=0.3.1 withbullet headless \
 # requires <1.24; scipy 1.10.1 is the last release built against that line.
 RUN pip install --no-cache-dir "numpy==1.23.5" "scipy==1.10.1" "pandas==1.5.3"
 
-# The reference source. `relative_work/ascent` is a git submodule: the build
-# FAILS HERE with "no such file or directory" unless it was checked out
-# recursively first, which is deliberate -- a silent partial image is worse.
-COPY relative_work/ascent /opt/ascent
+# The reference source, CLONED rather than COPYed. compose sets the build
+# context to `docker/`, so the submodule is not in it -- and widening the
+# context to the repo root would ship outputs/, data/ and 4.6 GB of weights to
+# the daemon on every build. Cloning also means the image matches the pin
+# regardless of the state of anyone's working tree.
+#
+# ASCENT_REF must equal the submodule pin recorded in git. That is enforced by
+# tests/unit/test_dockerfile_pins.py, so the two cannot drift silently.
+ARG ASCENT_REF=8f7bbf906c8433a47c4d2c46a268cd1258c4057c
+RUN git clone https://github.com/Zeying-Gong/ascent.git /opt/ascent \
+    && cd /opt/ascent \
+    && git checkout -q "$ASCENT_REF" \
+    && git submodule update --init --recursive \
+    && rm -rf /opt/ascent/.git
 WORKDIR /opt/ascent
 
 RUN pip install --no-cache-dir -e third_party/habitat-lab/habitat-lab \
