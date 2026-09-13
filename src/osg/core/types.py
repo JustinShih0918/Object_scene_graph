@@ -68,6 +68,12 @@ class Detection:
     # Unit CLIP image feature of `crop`, when feature memory is on. Set once
     # per keyframe in a single batched encode (objects/object_layer.update).
     clip_ft: Optional[np.ndarray] = None
+    # Who produced it: "detector" for the label path, "proposal" for the
+    # class-agnostic region stage. The object layer keeps the two counts
+    # apart on the track, and the candidate gate reads them: a track that only
+    # proposals have ever seen is a hypothesis about appearance, not a naming,
+    # and is held to a different bar (objects/object_layer.candidates).
+    source: str = "detector"
 
     def crop_from(self, rgb: np.ndarray, pad: int = 8) -> np.ndarray:
         x1, y1, x2, y2 = self.bbox_xyxy.astype(int)

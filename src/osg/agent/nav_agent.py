@@ -491,6 +491,7 @@ class NavAgent:
             self._region_cache = None
             self._region_kf = 0
             self._region_named = False
+            self.object_layer.set_proposal_text(self.region_proposer.text)
         if self.feature_memory is not None:
             # The prompt changes once an episode, so the text encoder runs once
             # an episode. Centres come from the object layer, which resolves a
@@ -847,9 +848,12 @@ class NavAgent:
                 frame.camera_position[list(PLANE)].copy(),
                 self.room_classifier.classify(frame.rgb),
             ))
+        named_dets = list(dets or [])
         dets = self._propose_regions(frame, dets)
         if self.on_keyframe_detections is not None:
-            self.on_keyframe_detections(frame, dets)
+            # The ground-truth view counts what the DETECTOR saw; proposals
+            # have their own counters.
+            self.on_keyframe_detections(frame, named_dets)
         with self.profiler.timeit("object_layer"):
             self.object_layer.update(frame, dets, floor_key=self.floors.current_id)
         self.keyframes.add(frame)
@@ -1309,7 +1313,25 @@ class NavAgent:
         ]
         if matches:
             return max(matches, key=lambda d: d.score)
+        # The fallthrough is for the track whose identity rests on appearance.
+        # This function also stops and steers every approach, ends the close
+        # look and gates the terminal stop, so a proposal answering it while
+        # the agent works a track the DETECTOR named lets a region on the
+        # wrong object do all of that. Measured with the stage on every
+        # keyframe: a named red plate approach stopped at 1.52 m on a region,
+        # a tin can scored a false stop at step 46 on its prior-map track.
+        # A proposal-only track gets the proposal sensor; a named one gets the
+        # detector, exactly as before the stage existed.
+        if not self._working_a_proposal_track():
+            return None
         return self._region_detection(frame)
+
+    def _working_a_proposal_track(self) -> bool:
+        cid = getattr(self, "_candidate_id", None)
+        if cid is None:
+            return False
+        track = self.object_layer.get(int(cid))
+        return bool(track is not None and getattr(track, "proposal_only", False))
 
     def _region_active(self) -> bool:
         """Is the proposal stage a fallback for THIS episode?
@@ -1330,6 +1352,8 @@ class NavAgent:
         cfg = rp.cfg
         if self._region_admits >= int(cfg.max_per_episode):
             return False
+        if bool(getattr(cfg, "every_keyframe", False)):
+            return True
         if bool(getattr(cfg, "require_never_named", False)) and self._region_named:
             return False
         return self._region_kf >= int(getattr(cfg, "unnamed_keyframes", 0) or 0)

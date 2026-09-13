@@ -107,6 +107,14 @@ class ObjectTrack:
     # predicates (stale twins, place disabling, the search anchor) can still
     # recognise it as being about the target.
     feature_admitted: bool = False
+    # Observations that came from the class-agnostic proposal stage rather
+    # than the detector. A track where this equals `n_obs` has never been
+    # NAMED -- the detector has not once put the target's label on it -- so
+    # its claim to be the target rests on appearance alone, and
+    # `proposal_sim` (cosine of the running-mean feature against the query
+    # phrase) is what that claim is judged on.
+    n_proposal_obs: int = 0
+    proposal_sim: float = -1.0
     # Attempts the protocol scored as failed while committed to this track.
     # Kept apart from `identity_rejections`, which an unreachable verdict also
     # bumps: only an absence arrival or a failed attempt REFUTES a track in
@@ -151,6 +159,11 @@ class ObjectTrack:
     @property
     def n_obs(self) -> int:
         return len(self.observations)
+
+    @property
+    def proposal_only(self) -> bool:
+        """Every observation this track has came from the proposal stage."""
+        return self.n_proposal_obs > 0 and self.n_proposal_obs >= self.n_obs
 
 
 class DataAssociator:

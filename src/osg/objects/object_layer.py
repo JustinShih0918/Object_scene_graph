@@ -13,10 +13,13 @@ from ..core.types import Detection, FrameData
 from ..mapping.costmap import HEIGHT_AXIS, PLANE
 from .association import DataAssociator, Observation, ObjectTrack
 from .ellipsoid import Ellipsoid
-from .feature_memory import merge_running_mean
+from .feature_memory import cosine, merge_running_mean
 from .linking import object_center, relink
 from .presence import PresenceFilter
 from .optimization import WassersteinRefiner
+
+
+PROPOSAL_ID_BASE = 1_000_000   # proposal-only track ids live above here
 
 
 class ObjectLayer:
@@ -72,6 +75,11 @@ class ObjectLayer:
         # None unless feature_memory.enabled; nothing is loaded and no code
         # path below changes while it is None.
         self.feature_memory = feature_memory
+        # The query phrase's text feature, set per episode by the agent when
+        # the proposal stage is on. A proposal observation carries its region's
+        # image feature; the track keeps the running mean and its cosine
+        # against this text is `proposal_sim`.
+        self.proposal_text: Optional[np.ndarray] = None
         self.max_range_m = float(max_range_m)
         self.fp_disable_radius_m = float(fp_disable_radius_m)
         self.cloud_stride = int(cloud_stride)
@@ -79,6 +87,13 @@ class ObjectLayer:
         self.keep_cloud_labels: set = set()
         self._disabled_pts: List[tuple] = []
         self._rng = np.random.default_rng(rng_seed)
+        # Proposal tracks draw from their own generator and take ids from
+        # their own range: sharing either shifted every later named track's
+        # depth sample and id, and a plate committed at the same step to the
+        # same object landed 10 cm off and missed. The named map must be the
+        # named map, draw for draw.
+        self._rng_prop = np.random.default_rng(rng_seed + 1_000_003)
+        self._next_prop_id = PROPOSAL_ID_BASE
         # Track-creation funnel. Instrumentation only: nine failures of the last
         # campaign named the target 4-36 times at its new pose and ended with
         # the ONLY same-label tracks in the map being the ones loaded from the
@@ -92,6 +107,7 @@ class ObjectLayer:
             "ellipsoid_rejected": 0,  # depth too sparse to back-project a quadric
             "tracks_created": 0,
             "target_bypassed": 0,  # admitted only because it is the target
+            "proposal_obs": 0,     # observations the proposal stage contributed
         }
 
     # ------------------------------------------------------------------ api
@@ -99,6 +115,9 @@ class ObjectLayer:
     def set_target(self, label: str) -> None:
         """Which class this episode is hunting. Only read by `_admits`."""
         self.target_label = normalize_label(label)
+
+    def set_proposal_text(self, text_ft: Optional[np.ndarray]) -> None:
+        self.proposal_text = None if text_ft is None else np.asarray(text_ft, dtype=np.float32)
 
     def _admits(self, det: Detection) -> bool:
         """Is this detection worth putting in the map?
@@ -161,12 +180,25 @@ class ObjectLayer:
         # looking at the surface and the detector produced nothing -- and a
         # detection too small to seed a track is still proof that something is
         # there, so it must not be counted as a miss.
+        # Two populations that never touch. A proposal is an appearance
+        # hypothesis under the target's label; let it associate with, lend
+        # presence to, or link with a track the detector named and it moves
+        # that track's centre, keeps its belief alive and changes when it
+        # becomes a candidate -- measured as 5 of 15 trials diverging from
+        # `_sensor_v2` with commits off. So proposals only ever form and
+        # extend proposal-only tracks, the detector's tracks never see them,
+        # and the named path is bit-identical to a map without the stage.
+        is_prop = lambda d: str(getattr(d, "source", "detector")) == "proposal"
         same_floor = [
             t for t in self._tracks.values()
-            if int(getattr(t, "floor_key", 0)) == int(floor_key)
+            if int(getattr(t, "floor_key", 0)) == int(floor_key) and not t.proposal_only
+        ]
+        prop_floor = [
+            t for t in self._tracks.values()
+            if int(getattr(t, "floor_key", 0)) == int(floor_key) and t.proposal_only
         ]
         if self.presence_filter is not None:
-            self.presence_filter.update(same_floor, frame, dets)
+            self.presence_filter.update(same_floor, frame, [d for d in dets if not is_prop(d)])
         dets = admitted
         if not dets:
             return
@@ -174,8 +206,18 @@ class ObjectLayer:
         # remember. Detections, not frames: the cost is a function of how much
         # is in view, not of the control rate.
         if self.feature_memory is not None:
-            self.feature_memory.embed_detections(dets)
-        matches = self._associator.associate(dets, frame, same_floor)
+            self.feature_memory.embed_detections([d for d in dets if not is_prop(d)])
+        det_idx = [i for i, d in enumerate(dets) if not is_prop(d)]
+        prop_idx = [i for i, d in enumerate(dets) if is_prop(d)]
+        matches = [
+            (det_idx[i], tid)
+            for i, tid in self._associator.associate([dets[i] for i in det_idx], frame, same_floor)
+        ] if det_idx else []
+        if prop_idx:
+            matches += [
+                (prop_idx[i], tid)
+                for i, tid in self._associator.associate([dets[i] for i in prop_idx], frame, prop_floor)
+            ]
         K = frame.intrinsics.K()
         T_cw = frame.T_cw
         cam_xy = frame.camera_position[list(PLANE)]
@@ -187,43 +229,62 @@ class ObjectLayer:
             if obs is None:
                 self.funnel["obs_rejected"] += 1
                 continue
+            proposal = str(getattr(det, "source", "detector")) == "proposal"
             if track_id is None:
-                ell = Ellipsoid.init_from_detection(det, frame, rng=self._rng)
+                ell = Ellipsoid.init_from_detection(
+                    det, frame, rng=self._rng_prop if proposal else self._rng
+                )
                 if ell is None:
                     self.funnel["ellipsoid_rejected"] += 1
                     continue
                 self.funnel["tracks_created"] += 1
+                if proposal:
+                    new_id, self._next_prop_id = self._next_prop_id, self._next_prop_id + 1
+                else:
+                    new_id, self._next_id = self._next_id, self._next_id + 1
                 track = ObjectTrack(
-                    id=self._next_id, label=det.label, ellipsoid=ell, first_cam_xy=cam_xy.copy(),
+                    id=new_id, label=det.label, ellipsoid=ell, first_cam_xy=cam_xy.copy(),
                     floor_key=int(floor_key), out_of_range=self._marginal(det, frame),
                 )
-                track.evidence += det.score  # first sighting: full weight
-                self._next_id += 1
+                if not proposal:
+                    track.evidence += det.score  # first sighting: full weight
                 self._tracks[track.id] = track
                 if self._in_disabled_region(track):
                     track.blacklisted = track.disabled = True
                 relink_needed = True  # visible immediately -- join the scene graph now
             else:
                 track = self._tracks[track_id]
-                track.evidence += det.score * self._view_diversity_weight(track, cam_xy)
+                if not proposal:
+                    track.evidence += det.score * self._view_diversity_weight(track, cam_xy)
                 if not self._marginal(det, frame):
                     track.out_of_range = False
             track.observations.append(obs)
-            if self.feature_memory is not None and det.clip_ft is not None:
+            if det.clip_ft is not None:
                 track.clip_ft, track.clip_n = merge_running_mean(
                     track.clip_ft, track.clip_n, det.clip_ft
                 )
-                self.feature_memory.tag(track)
+                if self.feature_memory is not None:
+                    self.feature_memory.tag(track)
+            if proposal:
+                track.n_proposal_obs += 1
+                self.funnel["proposal_obs"] += 1
+                if self.proposal_text is not None:
+                    track.proposal_sim = cosine(track.clip_ft, self.proposal_text)
+                # A proposal is a view and a feature, nothing more: it does
+                # not add detector evidence and its constant score must not
+                # displace the best detection's crop or the pose it was made
+                # from -- that pose is the approach's terminal stop target,
+                # and `admit_score` beats every class the detector was
+                # loosened to 0.20 for.
+                # ...unless the proposal is all this track has: then the
+                # region IS its best view -- the crop the VLM will be shown,
+                # the size gate, and the pose an approach returns to.
+                if track.proposal_only and det.score > track.best_score:
+                    self._note_best_detection(track, det, frame, cam_xy)
+                self._accumulate_cloud(track, det, frame)
+                continue
             if det.score > track.best_score:
-                track.best_score = det.score
-                track.best_crop = det.crop if det.crop is not None else det.crop_from(frame.rgb)
-                track.best_frame_rgb = frame.rgb  # shared by ref across same-frame tracks
-                track.best_bbox_xyxy = np.asarray(det.bbox_xyxy, dtype=float).copy()
-                x1, y1, x2, y2 = det.bbox_xyxy
-                track.best_bbox_px = float(max(0.0, x2 - x1) * max(0.0, y2 - y1))
-                # The pose this detection was made from is a proven
-                # "object visible from here" pose — the terminal stop target.
-                track.best_cam_xy = cam_xy.copy()
+                self._note_best_detection(track, det, frame, cam_xy)
 
             self._accumulate_cloud(track, det, frame)
 
@@ -239,8 +300,10 @@ class ObjectLayer:
                 track.refined_at_obs = track.n_obs
 
         if relink_needed:
-            relink(list(self._tracks.values()), self.link_dist_m,
-                   max_frame_gap=self.link_max_frame_gap)
+            # Proposal-only tracks are never linked: a link would fold a
+            # region's centre into a named object's `center_of`.
+            relink([t for t in self._tracks.values() if not t.proposal_only],
+                   self.link_dist_m, max_frame_gap=self.link_max_frame_gap)
 
     # --------------------------------------------------------- surface clouds
 
@@ -260,7 +323,8 @@ class ObjectLayer:
         if not len(pts):
             return
         if len(pts) > self.cloud_cap:
-            pts = pts[self._rng.choice(len(pts), self.cloud_cap, replace=False)]
+            rng = self._rng_prop if track.proposal_only else self._rng
+            pts = pts[rng.choice(len(pts), self.cloud_cap, replace=False)]
         track.points_w = (
             pts if track.points_w is None
             else np.vstack([track.points_w, pts])[-self.cloud_cap:]
@@ -343,7 +407,7 @@ class ObjectLayer:
         retracted = 0
         for track in self._tracks.values():
             if (
-                track.blacklisted or not track.out_of_range
+                track.blacklisted or not track.out_of_range or track.proposal_only
                 or (floor_key is not None and track.floor_key != floor_key)
                 or track.label in seen
             ):
@@ -375,8 +439,18 @@ class ObjectLayer:
         baseline = float(np.linalg.norm(cam_xy - track.first_cam_xy))
         return 1.0 if baseline >= self.confirm_baseline_m else self.repeat_view_discount
 
-    def tracks(self, include_blacklisted: bool = False) -> List[ObjectTrack]:
-        return [t for t in self._tracks.values() if include_blacklisted or not t.blacklisted]
+    def tracks(
+        self, include_blacklisted: bool = False, include_proposals: bool = False
+    ) -> List[ObjectTrack]:
+        """The map. Proposal-only tracks are left out unless asked for: the
+        scene graph, the search anchor, presence bookkeeping and the prior
+        map must see exactly the map the detector built. The candidate gate
+        reads `_tracks` directly and judges them on their own terms."""
+        return [
+            t for t in self._tracks.values()
+            if (include_blacklisted or not t.blacklisted)
+            and (include_proposals or not t.proposal_only)
+        ]
 
     def get(self, track_id: int) -> Optional[ObjectTrack]:
         return self._tracks.get(track_id)
@@ -394,6 +468,9 @@ class ObjectLayer:
         rank_by_presence: bool = False,
         floor_key: Optional[int] = None,
         step: Optional[int] = None,
+        proposal_commits: bool = True,
+        proposal_min_obs: int = 1,
+        proposal_tau: float = -1.0,
     ) -> List[ObjectTrack]:
         """Non-blacklisted tracks matching the target with enough support,
         detection quality, accumulated evidence (fragment detections and
@@ -432,35 +509,87 @@ class ObjectLayer:
         restores its belief. Measured, with the identity channel off: one episode
         committed to the same wrong track 251 times in 500 steps, its belief
         pinned at the 0.95 positive clamp through 250 absence readings.
+
+        A track the proposal stage alone has seen (`proposal_only`) carries the
+        target's label without the detector ever having said so. Measured on
+        the full 107 (docs/REGION_FALSE_ADMISSION.md), letting such a track
+        through on the label test cost 18 trials: a per-frame region admitted
+        on 13% of frames with no object in view became an ordinary same-label
+        track, won this gate and spent an attempt. So it is judged on what it
+        actually is -- an appearance hypothesis accumulated over views: at
+        least `proposal_min_obs` observations, a running-mean feature whose
+        cosine to the query clears `proposal_tau`, and never ahead of a track
+        the detector has named. `proposal_commits=False` keeps them out
+        entirely, which is how the bar was measured before it was set.
         """
         target = target_label.lower().replace(" ", "_")
         out = []
         for t in self._tracks.values():
-            if t.blacklisted or t.n_obs < min_obs or t.evidence < min_evidence:
+            if t.blacklisted or t.n_obs < min_obs:
                 continue
             if floor_key is not None and t.floor_key != floor_key:
                 continue
             if step is not None and t.suppressed_until > step:
                 continue
-            if t.best_score < min_score:
-                continue
-            # The size gate rejects slivers of furniture. For the target it
-            # re-creates the admission deadlock one stage later: a track seeded
-            # from a distant sighting can only grow its best box by being
-            # approached, and it can only be approached by being proposed.
-            if not target_bypasses_bbox and t.best_bbox_px < min_bbox_px:
-                continue
+            # The evidence, score and size gates are calibrated on DETECTOR
+            # output, and a proposal-only track has none: no evidence, a
+            # constant score, a region's box. Its bar is the proposal bar
+            # below. Measured: the first fused run committed to zero proposal
+            # tracks in 49 episodes while tracks past the bar sat in the map
+            # with evidence 0.0 < min_evidence 1.0, rejected here in silence.
+            if not t.proposal_only:
+                if t.evidence < min_evidence or t.best_score < min_score:
+                    continue
+                # The size gate rejects slivers of furniture. For the target
+                # it re-creates the admission deadlock one stage later: a
+                # track seeded from a distant sighting can only grow its best
+                # box by being approached, and it can only be approached by
+                # being proposed.
+                if not target_bypasses_bbox and t.best_bbox_px < min_bbox_px:
+                    continue
             if t.presence.p < min_presence:
                 continue
             if max_identity_rejections and t.identity_rejections >= max_identity_rejections:
                 continue
-            if t.label.lower().replace(" ", "_") == target:
-                out.append(t)
+            if t.label.lower().replace(" ", "_") != target:
+                continue
+            if t.proposal_only:
+                if not proposal_commits:
+                    continue
+                if t.n_proposal_obs < int(proposal_min_obs):
+                    continue
+                if float(t.proposal_sim) < float(proposal_tau):
+                    continue
+            out.append(t)
+        # Named tracks first; a proposal-only track competes only among its
+        # own kind. The tier is 0 for every track the detector (or the prior
+        # map) has named, so with no proposals in the map the order is exactly
+        # what it was.
+        # Within the proposal tier the order is the appearance itself: a
+        # proposal track has no detector evidence and a constant score, so
+        # the named keys would tie and fall back to insertion order. Measured
+        # on the observation runs, a trial can hold a true track at 0.325 and
+        # a phantom at 0.286 that both clear the bar; this puts the true one
+        # first.
+        tier = lambda t: 1 if t.proposal_only else 0
+        prop_key = lambda t: (-float(t.proposal_sim), -int(t.n_proposal_obs)) if t.proposal_only else (0.0, 0)
         if rank_by_presence:
-            out.sort(key=lambda t: (-t.presence.p, -t.evidence))
+            out.sort(key=lambda t: (tier(t), *prop_key(t), -t.presence.p, -t.evidence))
         else:
-            out.sort(key=lambda t: -(t.best_score * t.presence.p))
+            out.sort(key=lambda t: (tier(t), *prop_key(t), -(t.best_score * t.presence.p)))
         return out
+
+    @staticmethod
+    def _note_best_detection(track: ObjectTrack, det: Detection, frame: FrameData, cam_xy: np.ndarray) -> None:
+        track.best_score = det.score
+        track.best_crop = det.crop if det.crop is not None else det.crop_from(frame.rgb)
+        track.best_frame_rgb = frame.rgb  # shared by ref across same-frame tracks
+        track.best_bbox_xyxy = np.asarray(det.bbox_xyxy, dtype=float).copy()
+        x1, y1, x2, y2 = det.bbox_xyxy
+        track.best_bbox_px = float(max(0.0, x2 - x1) * max(0.0, y2 - y1))
+        # The pose this detection was made from is a proven
+        # "object visible from here" pose -- the terminal stop target.
+        track.best_cam_xy = cam_xy.copy()
 
     @staticmethod
     def _bbox_px(det: Detection) -> float:

@@ -68,3 +68,21 @@ class RegionProposalConfig:
     # proposal stage had admitted 16 regions in the same episode.
     use_for_absence: bool = True
     max_per_episode: int = 40
+    # The fusion that replaces the gates above. `every_keyframe` runs the stage
+    # on every keyframe the detector did not name the target on -- the same
+    # regime DualMap's class-agnostic segmentation runs in -- and the episode
+    # gates (`require_never_named`, `unnamed_keyframes`) no longer apply; only
+    # `max_per_episode` still does. What keeps the phantoms out is no longer
+    # WHEN the stage runs but how its output is judged: a proposal observation
+    # carries its region's feature, the track keeps a running mean over views,
+    # and a track only proposals have seen may become a candidate only with
+    # `commit_min_obs` observations and a mean-feature cosine of at least
+    # `commit_tau` against the query phrase, and then only behind every track
+    # the detector has named. `commits: false` is the observation arm: the
+    # stage runs and its tracks are recorded, but none may be committed to --
+    # the run that sets the two numbers above from true-vs-phantom tracks
+    # rather than from per-frame precision.
+    every_keyframe: bool = False
+    commits: bool = True
+    commit_min_obs: int = 1
+    commit_tau: float = -1.0
