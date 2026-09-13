@@ -28,7 +28,9 @@ Object-goal navigation in Habitat, sensor-only. Two benchmarks live here:
 
 ```bash
 git submodule update --init --recursive     # REQUIRED before the build
-cp docker/.env.example docker/.env          # set LOCAL_UID/LOCAL_GID and the collector paths
+cp docker/.env.example docker/.env
+printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" >> docker/.env   # or the mount is unwritable
+$EDITOR docker/.env                         # point HM3D_SCENES at the scene meshes
 docker compose -f docker/compose.yaml --env-file docker/.env build nav   # both conda envs
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
 docker exec -it docker-nav-1 bash           # everything below runs in here

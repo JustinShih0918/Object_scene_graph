@@ -54,7 +54,30 @@ that file exists before blaming the model.
 
 ---
 
-## 2. Model weights
+## 2. `docker/.env`
+
+`docker/.env.example` lists every variable `compose.yaml` reads. Two must be
+set by hand:
+
+```bash
+cp docker/.env.example docker/.env
+printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" >> docker/.env
+```
+
+- **`UID` / `GID`** — the image builds its non-root user with these, and
+  `/workspace` is a bind mount of your checkout. Get them wrong and the
+  container cannot write `outputs/`. They cannot be inherited from your shell:
+  `UID` is a bash built-in that is **not exported**, so compose never sees it
+  and silently falls back to 1000.
+- **`HM3D_SCENES`** — where the license-gated scene meshes live, mounted onto
+  `data/versioned_data`. Wrong or unset, the eval does not report a missing
+  file; it dies in the env worker with `No Stage Attributes exists for
+  requested scene ...basis.glb`.
+
+`NVIDIA_API_KEY` is only needed for `verification=nim`, which is off in the
+default arm. The collector paths only matter for the `ycb_*` experiments.
+
+## 3. Model weights
 
 Nothing is committed. `pretrained_weights/` inside the submodule is gitignored,
 and so is `data/`.
@@ -117,7 +140,7 @@ https://matterport.com/habitat-matterport-3d-research-dataset.
 
 ---
 
-## 3. Check it works
+## 4. Check it works
 
 ```bash
 bash scripts/serve_perception.sh                     # five servers, ~60 s to load
@@ -133,7 +156,7 @@ scenes (~10 GB for val).
 
 ---
 
-## 4. The two conda environments
+## 5. The two conda environments
 
 One image, two environments — `docker/Dockerfile` builds both:
 
@@ -168,7 +191,7 @@ match ASCENT's cu118 torch. The habitat env's cu121 torch is unaffected because
 torch wheels bundle their own CUDA runtime and nothing on the OSG side compiles
 an extension.
 
-## 5. What the submodule does and does not carry
+## 6. What the submodule does and does not carry
 
 The submodule is pinned to **upstream, unmodified**. During this work the
 checkout carried three local patches which are deliberately no longer applied:
