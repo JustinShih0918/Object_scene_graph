@@ -95,8 +95,18 @@ RUN pip install --no-cache-dir torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.
 RUN conda install -y -n ascent habitat-sim=0.3.1 withbullet headless \
       -c conda-forge -c aihabitat && conda clean -ya
 
-# The numpy floor, set BEFORE anything that links against it. habitat-sim 0.3.1
-# requires <1.24; scipy 1.10.1 is the last release built against that line.
+# The numpy floor, set BEFORE anything that links against it, and HELD there by
+# a pip constraint for the rest of this env.
+#
+# Pinning once is not enough: habitat-lab declares `numpy>=1.20.0` with no upper
+# bound, so installing it resolves numpy to 2.x and silently replaces the pin.
+# torch 2.1.0 is compiled against numpy 1.x, so the next `import torch` dies
+# with "_ARRAY_API not found" -- and GroundingDINO's setup.py reacts to a failed
+# torch import by shelling out to `pip install torch` inside a build-isolation
+# overlay that has no pip, which is a spectacular and very confusing failure.
+# The constraint file makes every later resolve in this env honour the pin.
+RUN printf 'numpy==1.23.5\n' > /opt/pip-constraints.txt
+ENV PIP_CONSTRAINT=/opt/pip-constraints.txt
 RUN pip install --no-cache-dir "numpy==1.23.5" "scipy==1.10.1" "pandas==1.5.3"
 
 # The reference source. `relative_work/ascent` is a git submodule, so the build
@@ -112,16 +122,27 @@ COPY relative_work/ascent /opt/ascent
 WORKDIR /opt/ascent
 
 RUN pip install --no-cache-dir -e third_party/habitat-lab/habitat-lab \
-    && pip install --no-cache-dir -e third_party/habitat-lab/habitat-baselines
+    && pip install --no-cache-dir -e third_party/habitat-lab/habitat-baselines \
+    && python -c "import numpy, torch; assert numpy.__version__.startswith('1.23'), numpy.__version__; \
+       print('numpy held at', numpy.__version__, '| torch', torch.__version__)"
 
 # With a -devel- base this builds the fused CUDA kernel. Without it,
 # GroundingDINO silently falls back to CPU -- at one call per step that is
 # 14-40 hours for a 100-episode run -- or dies with `NameError: _C`.
 ENV CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0"
+# `build_ext --inplace` puts _C.so next to the sources; a .pth then makes the
+# package importable. `pip install -e .` is deliberately NOT used: setuptools'
+# `develop` re-invokes `pip install -e . --use-pep517` in an isolated
+# environment, which has neither torch nor pip, and GroundingDINO's setup.py
+# tries to `pip install torch` from inside it. Nothing here needs the
+# distribution metadata -- only `import groundingdino`.
 RUN cd third_party/GroundingDINO \
     && python setup.py build_ext --inplace \
-    && pip install --no-cache-dir -e . --no-build-isolation --no-deps \
-    && python -c "from groundingdino import _C; print('GroundingDINO CUDA extension: OK')"
+    && python -c "import site, pathlib; \
+       pathlib.Path(site.getsitepackages()[0], 'groundingdino.pth') \
+       .write_text('/opt/ascent/third_party/GroundingDINO\n')" \
+    && cd / && python -c "from groundingdino import _C; \
+       import groundingdino.util.inference; print('GroundingDINO CUDA extension: OK')"
 
 RUN pip install --no-cache-dir -e third_party/MobileSAM \
     && pip install --no-cache-dir -e third_party/vlfm
@@ -165,7 +186,8 @@ RUN pip install --no-cache-dir "transformers==4.37.0" \
     && python -c "import torch, habitat_sim, transformers, numpy, cv2; \
        import lavis.models, mobile_sam, groundingdino.util.inference, ram; \
        from groundingdino import _C; \
-       print('ascent env: all model packages import OK')"
+       assert numpy.__version__.startswith('1.23'), numpy.__version__; \
+       print('ascent env: all model packages import OK, numpy', numpy.__version__)"
 
 # Exactly one opencv build may be installed: two of them abort at import with
 # "CPU dispatcher tracer already initlized".
@@ -176,6 +198,10 @@ RUN pip uninstall -y opencv-python opencv-contrib-python 2>/dev/null; \
 # 3. Runtime
 # ---------------------------------------------------------------------------
 SHELL ["/bin/bash", "-c"]
+
+# The ascent env's constraint must not follow the user into an interactive
+# `pip install` in the habitat env.
+ENV PIP_CONSTRAINT=
 
 ENV NVIDIA_DRIVER_CAPABILITIES=all \
     MAGNUM_LOG=quiet \
