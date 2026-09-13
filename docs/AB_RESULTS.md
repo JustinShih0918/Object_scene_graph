@@ -3874,7 +3874,10 @@ the floor prior it would read says `bed` is upstairs 59% of the time in a
 2-storey house. That is the cheapest A/B on the table and it targets the
 biggest bucket ASCENT itself leaves on the floor (it wins 2 of these 15).
 
-**2. Wrong STOPs on a look-alike (17 episodes, +1-3).** The largest failure
+**2. Wrong STOPs on a look-alike (17 episodes, +1-3).** *(CLOSED by S74-S76:
+three arms moved this bucket's contents between the STOP and timeout columns
+without reducing the total. A correctly aimed, zero-error stop gate refusing
+36 times bought 2 episodes. Not worth further attack.)* The largest failure
 class, and the same one ASCENT has (21 `false_positive`). The BLIP-2 gate that
 is supposed to catch them **does not discriminate at all** at the stop:
 AUC 0.53 for the cosine at STOP, 0.42-0.46 for its episode/last-10 maxima. It
@@ -4114,6 +4117,62 @@ serialised model servers, which is only survivable because of the fix recorded
 under S72/S73 tooling (the GroundingDINO race). Nothing in the results depends
 on the sharing -- each episode is independent -- but wall-clock per episode
 roughly triples.
+
+### S76 — closing the stop gate's blind spot: catching a bad stop is not finding the target
+
+S75 left the wrong-stop bucket open with a specific complaint: the live-frame
+gate could not see 42% of stops, because the agent stops on a cloud whose
+detection has left the frame. `agent.verify_stop_view=stored` shows the VLM the
+best look the agent ever had at the cloud it is stopping on, dropped whenever
+that cloud is burned. `outputs/s76_yoloe_storedview`, same 100 episodes, paired
+against S75.
+
+**The mechanism did exactly what it was built to do.**
+
+| | s76 stored | s75 live |
+|---|---|---|
+| stop-check coverage | **100%** | 58% |
+| verify_calls | **118** | 54 |
+| verify_no_view | **0** | 39 |
+| verify_refused | **36** (31% of calls) | 10 (19%) |
+| verify_errors | 0 | 0 |
+
+**And it changed nothing.**
+
+| | SR | SPL | wrong stops >3 m | timeouts |
+|---|---|---|---|---|
+| `s74` YOLOE, no gate | 58 | 0.307 | 19 | 12 |
+| `s75` + live-frame gate | 59 | 0.314 | 17 | 13 |
+| `s76` + stored-view gate | **59** | 0.320 | **16** | **14** |
+| `s71` D-FINE default | 63 | 0.360 | 16 | — |
+
+s76 vs s75: 2 wins, 2 losses, p = 1.00. s76 vs s74 (gate at all): 2 wins, 1
+loss, p = 1.00. Over 14 episodes where the gate refused at least once: **2
+helped, 1 hurt, 11 no change.**
+
+**Why it nets to zero, and this is the finding.** Read the last two columns
+across the three arms: wrong stops fall 19 -> 17 -> 16 while timeouts rise
+12 -> 13 -> 14. The gate is not failing -- it is catching false positives at
+roughly the rate its refusal count implies, and converting each one into a
+timeout instead of a success. **Refusing a bad stop returns the agent to an
+exploration that was already failing.** The 36 refusals bought 2 episodes
+because in 34 of them the agent had no better candidate to find.
+
+That is the S71 trace diagnosis arriving from a third direction. The loss is
+before the target is ever in frame; machinery that adjudicates what the agent
+has already found can only move episodes between the STOP and timeout columns,
+which is precisely the invariant S55-S68 hit seventeen times. The stop gate is
+now correctly aimed and correctly calibrated, and it is aimed at a bucket whose
+contents are not convertible.
+
+**Verdict.** Keep `verify_on_stop` off. It costs 118 VLM calls per 100 episodes
+for p = 1.00, and the stored-view variant is strictly the better of the two if
+it is ever wanted (same SR, better SPL, no blind spot, one fewer wrong stop).
+The wrong-stop bucket from the S71 follow-up is now **closed as
+not-worth-attacking**: three arms (S74 detector, S75 live gate, S76 stored
+gate) have moved its contents around without reducing the total. What remains
+is the search itself -- the 15 cross-floor episodes that never reach the goal
+storey and the 9 same-floor episodes that never put the target in frame.
 
 #### The pattern, after eleven A/Bs
 
@@ -4530,6 +4589,7 @@ climb complete it), and everything else for the 81%.
 | `ascentnav` + `nearby_distance_m=1.5` | 65.0% | 0.359 | 100 eps — S73; +2 over S71 at p = 0.77, i.e. not distinguishable |
 | `ascentnav` + `detector=yoloe` | 58.0% | 0.307 | 100 eps — S74; −5 at p = 0.27, and 85 refused approaches against 33 |
 | `ascentnav` + `detector=yoloe` + VLM stop-gate | 59.0% | 0.314 | 100 eps — S75; +1 over S74 at p = 1.00; the gate cannot see 42% of stops |
+| `ascentnav` + `detector=yoloe` + stored-view stop-gate | 59.0% | 0.320 | 100 eps — S76; 100% stop coverage, 36 refusals, p = 1.00 against S75 |
 | `ascentnav` + stairs on `scenes20_ep0to4` (pre-S71 port) | 58.0% | 0.285 | sensor-only, 100 eps — S41; superseded by S71 |
 | `ascentnav` on `scenes20_ep0to4` | 55.0% | 0.284 | sensor-only, 100 eps — S39, no stair machinery (0.0% cross-floor) |
 | `ascent_sensor` on `scenes20_ep0to4` | 42.0% | 0.196 | sensor-only, 100 eps — the S30-S38 port chain at its best |
