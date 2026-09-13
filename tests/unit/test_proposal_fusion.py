@@ -324,3 +324,11 @@ def test_the_detector_gates_do_not_apply_to_a_proposal_only_track():
     out = layer.candidates("bowl", min_obs=2, min_evidence=1.0, min_score=0.6, min_bbox_px=1e9,
                            proposal_min_obs=4, proposal_tau=0.28)
     assert [t.proposal_only for t in out] == [True]
+
+
+def test_a_per_class_bar_overrides_the_global_one_for_that_class_only():
+    layer = _layer()
+    _proposal_track(layer, 4, _unit(1, 0.5, 0))                     # cosine 0.894
+    by = {"bowl": 0.95}
+    assert layer.candidates("bowl", min_obs=1, proposal_tau=0.5, proposal_tau_by_class=by) == []
+    assert len(layer.candidates("bowl", min_obs=1, proposal_tau=0.5, proposal_tau_by_class={"mug": 0.95})) == 1

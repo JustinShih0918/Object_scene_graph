@@ -471,6 +471,7 @@ class ObjectLayer:
         proposal_commits: bool = True,
         proposal_min_obs: int = 1,
         proposal_tau: float = -1.0,
+        proposal_tau_by_class: Optional[dict] = None,
     ) -> List[ObjectTrack]:
         """Non-blacklisted tracks matching the target with enough support,
         detection quality, accumulated evidence (fragment detections and
@@ -523,6 +524,8 @@ class ObjectLayer:
         entirely, which is how the bar was measured before it was set.
         """
         target = target_label.lower().replace(" ", "_")
+        if proposal_tau_by_class:
+            proposal_tau = float(proposal_tau_by_class.get(target, proposal_tau))
         out = []
         for t in self._tracks.values():
             if t.blacklisted or t.n_obs < min_obs:
