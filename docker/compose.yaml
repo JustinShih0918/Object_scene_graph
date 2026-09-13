@@ -9,7 +9,7 @@ services:
     volumes:
       - ollama-models:/root/.ollama
     ports:
-      - "11434:11434"
+      - "11435:11434"
     deploy:
       resources:
         reservations:
@@ -45,6 +45,7 @@ services:
       - OSG_DATA_ROOT=/datasets/habitat-data-collector/data
       - OSG_HM3D_SCENES_DIR=/datasets/habitat-data-collector/data/versioned_data/hm3d-0.2
       - OSG_YCB_AUTHORING_ROOT=/datasets/habitat-data-collector/outputs/dualmap_authoring
+      - OSG_YCB_MULTI_FLOOR_ROOT=/datasets/habitat-data-collector/outputs/dualmap_multifloor
       # --- x11: GUI tools inside the container (the Rerun 3D viewer) ---------
       # Inherit the host's DISPLAY. Empty when the host has no X session, which
       # is harmless: GUI apps then fail with "Failed to open connection to X
@@ -70,6 +71,7 @@ services:
       - /dev/dri:/dev/dri
       - ${HABITAT_COLLECTOR_DATA_DIR:-../../habitat-data-collector/data}:/datasets/habitat-data-collector/data:rw
       - ${DUALMAP_AUTHORING_DIR:-../../habitat-data-collector/outputs/dualmap_authoring}:/datasets/habitat-data-collector/outputs/dualmap_authoring:rw
+      - ${DUALMAP_MULTI_FLOOR_DIR:-../../habitat-data-collector/outputs/dualmap_multifloor}:/datasets/habitat-data-collector/outputs/dualmap_multifloor:rw
     deploy:
       resources:
         reservations:
