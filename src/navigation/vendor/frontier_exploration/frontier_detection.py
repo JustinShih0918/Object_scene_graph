@@ -5,8 +5,8 @@ import cv2
 import numpy as np
 from numba import njit
 
-from ascentnav.vendor.frontier_exploration.utils.bresenham_line import bresenhamline
-from ascentnav.vendor.frontier_exploration.utils.frontier_utils import closest_line_segment
+from navigation.vendor.frontier_exploration.utils.bresenham_line import bresenhamline
+from navigation.vendor.frontier_exploration.utils.frontier_utils import closest_line_segment
 
 VISUALIZE = os.environ.get("MAP_VISUALIZE", "False").lower() == "true"
 DEBUG = os.environ.get("MAP_DEBUG", "False").lower() == "true"

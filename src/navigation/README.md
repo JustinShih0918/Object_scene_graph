@@ -99,7 +99,7 @@ silent 0 from BLIP-2 is an agent that never STOPs.
 ```
 python scripts/run_eval.py +experiment=ascentnav eval=scenes20_ep0to4 \
     eval.behaviour_log=true eval.save_viz=false output_dir=outputs/<run>
-python scripts/compare_ascent_osg.py relative_work/ascent/debug/behaviour_100 outputs/<run>
+python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/<run>
 ```
 
 The comparison's last block scores both traces against the dataset's object

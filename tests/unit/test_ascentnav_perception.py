@@ -94,6 +94,40 @@ def test_strict_clients_raise_and_lenient_ones_return_empty(monkeypatch):
     assert GroundingDinoStairDetector(strict=False).mask(rgb) is None
 
 
+def test_a_transient_server_fault_is_retried_before_it_kills_the_run(monkeypatch):
+    """GroundingDINO caches per-image state on the module and deletes it after
+    each call, so two concurrent requests race and the loser answers HTTP 500
+    (`AttributeError: ... no attribute 'poss'`). Under the strict contract one
+    of those ended two multi-hour evals on 2026-09-12. The fault is transient --
+    the next request succeeds -- so one retry is the whole fix."""
+    calls = {"n": 0}
+
+    def handler(url, payload):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return OSError("HTTP Error 500: INTERNAL SERVER ERROR")
+        return {"boxes": [[0.0, 0.0, 1.0, 1.0]], "logits": [0.9], "phrases": ["stair"]}
+
+    _serve(monkeypatch, handler)
+    assert len(GroundingDinoStairDetector(strict=True).boxes(np.zeros((8, 8, 3), np.uint8))) == 1
+    assert calls["n"] == 2, "the first attempt failed and was retried"
+
+
+def test_a_server_that_stays_down_still_raises(monkeypatch):
+    """The retry must not turn a dead server into a silent degradation: that is
+    the failure the strict contract exists to catch."""
+    calls = {"n": 0}
+
+    def handler(url, payload):
+        calls["n"] += 1
+        return OSError("connection refused")
+
+    _serve(monkeypatch, handler)
+    with pytest.raises(PerceptionUnavailable):
+        GroundingDinoStairDetector(strict=True).boxes(np.zeros((8, 8, 3), np.uint8))
+    assert calls["n"] == 2, "it retried once, then failed loud"
+
+
 def test_a_strict_blip2_raises_instead_of_scoring_zero(monkeypatch):
     """The single most dangerous silent failure: a cosine of 0 from a dead
     server means ASCENT's gate never latches and the agent never STOPs."""
@@ -125,7 +159,7 @@ def test_the_probe_names_every_dead_server(monkeypatch):
 
 
 def test_tag_scene_writes_both_maps_keyed_by_the_floor_step():
-    from ascentnav.perception import tag_scene
+    from navigation.perception import tag_scene
 
     class _Obj:
         def __init__(self):
@@ -161,7 +195,7 @@ def test_filter_depth_fills_only_the_zeros():
     """F10: on habitat's normalised depth with `recover_nonzero`, every
     non-zero pixel is restored verbatim and every zero is filled from its
     neighbours."""
-    from ascentnav.depth_filter import filter_depth
+    from navigation.depth_filter import filter_depth
 
     d = np.full((40, 40), 0.6, np.float32)
     d[10:14, 10:14] = 0.0                            # a hole

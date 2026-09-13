@@ -1,7 +1,7 @@
 # How to run OSG's ObjectNav pipeline
 
 The default configuration is the S71 arm: ASCENT's control flow
-(`src/ascentnav/`) on ASCENT's served perception models, sensor-only, on the
+(`src/navigation/`) on ASCENT's served perception models, sensor-only, on the
 frozen PointNav mover. On the 100-episode HM3D v1 split `scenes20_ep0to4` it
 scores **63.0% SR / 0.36 SPL**; native ASCENT on the same episodes scores
 65.0% / 0.36 (`docs/AB_RESULTS.md`, S71). Everything below runs inside the
@@ -9,16 +9,20 @@ scores **63.0% SR / 0.36 SPL**; native ASCENT on the same episodes scores
 
 ## 1. One-time setup
 
+**See [docs/SETUP.md](SETUP.md)** — the submodule (`--recursive` is mandatory),
+the GroundingDINO CUDA extension that must be compiled, ~5 GB of model weights,
+and the datasets. In short:
+
 ```bash
-python scripts/download_data.py --username <TOKEN_ID> --password <TOKEN_SECRET> --uids hm3d_val_v0.2
-python scripts/download_data.py --episodes-only        # ObjectNav episodes
-python scripts/download_weights.py --pointnav --rednet # the mover and the stair segmenter
-bash scripts/fetch_ascent_weights.sh                   # BLIP-2, MobileSAM, GroundingDINO, RAM++, D-FINE
-docker exec docker-ollama-1 ollama pull qwen2.5:7b     # the planner LLM
+git submodule update --init --recursive     # ASCENT + its nested submodules (also needed to build)
+bash scripts/fetch_ascent_weights.sh
+python scripts/download_weights.py --pointnav --rednet
+docker exec docker-ollama-1 ollama pull qwen2.5:7b
 ```
 
 The five ASCENT models run in the `ascent` conda env
-(`/workspace/.conda-envs/ascent`; built by `docker/Dockerfile.ascent`), not in
+(the `ascent` env, built by `docker/Dockerfile` alongside `habitat`; see
+docs/SETUP.md §5), not in
 habitat's — BLIP-2's `lavis` and habitat-sim cannot share an interpreter.
 
 ## 2. Start the model servers
@@ -39,6 +43,11 @@ bash scripts/serve_perception.sh --stop
 Logs land in `relative_work/ascent/debug/vlm_logs/<window>.log`. The GPU
 budget with all five plus habitat is ~12 GB.
 
+Only run **one evaluation at a time** against these servers. They hold
+per-image state on the model object, so concurrent requests used to race and
+return HTTP 500; the servers now serialise model calls behind a lock and the
+client retries once, but a second eval still halves everyone's throughput.
+
 The run **refuses to start** if any server it needs is down
 (`PerceptionUnavailable`, raised by `probe_served_models` before Habitat
 loads), and a server that stops answering mid-run raises the same error
@@ -54,7 +63,19 @@ python scripts/run_eval.py output_dir=outputs/my_run         # name the run
 python scripts/run_eval.py eval.behaviour_log=true           # + per-step trace for the comparison script
 python scripts/run_eval.py eval.num_episodes=3               # smoke
 python scripts/run_eval.py +experiment=final_sensor          # the full v1 val split (2000 episodes)
+bash scripts/run_full_split.sh                               # ...supervised: restarts itself until done
 ```
+
+The full split takes ~60 h and has twice been killed by things unrelated to the
+agent (a model server returning HTTP 500 under a concurrent eval; a session
+teardown). `scripts/run_full_split.sh` re-derives the unscored episodes from
+`episodes.jsonl` before every attempt and relaunches, so a restart can neither
+re-run a scored episode nor skip an unscored one; it adopts a run already in
+flight, holds a lock so two supervisors cannot race, brings the model servers
+back if they died, and gives up after three attempts that score nothing rather
+than looping on a real fault. `--status` reports what is left. It is a process
+in this container, so it does **not** survive a container restart or a session
+teardown — run it again afterwards and it picks up where the record left off.
 
 `+experiment=ascentnav` names the default explicitly and composes to the
 identical config (pinned by `tests/unit/golden/experiment_fingerprints.json`).
@@ -71,11 +92,11 @@ Outputs, under `output_dir`:
 
 ## 4. Compare against ASCENT
 
-`relative_work/ascent/debug/behaviour_100/` holds native ASCENT's recorded
+`data/reference/ascent_behaviour_100/` holds native ASCENT's recorded
 100-episode run on the same split (65.0%). Pair any OSG run against it:
 
 ```bash
-python scripts/compare_ascent_osg.py relative_work/ascent/debug/behaviour_100 outputs/my_run
+python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/my_run
 ```
 
 The report gives paired SR by floor class and category, the episodes each
@@ -124,9 +145,11 @@ was transcribed from.
 
 | | |
 |---|---|
-| the agent | `src/ascentnav/agent.py` (dispatch, `_navigate`, `_explore`), `stairs.py`, `planner.py`, `perception.py` |
-| the maps | `src/ascentnav/mapping/` (vendored from ASCENT) |
+| the agent | `src/navigation/agent.py` (dispatch, `_navigate`, `_explore`), `stairs.py`, `planner.py`, `perception.py` |
+| the maps | `src/navigation/mapping/` (vendored from ASCENT) |
 | served-model clients | `src/osg/perception/ascent_models.py`, `detector.py` (`DFineDetector`), `image_text.py` (`Blip2ItmScorer`) |
 | the mover | `src/osg/planning/pointnav_driver.py` (weights bit-identical to ASCENT's) |
 | config | `configs/config.yaml` → `agent/s71`, `exploration/s71`, `verification/s71`, `detector/dfine`, `llm/qwen_local`, `scene_graph/place365`, `eval/scenes20_ep0to4` |
-| results log | `docs/AB_RESULTS.md` (S71 is the current record), `src/ascentnav/README.md` (fidelity notes F1–F14) |
+| setup | `docs/SETUP.md` — submodule, CUDA extension, weights, datasets |
+| results log | `docs/AB_RESULTS.md` (S71 is the current record), `src/navigation/README.md` (fidelity notes F1–F14) |
+| methodology | `docs/METHODOLOGY.md` — protocol, evidence rules, differences from native ASCENT |

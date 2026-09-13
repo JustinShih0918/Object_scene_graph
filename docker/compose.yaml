@@ -20,8 +20,11 @@ services:
 
   nav:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # The repo root, so the build can COPY the ASCENT submodule. Kept small
+      # by /.dockerignore, which drops .conda-envs, data, outputs and the
+      # 4.5 GB of model weights -- 35 GB on disk, ~264 MB sent.
+      context: ..
+      dockerfile: docker/Dockerfile
       args:
         USER_UID: ${UID:-1000}
         USER_GID: ${GID:-1000}

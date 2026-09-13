@@ -161,7 +161,6 @@ COCO_TO_HM3D = {
     "potted plant": "plant",
 }
 
-
 class YoloDetector(Detector):
     """Closed-set COCO YOLO, the stand-in for ASCENT's D-FINE.
 

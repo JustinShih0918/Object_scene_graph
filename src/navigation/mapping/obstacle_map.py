@@ -5,23 +5,23 @@ import numpy as np
 # import imagehash
 from PIL import Image
 
-from ascentnav.vendor.frontier_exploration.frontier_detection import detect_frontier_waypoints
-from ascentnav.vendor.frontier_exploration.utils.fog_of_war import get_two_farthest_points, vectorize_get_line_points
+from navigation.vendor.frontier_exploration.frontier_detection import detect_frontier_waypoints
+from navigation.vendor.frontier_exploration.utils.fog_of_war import get_two_farthest_points, vectorize_get_line_points
 
-from ascentnav.vendor.vlfm.mapping.base_map import BaseMap
-from ascentnav.vendor.vlfm.utils.geometry_utils import extract_yaw, get_point_cloud, transform_points
-from ascentnav.vendor.vlfm.utils.img_utils import fill_small_holes
+from navigation.vendor.vlfm.mapping.base_map import BaseMap
+from navigation.vendor.vlfm.utils.geometry_utils import extract_yaw, get_point_cloud, transform_points
+from navigation.vendor.vlfm.utils.img_utils import fill_small_holes
 
-from ascentnav.vendor.vlfm.vlm.detections import ObjectDetections
-from ascentnav.vendor.vlfm.mapping.object_point_cloud_map import ObjectPointCloudMap
+from navigation.vendor.vlfm.vlm.detections import ObjectDetections
+from navigation.vendor.vlfm.mapping.object_point_cloud_map import ObjectPointCloudMap
 
 from collections import deque
 
 import os
-from ascentnav.vendor.frontier_exploration.frontier_detection import contour_to_frontiers, interpolate_contour, get_frontier_midpoint, get_closest_frontier_point
+from navigation.vendor.frontier_exploration.frontier_detection import contour_to_frontiers, interpolate_contour, get_frontier_midpoint, get_closest_frontier_point
 
 import matplotlib.pyplot as plt
-from ascentnav.vendor.frontier_exploration.utils.general_utils import wrap_heading
+from navigation.vendor.frontier_exploration.utils.general_utils import wrap_heading
 
 STAIR_CLASS_ID = 17  # MPCAT40中 楼梯的类别编号是 16 + 1
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+
 from ..paths import hm3d_scenes_dir
 
 
@@ -32,6 +33,9 @@ class EvalConfig:
     # ``data/scene_datasets/hm3d`` symlink: v1/v2 episode IDs are resolved
     # against ``<scenes_dir>/hm3d/...`` by Habitat.
     scenes_dir: str = field(default_factory=lambda: str(hm3d_scenes_dir()))
+    # The habitat-lab benchmark config the env is built from; it fixes the
+    # dataset type and the goal-category set.
+    benchmark_config: str = "benchmark/nav/objectnav/objectnav_hm3d.yaml"
     num_episodes: int = -1  # -1 = all
     # >0 forces habitat to move to a new scene after this many episodes, so a
     # fixed-size subset spans the split instead of draining one scene first.
@@ -69,3 +73,4 @@ class EvalConfig:
     hfov_deg: float = 79.0
     depth_min_m: float = 0.5
     depth_max_m: float = 5.0
+

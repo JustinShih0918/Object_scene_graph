@@ -9,7 +9,7 @@
 # docs/AB_RESULTS.md stay comparable; `python scripts/run_eval.py` with no
 # preset composes to exactly this (pinned by the fingerprint golden).
 #
-# `src/ascentnav/agent.py` is a transcription of `Ascent_Policy.act` and the
+# `src/navigation/agent.py` is a transcription of `Ascent_Policy.act` and the
 # `Map_Controller` it drives, for one environment, on the vendored ASCENT maps,
 # with every rule cited to its reference line. The previous port scored 54.0%
 # on this split against the reference's 65.0%, and seventeen configuration and

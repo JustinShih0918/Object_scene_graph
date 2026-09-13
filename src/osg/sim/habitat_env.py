@@ -25,7 +25,7 @@ def make_objectnav_config(cfg):
     # needs to initialize its own search path. Our cfg is already resolved to
     # a plain DictConfig at this point, so clearing is safe.
     GlobalHydra.instance().clear()
-    hab_cfg = habitat.get_config("benchmark/nav/objectnav/objectnav_hm3d.yaml")
+    hab_cfg = habitat.get_config(str(cfg.eval.benchmark_config))
     with read_write(hab_cfg):
         task = hab_cfg.habitat.task
         sim = hab_cfg.habitat.simulator

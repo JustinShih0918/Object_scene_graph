@@ -20,7 +20,7 @@ how it got here):
 - **Policy — `agent.policy`**: `nav_agent` is the OSG state machine and dynamic
   world model; `ascent` keeps OSG maps with ASCENT-style control flow;
   `ascentnav` uses the alternative ASCENT map/control pipeline under
-  `src/ascentnav/`.
+  `src/navigation/`.
 - **Exploration — continuous sweep** (`exploration=sweep`): nearest frontier +
   a momentum bonus that prefers frontiers ahead of the heading, so the agent
   sweeps continuously instead of ping-ponging. **LLM-free** (the LLM frontier
@@ -31,7 +31,7 @@ how it got here):
   and unreachable / non-goal instances, then keeps exploring.
 
 > **Status (2026-09):** the default config is the S71 arm — ASCENT's control
-> flow (`src/ascentnav/`) on ASCENT's served perception models, sensor-only —
+> flow (`src/navigation/`) on ASCENT's served perception models, sensor-only —
 > at **63.0% SR / 0.36 SPL on `scenes20_ep0to4`** (100 HM3D v1 episodes);
 > native ASCENT scores 65.0% / 0.36 on the same episodes, the previous port
 > 54.0%. Same-floor 75.6%, cross-floor 18.2%.
@@ -52,12 +52,22 @@ etc. are already set by the image/compose env, so no `docker exec` prefix or
 `PYTHONPATH=src` is needed below).
 
 ```bash
+git submodule update --init --recursive     # REQUIRED before the build: the Dockerfile COPYs relative_work/ascent
 cp docker/.env.example docker/.env
-# Set the two collector paths and LOCAL_UID=$(id -u), LOCAL_GID=$(id -g).
-docker compose -f docker/compose.yaml --env-file docker/.env build nav
+printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" >> docker/.env   # host-matched owner for the mounts
+$EDITOR docker/.env                         # the two collector paths
+docker compose -f docker/compose.yaml --env-file docker/.env build nav   # one image, both conda envs
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
 docker exec -it docker-nav-1 bash       # habitat conda env is active through the entrypoint
 ```
+
+One image, **two conda envs**: `habitat` (habitat-sim, OSG, YOLOE — active on
+shell entry) and `ascent` (BLIP-2, MobileSAM, GroundingDINO, RAM++, D-FINE),
+served over HTTP because the two cannot share an interpreter. The ASCENT
+reference is the `relative_work/ascent` submodule; `--recursive` is mandatory
+and must precede the build. **[docs/SETUP.md](docs/SETUP.md)** covers the
+submodule, the GroundingDINO CUDA extension, every weight file and the
+datasets.
 
 Compose mounts the collector's `data/` and `outputs/dualmap_authoring/`
 directories read-write at `/datasets/habitat-data-collector/...`, so `nav` can
@@ -111,7 +121,7 @@ python scripts/run_eval.py                               # the default: S71 on s
 python scripts/run_eval.py eval.num_episodes=3           # smoke
 python scripts/run_eval.py +experiment=final_sensor      # the full v1 val split
 python scripts/run_eval.py +experiment=matched_single_floor          # a legacy preset (old base, see docs/USAGE.md)
-python scripts/compare_ascent_osg.py relative_work/ascent/debug/behaviour_100 outputs/<run>   # paired vs ASCENT
+python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/<run>   # paired vs ASCENT
 ```
 
 The default needs the servers and a local ollama with `qwen2.5:7b`; it refuses
@@ -268,7 +278,7 @@ separately in `timing.csv`.
   `sim` (Habitat env + `ShortestPathFollower` navmesh driving) / `eval`.
 - **Navigation** uses one of the three movers above. Only `navmesh` receives
   simulator geometry (`action_to_goal` / `is_reachable`); `costmap` and
-  `pointnav` are sensor-only. `src/ascentnav/` is an attributed alternative
+  `pointnav` are sensor-only. `src/navigation/` is an attributed alternative
   policy, not a replacement for OSG's dynamic hierarchy.
 - `configs/` — Hydra groups; `configs/experiment/*` are composable presets.
 - `scripts/` — eval entry (`run_eval.py`), data/weights download,

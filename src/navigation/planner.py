@@ -154,17 +154,22 @@ class AscentLLMPlanner:
         frontiers = np.asarray(frontiers, dtype=float).reshape(-1, 2)
         # 0. One frontier: go there. No sorting, no sticky rule, no
         #    `_last_frontier` update (:82-86).
+        self.stats["frontier_decisions"] = self.stats.get("frontier_decisions", 0) + 1
         if len(frontiers) == 1:
+            self.stats["fd_single"] = self.stats.get("fd_single", 0) + 1
             return frontiers[0], 1.0
 
         sorted_pts, sorted_values = self._sort_frontiers_by_value(obstacle_map, value_map, frontiers)
         best_frontier, best_value = self._try_force_frontier(sorted_pts, sorted_values)
+        if best_frontier is not None:
+            self.stats["fd_force"] = self.stats.get("fd_force", 0) + 1
 
         if best_frontier is None and obstacle_map._finish_first_explore:
             nb, nv, activated = self._try_nearby_frontier(sorted_pts, sorted_values, robot_xy)
             if activated:
                 obstacle_map._neighbor_search = True
                 best_frontier, best_value = nb, nv
+                self.stats["fd_nearby"] = self.stats.get("fd_nearby", 0) + 1
             else:
                 obstacle_map._finish_first_explore = False
                 obstacle_map._neighbor_search = False
@@ -221,6 +226,7 @@ class AscentLLMPlanner:
                                   target, cur_floor_index, num_steps,
                                   obstacle_map_list, object_map_list):
         """`llm_planner.py:181-237`."""
+        self.stats["llm_path_reached"] = self.stats.get("llm_path_reached", 0) + 1
         if len(sorted_pts) == 0:
             return None, 0.0
         if len(sorted_pts) == 1:
@@ -261,6 +267,7 @@ class AscentLLMPlanner:
                 and num_steps - self.multi_floor_ask_step >= MULTI_FLOOR_ASK_STEP_THRESHOLD
                 and obstacle_map._floor_num_steps >= FLOOR_EXP_STEP_THRESHOLD):
             self.multi_floor_ask_step = num_steps
+            self.stats["multi_floor_asks"] = self.stats.get("multi_floor_asks", 0) + 1
             prompt = self._prepare_multiple_floor_prompt(
                 target_object_category, cur_floor_index, obstacle_map_list, object_map_list)
             response = self._chat(prompt)
@@ -271,9 +278,12 @@ class AscentLLMPlanner:
                 current_floor = cur_floor_index + 1
                 decision = self._extract_multiple_floor_decision(response, cur_floor_index)
                 if decision > current_floor:
+                    self.stats["multi_floor_go_up"] = self.stats.get("multi_floor_go_up", 0) + 1
                     return sorted_pts[0], GO_UP
                 if decision < current_floor:
+                    self.stats["multi_floor_go_down"] = self.stats.get("multi_floor_go_down", 0) + 1
                     return sorted_pts[0], GO_DOWN
+                self.stats["multi_floor_stay"] = self.stats.get("multi_floor_stay", 0) + 1
                 best_idx = self.llm_analyze_single_floor(
                     target_object_category, frontier_index_list, obstacle_map, object_map)
         else:

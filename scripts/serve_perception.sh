@@ -18,7 +18,11 @@ set -eo pipefail
 cd "$(dirname "$0")/.."
 
 ASCENT_DIR="${ASCENT_DIR:-relative_work/ascent}"
-ASCENT_PYTHON="${ASCENT_PYTHON:-/workspace/.conda-envs/ascent/bin/python}"
+# The merged image (docker/Dockerfile) builds the ascent env at
+# /opt/conda/envs/ascent. Containers built before that merge have a
+# workspace-local clone instead; fall back to it so both work.
+ASCENT_PYTHON="${ASCENT_PYTHON:-/opt/conda/envs/ascent/bin/python}"
+[ -x "$ASCENT_PYTHON" ] || ASCENT_PYTHON=/workspace/.conda-envs/ascent/bin/python
 SESSION="${OSG_MODEL_SESSION:-osg_models}"
 
 if [ "${1:-}" = "--stop" ]; then
