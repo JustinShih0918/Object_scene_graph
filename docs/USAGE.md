@@ -22,7 +22,8 @@ docker exec docker-ollama-1 ollama pull qwen2.5:7b
 ```
 
 The five ASCENT models run in the `ascent` conda env
-(`/workspace/.conda-envs/ascent`; built by `docker/Dockerfile.ascent`), not in
+(`/workspace/.conda-envs/ascent`; recipe in `docker/Dockerfile.ascent`, see
+docs/SETUP.md §5), not in
 habitat's — BLIP-2's `lavis` and habitat-sim cannot share an interpreter.
 
 ## 2. Start the model servers

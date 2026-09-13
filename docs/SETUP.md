@@ -125,7 +125,42 @@ scenes (~10 GB for val).
 
 ---
 
-## 4. What the submodule does and does not carry
+## 4. The `ascent` conda environment
+
+The five servers do **not** run in habitat's interpreter. They run from
+`/workspace/.conda-envs/ascent`, a python 3.9 env with torch 2.1.0+cu118,
+numpy 1.23.5 and transformers 4.37.0 — a combination habitat-sim cannot share,
+which is the whole reason for process-per-model over HTTP.
+
+**That directory is gitignored and exists only on this machine.** It was cloned
+from a container built by `docker/Dockerfile.ascent`, and the clone source is
+already gone. If it is lost, rebuild it:
+
+```bash
+docker build -f docker/Dockerfile.ascent -t ascent:native .
+# then copy /opt/conda/envs/ascent out of a container from that image into
+# /workspace/.conda-envs/ascent, or run the servers inside it with
+# relative_work/ascent and pretrained_weights mounted.
+```
+
+`docker/Dockerfile.ascent` is therefore **not part of the running HM3D
+pipeline** — `docker/compose.yaml` never builds it and nothing imports from the
+image — but it is the only record of how that environment resolves. Its header
+documents each pin against the failure that forced it: no nvcc in a `-runtime-`
+base, lavis's unsatisfiable `spacy` chain on python 3.9, the numpy <1.24 floor,
+D-FINE's hidden training-stack imports, and transformers installed last. Do not
+delete it.
+
+Verify the env is intact:
+
+```bash
+/workspace/.conda-envs/ascent/bin/python -c "
+import habitat_sim, lavis, mobile_sam, groundingdino.util.inference, ram
+from groundingdino import _C
+print('ascent env OK')"
+```
+
+## 5. What the submodule does and does not carry
 
 The submodule is pinned to **upstream, unmodified**. During this work the
 checkout carried three local patches which are deliberately no longer applied:
