@@ -55,6 +55,7 @@ floor:
   prior_stairs_override_gate: true
   stairs: true
   use_prior_stairs: true
+  switch_requires_second_level: true
 
 mapping:
   multi_floor: true

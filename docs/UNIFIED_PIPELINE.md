@@ -84,9 +84,32 @@ is what actually decides them.
 
 ## Bit-identity smoke (the check that matters)
 
-<!-- SMOKE -->
+The floor group is **not** inert by default on a single-floor scene, and the
+control run proved it is the floor group and not run-to-run numerics:
 
-If the trajectories match `_v4_fuse_cls` on the sampled DualMap trials, the
-floor group is confirmed inert and the full 107 will reproduce 62. If they
-diverge, the culprit is one of the two always-on flags, and it is moved out of
-the mixin into `mf5_osg_unified` only.
+| trial (00829 cross_anchor) | `_v4_fuse_cls` in this env vs the locked run | ungated `dualmap_osg_unified` vs the lock | floor_switch_attempts |
+|---|---|---|---:|
+| bowl | **identical** | differs (stopped at 448 vs 500, 1.04 m vs 2.73 m) | 1 |
+| cracker box | **identical** | differs (244 vs 242 steps) | 0 |
+| scissors | **identical** | differs (10.99 m vs 9.87 m) | 2 |
+
+`_v4_fuse_cls` reproduces the lock bit-for-bit, so the environment is faithful;
+the drift is entirely the floor group, and it tracks `floor_switch_attempts`.
+The cause: on a single-floor scene `find_portals` reads a tall bookcase as a
+portal, and once the floor's frontiers are far the undirected geometric gate
+opens and the agent walks off to it.
+
+### The fix: an undirected switch requires a second known level
+
+`floor.switch_requires_second_level` (default off, on in the mixin) makes an
+UNDIRECTED switch a no-op unless the estimator already knows >= 2 levels. This
+is safe by construction for the multi-floor benchmark: `apply_map` seeds every
+storey of a schema-v2 prior map into the estimator on load, so a genuine
+cross-floor scored run has >= 2 levels from step 0 and its switches -- directed
+and undirected -- fire exactly as before. A truly single-floor scene has one
+level and nowhere to go, so it is gated and reproduces `_v4_fuse_cls`.
+
+Map-building is unaffected: prior maps are built with the baseline
+`ycb_authored_15`, deliberately, so the map is never an experimental variable.
+
+<!-- GATED SMOKE -->

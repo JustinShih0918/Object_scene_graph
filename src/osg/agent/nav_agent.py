@@ -2035,6 +2035,17 @@ class NavAgent:
             return "look_up"
         if self._down_look_every <= 0:
             return None
+        # The look-down hunts for a staircase down; on a scene the estimator
+        # knows to have one level there is nothing to find, and injecting the
+        # look_down/look_up pair would perturb an otherwise single-floor run the
+        # floor group should leave untouched. Gated by the same rule as the
+        # undirected switch, and safe for the same reason: a schema-v2 prior map
+        # seeds every storey on load, so a real multi-floor run has >= 2 levels.
+        if (
+            bool(getattr(self.cfg.floor, "switch_requires_second_level", False))
+            and len(getattr(self.floors.estimator, "levels", {0: 0.0})) < 2
+        ):
+            return None
         if self.state not in (State.INIT, State.EXPLORE, State.GOTO_FRONTIER):
             return None
         if self.step_count - self._last_down_look_step < self._down_look_every:

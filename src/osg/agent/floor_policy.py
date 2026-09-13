@@ -401,6 +401,17 @@ class FloorPolicy:
             scene_graph, self.stack.current_id, target, presence_of=presence_of,
         )
         directed = target_floor is not None
+        # An undirected switch needs somewhere to go. On a single-floor scene the
+        # estimator knows one level, `find_portals` still reads a tall bookcase
+        # as a portal, and the agent walks off to it once its frontiers are far.
+        # A schema-v2 prior map seeds every storey on load, so a real multi-floor
+        # run has >= 2 levels here and is unaffected; see the config comment.
+        if (
+            not directed
+            and bool(getattr(self.cfg.floor, "switch_requires_second_level", False))
+            and len(self.estimator.levels) < 2
+        ):
+            return None
         # Since ARRIVAL, not since the layer was created: a floor restored from
         # the prior map has first_step 0, which made a 33-step-old arrival look
         # like 347 steps of searching and let every dwell guard through.

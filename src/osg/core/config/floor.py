@@ -77,6 +77,21 @@ class FloorConfig:
     # layer to find portals, and does NOT depend on floor.stairs (which does
     # not work -- see docs/MULTI_FLOOR.md).
     cross_floor: bool = False
+    # An UNDIRECTED storey switch (the geometric "nothing near left here" gate,
+    # not a directed request for a known target floor) is attempted only when
+    # the estimator already knows >= 2 levels. Without it, a single-floor scene
+    # still hunts portals once its frontiers get far, and `find_portals` reads a
+    # tall bookcase as a portal: measured on the DualMap released benchmark,
+    # 1-2 spurious `floor_switch_attempts` per episode that walked the agent off
+    # to a false portal and perturbed a run the floor group should not touch at
+    # all. A schema-v2 prior map seeds every floor into the estimator on load
+    # (graph/map_store.apply_map), so a genuine multi-floor scored run has >= 2
+    # levels from step 0 and its cross-floor switches are unaffected; only a
+    # truly single-floor scene, which has one level and nowhere to go, is gated.
+    # Also gates the periodic stair-hunting look-down (nav_agent._down_look),
+    # which likewise has no job on a one-level scene.
+    # Default off so no existing preset changes.
+    switch_requires_second_level: bool = False
     # ASCENT's gate: only reason about storeys when the best frontier left on
     # this floor is further away than this.
     near_frontier_m: float = 4.0
