@@ -112,16 +112,38 @@ level and nowhere to go, so it is gated and reproduces `_v4_fuse_cls`.
 Map-building is unaffected: prior maps are built with the baseline
 `ycb_authored_15`, deliberately, so the map is never an experimental variable.
 
-### Bit-identity confirmed, in two rounds
+### Bit-identity: two of three, and what the residue is
 
-Round 1 (the two discovery gates): bowl and cracker box went bit-identical to
-`_v4_fuse_cls`; scissors still drifted with `floor_switch_attempts=0` and
-`down_look=0`, so a third, non-floor setting was responsible.
+Round 1 -- the two discovery gates (`switch_requires_second_level`):
 
-Round 2: `frontier_cost_free_cell` was the culprit -- it had been classified as
-floor-group and taken the multi-floor base's value (`true`), but it is a general
-frontier-costing heuristic (`cost_prefer_free`) that `_v4_fuse_cls` sets `false`,
-and `true` re-orders frontier choice on any scene. Set to `false` in the mixin
-(the DualMap value), which does not touch the floor stack at all. The mixin now
-reproduces `_v4_fuse_cls` on the sampled trials while the three unified presets
-stay a byte-identical agent.
+| trial | ungated | gated |
+|---|---|---|
+| bowl | differs (448 vs 500 steps, 1.04 m vs 2.73 m) | **identical** |
+| cracker box | differs (244 vs 242 steps) | **identical** |
+| scissors | differs (10.99 m vs 9.87 m) | still differs (8.45 m) |
+
+Round 2 tested `frontier_cost_free_cell`, which the fusion had taken from the
+multi-floor base (`true`) while `_v4_fuse_cls` sets it `false`. **It was not the
+cause**: flipping it to `false` reproduced the round-1 scissors numbers exactly
+(8.446324780034837, the same `final_xy`, 23 in-view frames), so on these trials
+it changes nothing. It is left at the DualMap value anyway, because it is a
+general frontier-costing heuristic rather than a floor mechanism and the mixin
+should not silently import the multi-floor base's opinion on it.
+
+The residue on scissors is the floor stack itself, not a discovery behaviour:
+`_v4_fuse_cls` runs `floor.estimate_only: true` ("log the estimated floor but
+keep using the latched floor_y"), while the unified mixin must set it `false` so
+that the estimated storey is the one actually used -- which is the whole point on
+a multi-floor scene. On one storey the estimated height differs from the latched
+one by centimetres, which shifts the mapping height band and therefore which
+points become obstacles. That is an unavoidable consequence of running a
+floor-estimating pipeline at all, and it cannot be gated away without disabling
+the thing multi-floor needs.
+
+So the honest position is: the fusion is bit-identical on the trials where the
+floor stack has nothing to say, and perturbs the mapping slightly where the
+estimated floor height differs from the latched one. Scissors fails in both arms
+(it is 0/9 cross-anchor in the reference table -- the known-undetectable class),
+so the drift changed no outcome here. Whether it changes any outcome across the
+107 is what the full run measures, and that is the number that matters for
+"keep 62/107", not bit-identity.
