@@ -18,21 +18,21 @@
 # side does not want; and the two torch builds differ. Process-per-model over
 # HTTP is ASCENT's own architecture, and the split env is why it is necessary.
 #
-# THE BASE IMAGE IS `11.8.0-devel`, NOT `12.1.1-runtime`, for two reasons that
-# together admit no other choice:
-#   1. GroundingDINO's fused attention kernel must be compiled, and a
-#      `-runtime-` base has no nvcc. Adding one via conda (`cuda-nvcc`,
-#      `cuda-toolkit=11.8`) mixed runtime and dev components across 11.8/12.4
-#      and never produced a working toolchain. `-devel-` ships nvcc, headers
-#      and stubs as ONE consistent toolchain.
-#   2. torch's cpp_extension refuses to build when nvcc's version differs from
-#      `torch.version.cuda`, and ASCENT's torch is cu118 -- so nvcc must be
-#      11.8, which fixes the base.
-# The habitat env's torch 2.4.1+cu121 is unaffected: torch wheels bundle their
-# own CUDA runtime, and nothing on the OSG side compiles a CUDA extension. The
-# base image's CUDA version constrains compilation, not execution.
+# THE RECIPE BELOW IS DERIVED FROM THE ENVIRONMENT THAT ACTUALLY RUNS THE
+# SERVERS, not from ASCENT's README. The old docker/Dockerfile.ascent claimed a
+# `-devel-` base was required because conda's CUDA packages "never produced a
+# working toolchain". Inspecting the live env shows the opposite: it sits on
+# this `12.1.1-runtime` base, which has no system nvcc at all, and compiled
+# GroundingDINO with conda's own `cuda-toolkit=11.8` plus conda gcc/gxx. That
+# is what is reproduced here.
+#
+# torch's cpp_extension refuses to build when nvcc's version differs from
+# `torch.version.cuda`, which is why the toolkit is pinned to 11.8 to match
+# ASCENT's cu118 torch. The habitat env's torch 2.4.1+cu121 is unaffected --
+# torch wheels bundle their own CUDA runtime and nothing on the OSG side
+# compiles an extension.
 
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
@@ -86,116 +86,104 @@ RUN pip install --no-cache-dir git+https://github.com/ultralytics/CLIP.git
 # lavis's `<4.27` pin is ASCENT's, and it is what lets BLIP-2 and Qwen2.5
 # share one environment).
 # ---------------------------------------------------------------------------
-RUN conda create -y -n ascent python=3.9 cmake=3.14.0 && conda clean -ya
+# cuda-toolkit 11.8 + conda gcc/gxx: the toolchain the live env compiled
+# GroundingDINO's kernel with. Pinned to 11.8 to match torch's cu118, because
+# torch's cpp_extension refuses to build when nvcc and torch.version.cuda differ.
+RUN conda create -y -n ascent python=3.9 cmake=3.14.0 \
+    && conda install -y -n ascent -c "nvidia/label/cuda-11.8.0" \
+       cuda-toolkit=11.8.0 cuda-nvcc=11.8.89 \
+    && conda install -y -n ascent -c conda-forge \
+       "gcc_linux-64=11.4" "gxx_linux-64=11.4" c-compiler cxx-compiler \
+    && conda clean -ya
 SHELL ["conda", "run", "--no-capture-output", "-n", "ascent", "/bin/bash", "-c"]
-
-RUN pip install --no-cache-dir torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
-      --index-url https://download.pytorch.org/whl/cu118
 
 RUN conda install -y -n ascent habitat-sim=0.3.1 withbullet headless \
       -c conda-forge -c aihabitat && conda clean -ya
 
-# The numpy floor, set BEFORE anything that links against it, and HELD there by
-# a pip constraint for the rest of this env.
+# Everything pip-provided, pinned exactly as it resolved in the environment
+# that runs the servers (docker/ascent-requirements.txt is generated from its
+# `pip freeze`; see its header).
 #
-# Pinning once is not enough: habitat-lab declares `numpy>=1.20.0` with no upper
-# bound, so installing it resolves numpy to 2.x and silently replaces the pin.
-# torch 2.1.0 is compiled against numpy 1.x, so the next `import torch` dies
-# with "_ARRAY_API not found" -- and GroundingDINO's setup.py reacts to a failed
-# torch import by shelling out to `pip install torch` inside a build-isolation
-# overlay that has no pip, which is a spectacular and very confusing failure.
-# The constraint file makes every later resolve in this env honour the pin.
+# --no-deps, deliberately. The list is already a complete, consistent closure,
+# and re-running the resolver is what broke the previous attempts: habitat-lab
+# asks for `numpy>=1.20.0`, which pulls numpy 2.x over the pin and makes
+# `import torch` fail with "_ARRAY_API not found". It also sidesteps
+# salesforce-lavis, whose declared deps cannot resolve on python 3.9 at all.
+# PIP_CONSTRAINT holds numpy for anything installed later in this env.
 RUN printf 'numpy==1.23.5\n' > /opt/pip-constraints.txt
 ENV PIP_CONSTRAINT=/opt/pip-constraints.txt
-RUN pip install --no-cache-dir "numpy==1.23.5" "scipy==1.10.1" "pandas==1.5.3"
+COPY docker/ascent-requirements.txt /opt/ascent-requirements.txt
+RUN pip install --no-cache-dir --no-deps -r /opt/ascent-requirements.txt \
+      --extra-index-url https://download.pytorch.org/whl/cu118 \
+    && python -c "import torch, numpy, transformers, cv2; \
+       assert numpy.__version__.startswith('1.23'), numpy.__version__; \
+       print('ascent pins:', torch.__version__, numpy.__version__, transformers.__version__)"
 
 # The reference source. `relative_work/ascent` is a git submodule, so the build
 # FAILS HERE unless it was checked out recursively first:
 #
 #     git submodule update --init --recursive
 #
-# That is deliberate. The alternative -- cloning the pin inside the image --
-# duplicates the commit into a Dockerfile ARG that can drift from what the repo
-# actually points at, and hides any local change to the reference. One source
-# of truth is worth one setup step.
+# It is COPYed rather than cloned so the commit that ships is whatever git
+# records -- no second copy of the pin to drift, and local changes to the
+# reference are reflected.
 COPY relative_work/ascent /opt/ascent
 WORKDIR /opt/ascent
 
-RUN pip install --no-cache-dir -e third_party/habitat-lab/habitat-lab \
-    && pip install --no-cache-dir -e third_party/habitat-lab/habitat-baselines \
-    && python -c "import numpy, torch; assert numpy.__version__.startswith('1.23'), numpy.__version__; \
-       print('numpy held at', numpy.__version__, '| torch', torch.__version__)"
+# The six editable installs the live env carries (read off its
+# direct_url.json). frontier_exploration and depth_camera_filtering were
+# missing from the old hand-written recipe; ASCENT's policy and vlfm import
+# both. --no-deps throughout: the closure above is already complete.
+RUN for pkg in third_party/habitat-lab/habitat-lab \
+               third_party/habitat-lab/habitat-baselines \
+               third_party/MobileSAM third_party/vlfm \
+               third_party/frontier_exploration \
+               third_party/depth_camera_filtering; do \
+        pip install --no-cache-dir --no-deps -e "$pkg" || exit 1; \
+    done \
+    && python -c "import numpy; assert numpy.__version__.startswith('1.23'), numpy.__version__; \
+       print('numpy held at', numpy.__version__)"
 
-# With a -devel- base this builds the fused CUDA kernel. Without it,
-# GroundingDINO silently falls back to CPU -- at one call per step that is
-# 14-40 hours for a 100-episode run -- or dies with `NameError: _C`.
-ENV CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0"
-# `build_ext --inplace` puts _C.so next to the sources; a .pth then makes the
-# package importable. `pip install -e .` is deliberately NOT used: setuptools'
-# `develop` re-invokes `pip install -e . --use-pep517` in an isolated
-# environment, which has neither torch nor pip, and GroundingDINO's setup.py
-# tries to `pip install torch` from inside it. Nothing here needs the
-# distribution metadata -- only `import groundingdino`.
+# GroundingDINO: compile the fused attention kernel, then make the package
+# importable with a .pth -- which is exactly how the live env has it
+# (_ascent_gdino.pth). `pip install -e .` is NOT used: setuptools' `develop`
+# re-invokes `pip install -e . --use-pep517` in an isolated environment with
+# neither torch nor pip, and GroundingDINO's setup.py responds to the failed
+# torch import by trying to `pip install torch` from inside it.
 #
-# TORCH MUST BE IMPORTED FIRST in the check below. _C.so is linked against
-# libc10 with no RPATH, so it only resolves once torch has loaded libc10.so
-# into the process; a bare `from groundingdino import _C` fails with
-# "libc10.so: cannot open shared object file" even on a perfectly good install
-# (confirmed against the known-working env). The servers are unaffected --
-# groundingdino/util/inference.py imports torch at its top.
+# CUDA_HOME points at the conda toolkit; this base image has no system nvcc.
+# Without a working kernel GroundingDINO falls back to CPU -- at one call per
+# step that is 14-40 hours for a 100-episode run.
+#
+# TORCH MUST BE IMPORTED FIRST in the check. _C.so links libc10 with no RPATH,
+# so it resolves only once torch has loaded libc10.so; a bare
+# `from groundingdino import _C` fails with "libc10.so: cannot open shared
+# object file" even on a perfectly good install (confirmed against the live
+# env). The servers are unaffected -- groundingdino/util/inference.py imports
+# torch at its top.
+ENV CUDA_HOME=/opt/conda/envs/ascent TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0"
 RUN cd third_party/GroundingDINO \
     && python setup.py build_ext --inplace \
     && python -c "import site, pathlib; \
-       pathlib.Path(site.getsitepackages()[0], 'groundingdino.pth') \
+       pathlib.Path(site.getsitepackages()[0], '_ascent_gdino.pth') \
        .write_text('/opt/ascent/third_party/GroundingDINO\n')" \
     && cd / && python -c "import torch; from groundingdino import _C; \
        import groundingdino.util.inference; \
        print('GroundingDINO CUDA extension: OK')"
 
-RUN pip install --no-cache-dir -e third_party/MobileSAM \
-    && pip install --no-cache-dir -e third_party/vlfm
+# RAM++ likewise by path (_ascent_ram.pth in the live env). Installing
+# `recognize-anything` from git would ship a different tree than the submodule
+# the servers import.
+RUN python -c "import site, pathlib; \
+    pathlib.Path(site.getsitepackages()[0], '_ascent_ram.pth') \
+    .write_text('/opt/ascent/third_party/recognize-anything\n')" \
+    && python -c "import ram; print('RAM++ importable')"
 
-# ASCENT's requirements.txt, minus the parts that cannot resolve here.
-# `salesforce-lavis==1.0.2` declares dependencies that cannot resolve on python
-# 3.9 -- spacy pulls thinc>=8.3.12, which requires >=3.10 -- so it goes in with
-# --no-deps and its real imports are pinned by hand. spacy 3.7.5 is the last
-# release supporting 3.9, and only `img2prompt_vqa` needs it at all.
-RUN pip install --no-cache-dir --no-deps salesforce-lavis==1.0.2 \
-    && pip install --no-cache-dir \
-       "spacy==3.7.5" "timm==0.4.12" "opencv-python-headless==4.10.0.84" \
-       iopath decord webdataset fairscale einops pycocoevalcap \
-       omegaconf plotly flask open3d dash scikit-learn joblib seaborn \
-       "supervision==0.25.1" openpyxl "yapf==0.43.0" \
-    && pip install --no-cache-dir --no-deps \
-       "recognize-anything @ git+https://github.com/xinyu1205/recognize-anything.git"
-
-# Four imports requirements.txt never declares, each found by a server failing
-# at import time:
-#  - scikit-image: `ascent/llm_planner.py` imports skimage.metrics.ssim, so the
-#    eval dies before habitat starts. 0.19.3 is the last line built against
-#    numpy <1.24.
-#  - faster-coco-eval + calflops + accelerate: pulled in transitively by
-#    `from src.core import YAMLConfig` in model_api/dfine_out.py -- D-FINE's
-#    __init__ imports its TRAINING stack even though only inference is used.
-#    1.6.7 is the floor for `faster_coco_eval.utils.pytorch`. calflops and
-#    accelerate go in --no-deps, or accelerate's solver pulls a transformers
-#    newer than the 4.37.0 pinned below.
-#
-# Without these, D-FINE is the only server that fails, and ASCENT's own clients
-# swallow connection errors -- so a native run would silently evaluate with one
-# of its two detectors dead. (This repo's clients fail loud instead.)
-RUN pip install --no-cache-dir "scikit-image==0.19.3" "faster-coco-eval==1.6.7" \
-    && pip install --no-cache-dir --no-deps calflops "accelerate==0.26.1"
-
-# LAST, and deliberately: ASCENT's override of lavis's transformers pin. 4.37.0
-# is the floor for Qwen2.5 and works with BLIP-2 in practice, which is what
-# lets all the model servers share one environment.
-RUN pip install --no-cache-dir "transformers==4.37.0" \
-    && python -c "import torch, habitat_sim, transformers, numpy, cv2; \
-       import lavis.models, mobile_sam, groundingdino.util.inference, ram; \
-       from groundingdino import _C; \
-       assert numpy.__version__.startswith('1.23'), numpy.__version__; \
-       print('ascent env: all model packages import OK, numpy', numpy.__version__)"
+RUN python -c "import torch, habitat_sim, transformers, numpy, cv2; \
+    import lavis.models, mobile_sam, groundingdino.util.inference, ram; \
+    from groundingdino import _C; \
+    assert numpy.__version__.startswith('1.23'), numpy.__version__; \
+    print('ascent env: all model packages import OK, numpy', numpy.__version__)"
 
 # Exactly one opencv build may be installed: two of them abort at import with
 # "CPU dispatcher tracer already initlized".

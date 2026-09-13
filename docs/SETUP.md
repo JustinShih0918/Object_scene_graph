@@ -191,12 +191,19 @@ from groundingdino import _C
 print('ascent env OK')"
 ```
 
-The base image is `nvidia/cuda:11.8.0-cudnn8-devel`, not a `-runtime-` one:
-GroundingDINO's kernel needs nvcc, and torch refuses to build an extension when
-nvcc's version differs from `torch.version.cuda` — so nvcc must be 11.8 to
-match ASCENT's cu118 torch. The habitat env's cu121 torch is unaffected because
-torch wheels bundle their own CUDA runtime and nothing on the OSG side compiles
-an extension.
+The base image is `nvidia/cuda:12.1.1-cudnn8-runtime`, which has **no system
+nvcc**. GroundingDINO's kernel is compiled with conda's own `cuda-toolkit=11.8`
+and conda gcc/gxx inside the `ascent` env, pinned to 11.8 because torch refuses
+to build an extension when nvcc's version differs from `torch.version.cuda`.
+That is not a guess: it is what the environment currently serving the models
+was built with, read off its `conda-meta`.
+
+The pip half of that env is pinned in `docker/ascent-requirements.txt`,
+generated from its `pip freeze` and installed with `--no-deps`. The list is a
+complete closure, so re-running the resolver is unnecessary — and actively
+harmful, since habitat-lab's unbounded `numpy>=1.20.0` otherwise pulls numpy 2
+over the pin and breaks `import torch`. GroundingDINO and RAM++ are wired by
+`.pth`, matching `_ascent_gdino.pth` / `_ascent_ram.pth` in the live env.
 
 ## 6. What the submodule does and does not carry
 
