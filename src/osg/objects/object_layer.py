@@ -525,20 +525,28 @@ class ObjectLayer:
         target = target_label.lower().replace(" ", "_")
         out = []
         for t in self._tracks.values():
-            if t.blacklisted or t.n_obs < min_obs or t.evidence < min_evidence:
+            if t.blacklisted or t.n_obs < min_obs:
                 continue
             if floor_key is not None and t.floor_key != floor_key:
                 continue
             if step is not None and t.suppressed_until > step:
                 continue
-            if t.best_score < min_score:
-                continue
-            # The size gate rejects slivers of furniture. For the target it
-            # re-creates the admission deadlock one stage later: a track seeded
-            # from a distant sighting can only grow its best box by being
-            # approached, and it can only be approached by being proposed.
-            if not target_bypasses_bbox and t.best_bbox_px < min_bbox_px:
-                continue
+            # The evidence, score and size gates are calibrated on DETECTOR
+            # output, and a proposal-only track has none: no evidence, a
+            # constant score, a region's box. Its bar is the proposal bar
+            # below. Measured: the first fused run committed to zero proposal
+            # tracks in 49 episodes while tracks past the bar sat in the map
+            # with evidence 0.0 < min_evidence 1.0, rejected here in silence.
+            if not t.proposal_only:
+                if t.evidence < min_evidence or t.best_score < min_score:
+                    continue
+                # The size gate rejects slivers of furniture. For the target
+                # it re-creates the admission deadlock one stage later: a
+                # track seeded from a distant sighting can only grow its best
+                # box by being approached, and it can only be approached by
+                # being proposed.
+                if not target_bypasses_bbox and t.best_bbox_px < min_bbox_px:
+                    continue
             if t.presence.p < min_presence:
                 continue
             if max_identity_rejections and t.identity_rejections >= max_identity_rejections:

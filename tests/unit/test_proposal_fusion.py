@@ -307,3 +307,20 @@ def test_proposal_only_tracks_rank_by_their_mean_feature():
         layer.update(_frame(i), [_det("bowl", (400, 300, 480, 380), 0.5, "proposal", _unit(1, 0.1, 0))])
     out = layer.candidates("bowl", min_obs=1, rank_by_presence=True)
     assert [round(t.proposal_sim, 2) for t in out] == [0.99, 0.86]
+
+
+def test_the_detector_gates_do_not_apply_to_a_proposal_only_track():
+    """Evidence, score and size are detector quantities; a proposal track has
+    none and is judged on its own bar. The first fused run committed to zero
+    proposal tracks in 49 episodes because of this."""
+    layer = _layer()
+    _proposal_track(layer, 4, _unit(1, 0.3, 0))                    # evidence 0.0, score 0.5
+    out = layer.candidates("bowl", min_obs=2, min_evidence=1.0, min_score=0.6, min_bbox_px=1e9,
+                           proposal_min_obs=4, proposal_tau=0.28)
+    assert [t.proposal_only for t in out] == [True]
+    # ...while a named track is still held to them
+    layer.update(_frame(20), [_det("bowl", (10, 10, 90, 90), 0.4)])
+    layer.update(_frame(21), [_det("bowl", (10, 10, 90, 90), 0.4)])
+    out = layer.candidates("bowl", min_obs=2, min_evidence=1.0, min_score=0.6, min_bbox_px=1e9,
+                           proposal_min_obs=4, proposal_tau=0.28)
+    assert [t.proposal_only for t in out] == [True]
