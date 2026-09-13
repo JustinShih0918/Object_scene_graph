@@ -191,12 +191,12 @@ from groundingdino import _C
 print('ascent env OK')"
 ```
 
-The base image is `nvidia/cuda:12.1.1-cudnn8-runtime`, which has **no system
-nvcc**. GroundingDINO's kernel is compiled with conda's own `cuda-toolkit=11.8`
-and conda gcc/gxx inside the `ascent` env, pinned to 11.8 because torch refuses
-to build an extension when nvcc's version differs from `torch.version.cuda`.
-That is not a guess: it is what the environment currently serving the models
-was built with, read off its `conda-meta`.
+The base image is `nvidia/cuda:11.8.0-cudnn8-devel`. GroundingDINO's kernel
+must be compiled, torch refuses to build an extension when the toolchain's
+version differs from `torch.version.cuda`, and a devel base puts a matching
+11.8 nvcc at `/usr/local/cuda` where torch looks for it. The build asserts the
+two agree before compiling, so a mismatch fails in seconds rather than
+producing a silent CPU fallback that costs 14-40 hours on a 100-episode run.
 
 The pip half of that env is pinned in `docker/ascent-requirements.txt`,
 generated from its `pip freeze` and installed with `--no-deps`. The list is a

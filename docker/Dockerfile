@@ -18,21 +18,27 @@
 # side does not want; and the two torch builds differ. Process-per-model over
 # HTTP is ASCENT's own architecture, and the split env is why it is necessary.
 #
-# THE RECIPE BELOW IS DERIVED FROM THE ENVIRONMENT THAT ACTUALLY RUNS THE
-# SERVERS, not from ASCENT's README. The old docker/Dockerfile.ascent claimed a
-# `-devel-` base was required because conda's CUDA packages "never produced a
-# working toolchain". Inspecting the live env shows the opposite: it sits on
-# this `12.1.1-runtime` base, which has no system nvcc at all, and compiled
-# GroundingDINO with conda's own `cuda-toolkit=11.8` plus conda gcc/gxx. That
-# is what is reproduced here.
+# THE BASE IS `11.8.0-devel`, and that is the one thing here established by
+# building rather than by reading: GroundingDINO's fused attention kernel
+# compiled cleanly on it, twice, before unrelated steps failed.
 #
-# torch's cpp_extension refuses to build when nvcc's version differs from
-# `torch.version.cuda`, which is why the toolkit is pinned to 11.8 to match
-# ASCENT's cu118 torch. The habitat env's torch 2.4.1+cu121 is unaffected --
-# torch wheels bundle their own CUDA runtime and nothing on the OSG side
-# compiles an extension.
+# torch's `_find_cuda_home` takes $CUDA_HOME, else the directory above whatever
+# `which nvcc` returns, and then refuses to build when that toolchain's version
+# differs from `torch.version.cuda` (11.8 here). A `-runtime-` base has no nvcc
+# at all, so the toolchain has to come from somewhere; a devel base puts a
+# matching 11.8 at /usr/local/cuda and needs no further arrangement.
+#
+# The conda route was tried and reverted. The live env does carry conda
+# `cuda-toolkit=11.8`, which is what led me to think it had compiled there --
+# but its only nvcc is now 13.3 (a later package clobbered the 11.8 one) and
+# torch still resolves CUDA_HOME to /usr/local/cuda. That env's `_C.so` was
+# almost certainly compiled in a devel-based container and carried across, so
+# it is evidence for the devel base, not against it.
+#
+# The habitat env's torch 2.4.1+cu121 is unaffected: torch wheels bundle their
+# own CUDA runtime and nothing on the OSG side compiles an extension.
 
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
@@ -86,15 +92,10 @@ RUN pip install --no-cache-dir git+https://github.com/ultralytics/CLIP.git
 # lavis's `<4.27` pin is ASCENT's, and it is what lets BLIP-2 and Qwen2.5
 # share one environment).
 # ---------------------------------------------------------------------------
-# cuda-toolkit 11.8 + conda gcc/gxx: the toolchain the live env compiled
-# GroundingDINO's kernel with. Pinned to 11.8 to match torch's cu118, because
-# torch's cpp_extension refuses to build when nvcc and torch.version.cuda differ.
-RUN conda create -y -n ascent python=3.9 cmake=3.14.0 \
-    && conda install -y -n ascent -c "nvidia/label/cuda-11.8.0" \
-       cuda-toolkit=11.8.0 cuda-nvcc=11.8.89 \
-    && conda install -y -n ascent -c conda-forge \
-       "gcc_linux-64=11.4" "gxx_linux-64=11.4" c-compiler cxx-compiler \
-    && conda clean -ya
+# No conda CUDA here: the base image's 11.8 toolchain at /usr/local/cuda is
+# what torch's cpp_extension finds, and adding a second one only creates a
+# chance for the wrong nvcc to win.
+RUN conda create -y -n ascent python=3.9 cmake=3.14.0 && conda clean -ya
 SHELL ["conda", "run", "--no-capture-output", "-n", "ascent", "/bin/bash", "-c"]
 
 RUN conda install -y -n ascent habitat-sim=0.3.1 withbullet headless \
@@ -151,7 +152,7 @@ RUN for pkg in third_party/habitat-lab/habitat-lab \
 # neither torch nor pip, and GroundingDINO's setup.py responds to the failed
 # torch import by trying to `pip install torch` from inside it.
 #
-# CUDA_HOME points at the conda toolkit; this base image has no system nvcc.
+# CUDA_HOME is the base image's toolchain, which matches torch's cu118.
 # Without a working kernel GroundingDINO falls back to CPU -- at one call per
 # step that is 14-40 hours for a 100-episode run.
 #
@@ -161,7 +162,15 @@ RUN for pkg in third_party/habitat-lab/habitat-lab \
 # object file" even on a perfectly good install (confirmed against the live
 # env). The servers are unaffected -- groundingdino/util/inference.py imports
 # torch at its top.
-ENV CUDA_HOME=/opt/conda/envs/ascent TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0"
+ENV CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="8.6;8.9;9.0"
+# Fail here, loudly, rather than 40 hours into a run on a CPU fallback.
+RUN nvcc --version | tail -2 \
+    && python -c "import torch; from torch.utils.cpp_extension import CUDA_HOME; \
+       import subprocess, re; \
+       v = subprocess.check_output([CUDA_HOME + '/bin/nvcc', '--version']).decode(); \
+       n = re.search(r'release ([0-9.]+)', v).group(1); \
+       assert n == torch.version.cuda, f'nvcc {n} != torch cuda {torch.version.cuda}'; \
+       print('toolchain matched: nvcc', n, '== torch', torch.version.cuda)"
 RUN cd third_party/GroundingDINO \
     && python setup.py build_ext --inplace \
     && python -c "import site, pathlib; \
