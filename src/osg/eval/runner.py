@@ -170,11 +170,6 @@ def run_eval(cfg) -> dict:
     n_total = len(env.env.episodes)
     n_run = n_total if cfg.eval.num_episodes < 0 else min(cfg.eval.num_episodes, n_total)
     wanted = set(cfg.eval.episode_ids) if cfg.eval.episode_ids else None
-    wanted_cats = ({str(c).lower() for c in cfg.eval.goal_categories}
-                   if cfg.eval.goal_categories else None)
-    if wanted_cats is not None:
-        n_run = min(n_run, sum(1 for e in env.env.episodes
-                               if str(e.object_category).lower() in wanted_cats))
     if wanted is not None:
         n_run = len(wanted) if cfg.eval.num_episodes < 0 else min(
             int(cfg.eval.num_episodes), len(wanted)
@@ -190,8 +185,6 @@ def run_eval(cfg) -> dict:
         frame = env.reset()
         episode = env.current_episode
         uid = _episode_uid(episode)
-        if wanted_cats is not None and str(episode.object_category).lower() not in wanted_cats:
-            continue
         if (
             wanted is not None
             and uid not in wanted

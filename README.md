@@ -36,6 +36,8 @@ how it got here):
 > native ASCENT scores 65.0% / 0.36 on the same episodes, the previous port
 > 54.0%. Same-floor 75.6%, cross-floor 18.2%.
 >
+> **[docs/SETUP.md](docs/SETUP.md)** is the install: the pinned ASCENT
+> submodule, the GroundingDINO CUDA extension, and ~5 GB of model weights.
 > **[docs/USAGE.md](docs/USAGE.md)** is the how-to: model servers, running,
 > comparing against ASCENT, variants. **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**
 > is the what-and-why: the protocol, how claims are established, and every
@@ -106,7 +108,7 @@ python scripts/run_eval.py                               # the default: S71 on s
 python scripts/run_eval.py eval.num_episodes=3           # smoke
 python scripts/run_eval.py +experiment=final_sensor      # the full v1 val split
 python scripts/run_eval.py +experiment=matched_single_floor          # a legacy preset (old base, see docs/USAGE.md)
-python scripts/compare_ascent_osg.py relative_work/ascent/debug/behaviour_100 outputs/<run>   # paired vs ASCENT
+python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/<run>   # paired vs ASCENT
 ```
 
 The default needs the servers and a local ollama with `qwen2.5:7b`; it refuses

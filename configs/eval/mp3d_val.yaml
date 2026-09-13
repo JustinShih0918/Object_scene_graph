@@ -1,3 +1,0 @@
-# The full MP3D ObjectNav val split: 2195 episodes over 11 scenes.
-defaults:
-  - base_mp3d

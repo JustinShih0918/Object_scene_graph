@@ -161,44 +161,6 @@ COCO_TO_HM3D = {
     "potted plant": "plant",
 }
 
-# MP3D ObjectNav asks for 21 categories; closed-set COCO can name 8 of them.
-# The other 13 -- picture, cabinet, cushion, chest_of_drawers, stool, towel,
-# shower, bathtub, counter, fireplace, gym_equipment, seating, clothes -- have
-# no COCO class, so a COCO detector scores structurally zero on them and an
-# MP3D run needs the open-vocabulary head (`detector=yoloe`) to cover the split.
-# `dining table` is COCO's only table and `bench` its closest `seating`; both
-# are approximations, marked as such rather than silently trusted.
-COCO_TO_MP3D = {
-    "chair": "chair",
-    "bed": "bed",
-    "toilet": "toilet",
-    "tv": "tv_monitor",
-    "couch": "sofa",
-    "potted plant": "plant",
-    "sink": "sink",
-    "dining table": "table",
-}
-MP3D_CATEGORIES = (
-    "chair", "table", "picture", "cabinet", "cushion", "sofa", "bed",
-    "chest_of_drawers", "plant", "sink", "toilet", "stool", "towel",
-    "tv_monitor", "shower", "bathtub", "counter", "fireplace",
-    "gym_equipment", "seating", "clothes",
-)
-MP3D_WITHOUT_COCO = tuple(c for c in MP3D_CATEGORIES if c not in set(COCO_TO_MP3D.values()))
-GOAL_VOCABULARIES = {"hm3d": COCO_TO_HM3D, "mp3d": COCO_TO_MP3D}
-
-
-def coco_map(goal_vocabulary: str) -> dict:
-    """COCO name -> benchmark goal category, for the benchmark being run."""
-    try:
-        return GOAL_VOCABULARIES[str(goal_vocabulary).lower()]
-    except KeyError:
-        raise ValueError(
-            f"detector.goal_vocabulary must be one of {sorted(GOAL_VOCABULARIES)}, "
-            f"got {goal_vocabulary!r}"
-        ) from None
-
-
 class YoloDetector(Detector):
     """Closed-set COCO YOLO, the stand-in for ASCENT's D-FINE.
 
@@ -227,7 +189,6 @@ class YoloDetector(Detector):
         half: bool = True,
         device: str = "cuda",
         class_conf: Optional[Dict[str, float]] = None,
-        goal_vocabulary: str = "hm3d",
     ) -> None:
         from ultralytics import YOLO  # deferred: heavy import
 
@@ -240,7 +201,6 @@ class YoloDetector(Detector):
         self.half = bool(half)
         self.device = device
         self._wanted: Optional[set] = None
-        self._coco = coco_map(goal_vocabulary)
 
     @staticmethod
     def _normalize(label: str) -> str:
@@ -250,9 +210,9 @@ class YoloDetector(Detector):
         """Narrow the COCO output; a closed set cannot be widened."""
         wanted = {self._normalize(c) for c in classes}
         # Accept either naming, so callers may ask for `tv_monitor` or `tv`.
-        wanted |= {self._normalize(k) for k, v in self._coco.items()
+        wanted |= {self._normalize(k) for k, v in COCO_TO_HM3D.items()
                    if self._normalize(v) in wanted}
-        keep = {c for c in self._coco if c in wanted}
+        keep = {c for c in COCO_TO_HM3D if c in wanted}
         self._wanted = keep or None
 
     def _floor_conf(self) -> float:
@@ -281,11 +241,11 @@ class YoloDetector(Detector):
         masks = r.masks.data.cpu().numpy()
         for i in range(len(r.boxes)):
             coco = self._normalize(r.names[int(r.boxes.cls[i])])
-            if coco not in self._coco:
+            if coco not in COCO_TO_HM3D:
                 continue
             if self._wanted is not None and coco not in self._wanted:
                 continue
-            label = self._coco[coco]
+            label = COCO_TO_HM3D[coco]
             score = float(r.boxes.conf[i])
             if not self._admits(label, score):
                 continue
@@ -339,7 +299,6 @@ class DFineDetector(Detector):
         vocabulary: List[str] | None = None,
         class_conf: Optional[Dict[str, float]] = None,
         strict: bool = False,
-        goal_vocabulary: str = "hm3d",
         **_ignored: object,
     ) -> None:
         self.url = url
@@ -352,7 +311,6 @@ class DFineDetector(Detector):
         self.class_conf = {self._normalize(k): float(v)
                            for k, v in (class_conf or {}).items()}
         self._wanted: Optional[set] = None
-        self._coco = coco_map(goal_vocabulary)
         self.n_calls = 0
         self.n_errors = 0
         self.n_sam_errors = 0
@@ -364,9 +322,9 @@ class DFineDetector(Detector):
 
     def set_vocabulary(self, classes: List[str]) -> None:
         wanted = {self._normalize(c) for c in classes}
-        wanted |= {self._normalize(k) for k, v in self._coco.items()
+        wanted |= {self._normalize(k) for k, v in COCO_TO_HM3D.items()
                    if self._normalize(v) in wanted}
-        keep = {c for c in self._coco if c in wanted}
+        keep = {c for c in COCO_TO_HM3D if c in wanted}
         self._wanted = keep or None
 
     def _post(self, url: str, payload: dict) -> Optional[dict]:
@@ -446,11 +404,11 @@ class DFineDetector(Detector):
         for box, logit, phrase in zip(resp["boxes"], resp["logits"],
                                       resp.get("phrases", [])):
             coco = self._normalize(phrase)
-            if coco not in self._coco:
+            if coco not in COCO_TO_HM3D:
                 continue
             if self._wanted is not None and coco not in self._wanted:
                 continue
-            label = self._coco[coco]
+            label = COCO_TO_HM3D[coco]
             score = float(logit)
             if not self._admits(label, score):
                 continue

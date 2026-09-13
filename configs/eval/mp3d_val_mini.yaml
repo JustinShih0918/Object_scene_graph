@@ -1,6 +1,0 @@
-# habitat's MP3D val_mini: 30 episodes in one scene. A smoke split -- its
-# scene is licensed like the rest of val.
-defaults:
-  - base_mp3d
-
-split: val_mini

@@ -3817,7 +3817,7 @@ mechanisms (VLM verifier, commit/arrival gates, weak memory, escapes) removed.
 `src/ascentnav/README.md` lists the fidelity findings (F1-F14).
 
 `outputs/s71_port100`, `scenes20_ep0to4`, paired against native ASCENT
-(`relative_work/ascent/debug/behaviour_100`) and `s68`:
+(`data/reference/ascent_behaviour_100`) and `s68`:
 
 | | SR | SPL | steps | same-floor (78) | cross-floor (22) |
 |---|---|---|---|---|---|
@@ -4578,6 +4578,20 @@ than the historical 42%-at-0.18 figure suggested.
 remaining work splits cleanly: **stair recall** for the 19% (see the S3
 decomposition — traversal already works, 13 of the 16 episodes that attempt a
 climb complete it), and everything else for the 81%.
+
+## A note on reproducing the older arms
+
+The S8-S70 arms ran on presets that have since been removed
+(`ascent_sensor` and its six variants, `ascent_policy`, `ascent_aligned`,
+`ascent_matched`, the four `matched_*`, `single_floor_navgoal`,
+`full_v1_navmesh`). Their numbers stand as recorded; re-running them means
+recovering the yaml from git history. The surviving presets are `ascentnav`
+(the default), `ascentnav_union_stairs` (the stair A/B), `final_sensor` (the
+full split) and the `ycb_*` dynamic-scene arms.
+
+The ASCENT reference trace those comparisons are scored against now lives in
+this repo at `data/reference/ascent_behaviour_100/` (gzipped), because the
+patch that generated it is no longer applied to the submodule.
 
 ## Final results
 

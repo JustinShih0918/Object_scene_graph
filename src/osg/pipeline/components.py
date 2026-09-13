@@ -57,7 +57,6 @@ def build_detector(cfg):
             imgsz=cfg.detector.imgsz,
             half=cfg.detector.half,
             device=cfg.detector.device,
-            goal_vocabulary=str(getattr(cfg.detector, "goal_vocabulary", "hm3d")),
         )
     if cfg.detector.name == "dfine":
         from ..perception.detector import DFineDetector
@@ -71,7 +70,6 @@ def build_detector(cfg):
             use_sam=bool(getattr(cfg.detector, "use_sam", True)),
             timeout_s=float(getattr(cfg.detector, "timeout_s", 15.0)),
             strict=bool(getattr(cfg.detector, "strict", False)),
-            goal_vocabulary=str(getattr(cfg.detector, "goal_vocabulary", "hm3d")),
         )
     if cfg.detector.name == "stub":
         from ..perception.detector import StubDetector

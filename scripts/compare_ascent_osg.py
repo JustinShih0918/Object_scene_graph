@@ -2,7 +2,7 @@
 """Put a native-ASCENT run and an OSG run side by side, episode for episode.
 
     python scripts/compare_ascent_osg.py \
-        relative_work/ascent/debug/behaviour_100 outputs/s68_behaviour100
+        data/reference/ascent_behaviour_100 outputs/s68_behaviour100
 
 The two runs are the SAME 100 episodes (`configs/eval/scenes20_ep0to4.yaml` and
 `experiments/eval_ascent_hm3d_100.yaml` select the same set), so every number
@@ -36,8 +36,21 @@ def canon(name: str | None) -> str:
     return CANON.get(n, n.replace(" ", "_"))
 
 
+def _open(path: Path):
+    """The reference trace ships gzipped (`data/reference/ascent_behaviour_100`);
+    a fresh run writes plain .jsonl. Accept either, named with or without .gz."""
+    import gzip
+
+    if path.suffix == ".gz" or not path.exists():
+        gz = path if path.suffix == ".gz" else path.with_suffix(path.suffix + ".gz")
+        if gz.exists():
+            return gzip.open(gz, "rt")
+    return path.open()
+
+
 def load(path: Path) -> list:
-    return [json.loads(line) for line in path.open() if line.strip()]
+    with _open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
 
 
 def key(row: dict) -> tuple:
@@ -60,7 +73,7 @@ def in_frame(xy, yaw, targets, max_d, half_deg):
 def _asc_step_blocks(path: Path) -> list:
     """steps.jsonl is one flat stream; `n` resets at every episode boundary."""
     out, prev = [[]], 1e9
-    for line in path.open():
+    for line in _open(path):
         s = json.loads(line)
         if s["n"] <= prev and out[-1]:
             out.append([])
@@ -86,7 +99,8 @@ def block(title: str, asc: list, osg: list) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("ascent_dir", help="dir holding the ASCENT episodes.jsonl/steps.jsonl")
+    ap.add_argument("ascent_dir", nargs="?", default="data/reference/ascent_behaviour_100",
+                    help="dir holding the ASCENT episodes.jsonl/steps.jsonl (plain or .gz)")
     ap.add_argument("osg_run", help="an OSG outputs/<run> directory")
     ap.add_argument("--json", default="", help="also write the comparison here")
     ap.add_argument("--episodes-root",

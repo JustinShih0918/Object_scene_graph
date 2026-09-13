@@ -258,7 +258,7 @@ the comparison — but they separate both from ASCENT's published setup.
 ```bash
 bash scripts/serve_perception.sh                 # five servers, once
 python scripts/run_eval.py eval.behaviour_log=true output_dir=outputs/my_run
-python scripts/compare_ascent_osg.py relative_work/ascent/debug/behaviour_100 outputs/my_run
+python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/my_run
 ```
 
 `pytest tests/unit -q` (~20 s, no GPU) pins the transcription: every test in
