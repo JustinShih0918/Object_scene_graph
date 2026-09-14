@@ -160,6 +160,9 @@ def test_algorithm_fingerprint_covers_every_flag_an_ab_can_switch():
         # S33: a weights path, recorded as `rednet_stairs` (the behavioural
         # switch) rather than by filename.
         "rednet_weights",
+        # Same rule: `osg_world_model` is the switch an A/B flips, the detector
+        # it loads is a filename.
+        "osg_world_model_weights",
         "terminal_progress_eps", "terminal_stall_steps",
     }
     missing = sorted(f for f in behavioural - exempt if f'"{f}"' not in block)

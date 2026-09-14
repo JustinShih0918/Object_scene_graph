@@ -45,6 +45,7 @@ ascentnav/
   geometry.py      episode-frame anchor; OSG world frame -> ASCENT's episodic frame
   constants.py     verbatim from ascent/constants.py
   mapping/         obstacle_map, value_map, object_point_cloud_map (from ascent/)
+                   map_store: the obstacle-map stack, saved and reused (below)
   vendor/          the frontier_exploration and vlfm helpers those maps import
 ```
 
@@ -65,6 +66,71 @@ The reference's own, served as ASCENT itself serves them
 answer raise `PerceptionUnavailable` instead of returning a neutral value;
 `probe_served_models` checks all five before Habitat loads. Under this gate a
 silent 0 from BLIP-2 is an agent that never STOPs.
+
+## Storing the obstacle map, and navigating on it later
+
+`mapping/map_store.py` writes the `ObstacleMap` stack this agent builds -- one
+storey per discovered staircase -- and gives it back to a later run. The point
+is the cross-anchor experiment: **pass 1** lets ASCENT's navigation explore the
+static layout and keeps its map; **pass 2** runs OSG's presence-filter pipeline
+over the moved layout, planning on occupancy it did not build.
+
+```bash
+# pass 1 -- ASCENT's navigation and models, static layout, keep the map
+python scripts/run_eval.py +experiment=mf5_ascentnav_map \
+    'ycb.scenes=[00800-TEEsavR23oF]' ycb.obstacle_map_out=outputs/maps_mf5_ascent
+
+# is the stored map in the frame the OSG side thinks it is?
+python scripts/check_obstacle_map_reuse.py \
+    --maps outputs/maps_mf5_ascent --run outputs/mf5_pass1 --png /tmp/map.png
+
+# pass 2 -- the presence filter, on that map, on the MOVED layout.
+# map_in_occupancy=false is the point: the snapshot supplies the object tracks
+# and the storeys, and NONE of its occupancy, so the ASCENT map is the only
+# thing the planner reads.
+python scripts/run_eval.py +experiment=mf5_osg_on_ascent_map \
+    'ycb.scenes=[00800-TEEsavR23oF]' \
+    ycb.obstacle_map_in=outputs/maps_mf5_ascent \
+    ycb.map_in=outputs/maps_mf5_osg ycb.map_in_occupancy=false
+```
+
+Three things are worth knowing before using it.
+
+* **Loading is a resample, not a copy.** These maps are anchored at the pose
+  the episode started from and rotated to its facing (A12), OSG's are
+  world-axis aligned, `BaseMap._xy_to_px` swaps the axes and flips the row, and
+  ASCENT's frame is `(x, -z)` where OSG's `PLANE` is `(x, z)`. Copying with a
+  shifted origin -- which is all `_CostmapView` does, and it is only ever drawn
+  -- puts the walls **10 m out at heading 0 and 22 m at pi/2** (measured).
+  `apply_to_costmap` maps every destination cell back through all three.
+* **The navigable maps are recomputed, never restored.** They are a dilation of
+  the obstacle mask by the agent radius, so restoring them would freeze the
+  radius a previous run happened to use into this one.
+* **`traj_on_map` is a coverage diagnostic, not a validity test**, and it reads
+  exactly like one, which is why it is flagged here. `explored_area` is what
+  the agent SAW: `obstacle_map.py:374` erases every cell within an
+  agent-radius dilation of an obstacle on every step, and `reveal_fog_of_war`
+  propagates only through navigable cells, so a stairwell interior is never
+  marked at all. One episode each on 00800, all three maps correctly framed:
+  bowl 0.54/0.77, banana 0.00/0.18, pitcher **0.11 with zero climb steps**.
+  Gating reuse on this number rejects every map there is. What validates the
+  FRAME is the unit tests, which pin the transform against the obstacle map's
+  own projection at four start headings, plus the picture the check script
+  draws.
+
+`apply_obstacle_maps` is the symmetric operation: it restores a stored stack
+onto a fresh `AscentNavAgent` rather than into an OSG costmap, for the paired
+A/B of whether ASCENT's own navigation is helped by its own prior map. Nothing
+in the eval wiring calls it yet; `ycb.obstacle_map_in` is the OSG-side path.
+
+Floors are matched **by order** -- the stored list is bottom storey first,
+because `_new_floor` appends on an up-stair and inserts at 0 on a down-stair --
+against the OSG stack sorted by height. An `ObstacleMap` records no world
+height, so there is nothing else to match on; with a multi-storey `ycb.map_in`
+already loaded the two orders agree, and `prior_obstacle_map` in
+`episodes.jsonl` records which storey went where and how many cells each
+contributed, so a snapshot that loaded onto the wrong floor is visible rather
+than silent.
 
 ## Fidelity notes worth knowing before reading the code
 

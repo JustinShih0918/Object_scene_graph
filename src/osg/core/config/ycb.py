@@ -98,6 +98,25 @@ class YCBAuthoredConfig:
     # rebuilds from scratch is never wrong about anything and measures nothing.
     map_out: str = ""
     map_in: str = ""
+    # The same two passes, for the OTHER map. `navigation/` builds ASCENT's
+    # per-storey `ObstacleMap` while it explores; these store that stack and
+    # give it back, so pass 2's presence-filter pipeline plans over occupancy
+    # ASCENT's navigation built rather than rebuilding its own from scratch.
+    # Kept separate from `map_out`/`map_in` because the two artifacts are
+    # written in different frames and either can be used without the other
+    # (src/navigation/mapping/map_store.py).
+    obstacle_map_out: str = ""
+    obstacle_map_in: str = ""
+    # Whether `map_in` also restores the OCCUPANCY it stored, or only the
+    # scene graph (tracks, presence beliefs, storey heights and connectivity).
+    # False is the "ASCENT's map is the sole occupancy" arm: the snapshot keeps
+    # what the objects hang off, and every cell the planner reads comes from
+    # `obstacle_map_in` instead of from the pass that built the scene graph.
+    map_in_occupancy: bool = True
+    # Whether a loaded obstacle map may overwrite cells the live map has
+    # already witnessed for itself. False keeps this session's own evidence
+    # and fills in only what it has not seen.
+    obstacle_map_overwrite: bool = False
     # Score a STOP by horizontal distance to the OBJECT, the released DualMap
     # benchmark's rule, instead of habitat's geodesic distance to an authored
     # viewpoint (whose rings at 0.8-2.0 m make the effective tolerance about

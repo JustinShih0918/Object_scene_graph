@@ -202,6 +202,17 @@ class ExplorationStrategy:
         self.requested_floor: Optional[int] = None
         self.selected_search_floor: Optional[int] = None
 
+    def force_select_next(self) -> None:
+        """Drop the rate limit so the next `select` really runs.
+
+        `select` fires once per `select_every` steps, which is right while the
+        agent is exploring steadily and wrong immediately after an attempt
+        fails: the few steps before the next candidate commit are exactly the
+        ones that have to carry a selection round, because they are the only
+        ones the round will get.
+        """
+        self._last_select_step = -10 ** 9
+
     # ------------------------------------------------------------- blacklist
 
     def block(self, f: Optional[Frontier], duration: int, step: int) -> None:

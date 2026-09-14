@@ -251,6 +251,11 @@ def build_agent(
         from navigation.agent import AscentNavAgent
 
         agent_cls = AscentNavAgent
+        extra["world_model"] = build_world_model(
+            cfg, target, keyframe_dir=keyframe_dir, profiler=profiler,
+            room_classifier=components.get("room_classifier"),
+            stair_detector=components.get("stair_detector"),
+        )
     return agent_cls(
         cfg, components["detector"], components["scorer"],
         components["verifier"], target, keyframe_dir=keyframe_dir,
@@ -264,6 +269,38 @@ def build_agent(
         stair_segmenter=components["stair_segmenter"],
         stair_detector=components.get("stair_detector"),
         ram=components.get("ram"),
+    )
+
+
+def build_world_model(cfg, target, *, keyframe_dir=None, profiler=None,
+                      room_classifier=None, stair_detector=None):
+    """OSG's world model for a policy that does not have one, or None.
+
+    Its detector is built here rather than reused from `components`: the
+    driving policy's detector answers a different question (see
+    `agent/world_model.py`).
+    """
+    if not bool(getattr(cfg.agent, "osg_world_model", False)):
+        return None
+    from ..agent.world_model import WorldModel
+    from ..perception.detector import YoloeDetector
+
+    detector = YoloeDetector(
+        weights=str(getattr(cfg.agent, "osg_world_model_weights",
+                            "data/weights/yoloe-11s-seg.pt")),
+        conf=cfg.detector.conf if str(cfg.detector.name) == "yoloe" else 0.3,
+        class_conf=dict(cfg.detector.class_conf or {}),
+        imgsz=cfg.detector.imgsz,
+        half=cfg.detector.half,
+        device=cfg.detector.device,
+    )
+    detector.set_vocabulary(
+        [target.replace("_", " ")] + list(getattr(cfg.detector, "vocabulary", []) or [])
+    )
+    return WorldModel(
+        cfg, detector, target=target, keyframe_dir=keyframe_dir,
+        profiler=profiler, room_classifier=room_classifier,
+        stair_detector=stair_detector,
     )
 
 

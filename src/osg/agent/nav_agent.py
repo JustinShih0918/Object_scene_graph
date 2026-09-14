@@ -438,6 +438,7 @@ class NavAgent:
         self._stale_stop_used = False
         self._stale_stop_pending = False
         self._relook = None  # (key, centre_xy, radius_m, exclude_xy, label)
+        self._explore_hold_until = 0  # see `rearm`
         self.state_log = []
         self.approach.reset()
         self.candidates.reset()
@@ -538,6 +539,18 @@ class NavAgent:
         self.state = State.EXPLORE
         self._goto_deadline = self.step_count + int(max_steps)
         self.stats["attempts"] = self.stats.get("attempts", 1) + 1
+        # EXPLORE is not the same thing as an exploration ROUND. `_act_inner`
+        # runs `candidates.check` before the EXPLORE branch on every step, so
+        # the next same-label track commits immediately and the round -- rate
+        # limited to one per `exploration.select_every` steps -- never happens.
+        # Hold the commit open long enough for one, and make that one run now
+        # rather than at the rate limit's convenience.
+        hold = int(getattr(self.cfg.agent, "explore_after_failed_attempt_steps", 0))
+        if hold > 0:
+            self._explore_hold_until = self.step_count + hold
+            force = getattr(self.exploration, "force_select_next", None)
+            if callable(force):
+                force()
 
     # ------------------------------------------------------------------- act
 
@@ -674,7 +687,13 @@ class NavAgent:
         if self.state in (State.INIT, State.EXPLORE, State.GOTO_FRONTIER) or (
             self.state is State.CLOSE_LOOK and self.close_look.resume == "explore"
         ):
-            self.candidates.check(frame.camera_position[list(PLANE)])
+            if self.step_count <= self._explore_hold_until:
+                # A failed attempt is holding the commit open so one real
+                # exploration round can happen (`rearm`). A hold, not a ban.
+                self.stats["explore_hold_steps"] = (
+                    self.stats.get("explore_hold_steps", 0) + 1)
+            else:
+                self.candidates.check(frame.camera_position[list(PLANE)])
         if self.close_look.active and self.state is not State.CLOSE_LOOK:
             self.close_look.interrupted()  # a commit pre-empted the look
         if self.state == State.CLOSE_LOOK:
@@ -1646,9 +1665,25 @@ class NavAgent:
         self._climb_from_floor = int(self.floors.current_id)
         target_y = self._goal_floor_y_cache
         here_y = float(self.floors.estimator.height_of(self._climb_from_floor))
-        self._climb_direction = (
-            0 if target_y is None else (1 if float(target_y) > here_y else -1)
-        )
+        pursued = getattr(self.floors, "pursuit_flight", None)
+        kind = str(getattr(pursued, "kind", "") or "")
+        if bool(getattr(self.cfg.agent, "climb_direction_from_flight", False)) and kind:
+            # THE FLIGHT KNOWS WHICH WAY IT GOES. Deriving the direction from
+            # two storey heights instead is fragile in exactly the case that
+            # matters, and it failed measurably: on 00800 cross_anchor_01 the
+            # agent pursued a flight_up and started a DOWN climb with
+            # `climb_target_y_x100` and `climb_here_y_x100` BOTH 16 -- the
+            # estimator offered a level a few centimetres above the current
+            # storey, `min(above)` picked it, and `target_y > here_y` is False
+            # at equality, so the tie fell through to -1. `_flight_carrot` then
+            # looked for treads 0.35-1.0 m BELOW an agent on the ground floor,
+            # found none every step for 200 steps, and the agent milled at the
+            # foot of the stairs having risen 0.00 m.
+            self._climb_direction = 1 if kind == "up" else -1
+        else:
+            self._climb_direction = (
+                0 if target_y is None else (1 if float(target_y) > here_y else -1)
+            )
         self._climb_steps = 0
         self._climb_max_dy = 0.0
         self._climb_pitched = False
@@ -1679,6 +1714,18 @@ class NavAgent:
         self.stats["climb_start"] = self.stats.get("climb_start", 0) + 1
         self.stats["climb_start_up"] = self.stats.get("climb_start_up", 0) + int(self._climb_direction > 0)
         self.stats["climb_start_down"] = self.stats.get("climb_start_down", 0) + int(self._climb_direction < 0)
+        # The three values the direction is derived from, recorded because
+        # reading the code could not explain a measured contradiction: on
+        # 00800 cross_anchor_01 the agent pursued a flight_up and started a
+        # DOWN climb, with `floor_transitions` 0 and `floor_y_drift` 0.0, so
+        # `here_y` never moved and every traceable path says +1.
+        self.stats["climb_target_y_x100"] = (
+            -99999 if target_y is None else int(round(float(target_y) * 100)))
+        self.stats["climb_here_y_x100"] = int(round(here_y * 100))
+        self.stats["climb_from_floor"] = int(self._climb_from_floor)
+        flight = getattr(self.floors, "pursuit_flight", None)
+        self.stats["climb_flight_kind"] = (
+            "none" if flight is None else str(getattr(flight, "kind", "?")))
 
     def _end_climb(self, ok: bool, why: str) -> None:
         self.floors.climbing = False

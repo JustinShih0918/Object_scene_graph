@@ -45,7 +45,8 @@ EXPECTED_KEYS = {
     "gt_frames_within_3m", "gt_kf_far_peripheral_detected", "gt_kf_in_view",
     "gt_mean_visible_fraction", "gt_min_range_any_m", "gt_min_range_m", "llm_calls", "llm_errors",
     "llm_last_error", "n_floors_seen", "n_stair_tracks", "portal_log", "floor_llm_log",
-    "presence_events", "prior_map", "scene", "search_log_events", "spl",
+    "presence_events", "prior_map", "prior_obstacle_map",
+    "scene", "search_log_events", "spl",
     "stair_tracks", "start_y", "state_log", "steps", "success", "target",
     "target_obj_xy", "target_tracks", "traj_y_range", "verify_calls",
     "verify_errors", "wall_time_s", "start_floor", "goal_floor", "prior_floor",
@@ -159,3 +160,74 @@ def test_every_spliced_value_survives_json_dumps():
         GroundTruthVisibility(None).fields(),
     ):
         json.dumps(block)
+
+
+# ------------------------------------------------------------- debug video
+
+def test_debug_video_is_h264_after_close(tmp_path):
+    """`cv2` writes MPEG-4 Part 2 (`mp4v`), which is ~4x larger than H.264 for
+    these panels -- a 500-step episode came out at 36 MB, over the 30 MB a file
+    share accepts, so the one video worth looking at could not be sent.
+
+    The assertion is the CODEC, not the byte count: on a short synthetic clip
+    H.264's header overhead can exceed the payload, so size proves nothing at
+    test scale. What must hold is that the re-encode actually ran.
+    """
+    import shutil
+    import subprocess
+
+    import numpy as np
+    import pytest
+
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("ffmpeg/ffprobe not installed")
+
+    from osg.eval.debug_video import DebugVideo
+
+    class _Cfg:
+        class eval:  # noqa: A003 - mirrors the real config node
+            rgb_width, rgb_height = 320, 240
+            debug_video_crf = 30
+
+    vid = DebugVideo(_Cfg(), tmp_path, "ep1")
+    panel = np.zeros((240, 640, 3), dtype=np.uint8)
+    for i in range(60):
+        panel[:] = (i * 3) % 255
+        vid._writer((640, 240)).write(panel)
+    vid.close()
+
+    assert vid._path.exists(), "the recording was lost"
+    assert vid._path.stat().st_size > 0
+    codec = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(vid._path)],
+        capture_output=True, text=True, check=True).stdout.strip()
+    assert codec == "h264", f"still {codec}: the re-encode did not run"
+
+
+def test_debug_video_keeps_the_file_when_compression_is_off(tmp_path):
+    """crf=0 opts out, and the recording must survive that untouched."""
+    import shutil
+    import subprocess
+
+    import numpy as np
+    import pytest
+
+    from osg.eval.debug_video import DebugVideo
+
+    class _Cfg:
+        class eval:  # noqa: A003
+            rgb_width, rgb_height = 320, 240
+            debug_video_crf = 0
+
+    vid = DebugVideo(_Cfg(), tmp_path, "ep2")
+    vid._writer((640, 240)).write(np.zeros((240, 640, 3), dtype=np.uint8))
+    vid.close()
+    assert vid._path.exists()
+    if shutil.which("ffprobe") is None:
+        pytest.skip("ffprobe not installed")
+    codec = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(vid._path)],
+        capture_output=True, text=True, check=True).stdout.strip()
+    assert codec != "h264", "crf=0 should have skipped the re-encode"

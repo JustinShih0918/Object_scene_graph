@@ -308,6 +308,7 @@ def apply_map(
     *,
     max_log_odds: float = 1.5,
     initial_floor_y: Optional[float] = None,
+    restore_occupancy: bool = True,
 ) -> int:
     """Load a snapshot into a freshly constructed agent. Returns track count.
 
@@ -357,6 +358,15 @@ def apply_map(
     version = int(blob.get("schema_version", 1))
 
     def restore_grid(costmap, prefix: str, room_owner) -> None:
+        # SCENE GRAPH ONLY. The storey still gets its height, its key and its
+        # place in the stack -- the object tracks hang off those -- but its
+        # occupancy is left empty for another map to fill. That is how the
+        # ASCENT obstacle map becomes the SOLE occupancy this run plans over
+        # (ycb.map_in_occupancy=false + ycb.obstacle_map_in). The room labels
+        # go with it: they index the grid that is not being restored, and a
+        # segmentation is rebuilt from whatever occupancy does arrive.
+        if not restore_occupancy:
+            return
         snap_res = float(blob.get("resolution", costmap.resolution))
         if version >= 2:
             floor_meta = next(f for f in blob["floors"] if f["prefix"] == prefix)

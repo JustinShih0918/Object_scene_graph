@@ -490,3 +490,31 @@ def test_an_oversized_crop_is_stored_small(tmp_path):
 def test_a_track_with_no_crop_still_round_trips(tmp_path):
     out = roundtrip(agent_with([track(1)]), tmp_path)
     assert out.object_layer.get(1).best_crop is None
+
+
+# ------------------------------------------- scene graph without its occupancy
+
+def test_scene_graph_only_keeps_tracks_but_not_occupancy(tmp_path):
+    """`map_in_occupancy=false`: the objects survive, the occupancy does not,
+    so another map can be the sole thing the planner reads.
+
+    This is the arm where ASCENT's obstacle map -- not the pass that built the
+    scene graph -- supplies every cell (`ycb.obstacle_map_in`).
+    """
+    agent = agent_with([track(1), track(2, label="bowl")])
+    agent.costmap.grid[10:20, 10:20] = 0
+    agent.costmap.grid[30:34, 30:34] = 100
+    save_map(tmp_path / "m.json", agent, scene="s1", layout_id="static")
+    blob = load_map(tmp_path / "m.json")
+
+    with_occ = agent_with([])
+    apply_map(with_occ, blob, restore_occupancy=True)
+    assert (with_occ.costmap.grid != -1).any(), "occupancy should have loaded"
+    assert (with_occ.costmap.grid == 100).any()
+
+    without = agent_with([])
+    n = apply_map(without, blob, restore_occupancy=False)
+
+    assert n == 2, "the object tracks must still load"
+    assert {t.label for t in without.object_layer.tracks()} == {"mug", "bowl"}
+    assert (without.costmap.grid == -1).all(), "occupancy leaked in"

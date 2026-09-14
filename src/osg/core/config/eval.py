@@ -56,6 +56,11 @@ class EvalConfig:
     # does not feed the object layer -- keyframe detection is unchanged), so SR
     # is unaffected; it roughly doubles detector load, hence off by default.
     debug_frames: bool = False
+    # H.264 quality for those videos, re-encoded on close. cv2 writes MPEG-4
+    # Part 2, which is ~4x larger for no benefit here: a 500-step episode is
+    # 36 MB raw and 9.5 MB at CRF 30, and 30 MB is where file sharing stops.
+    # Lower is better quality and bigger; 0 disables the re-encode.
+    debug_video_crf: int = 30
     # Per-step behaviour log in episodes.jsonl, WITHOUT the debug videos.
     # `debug_frames` writes an mp4 per episode, which is minutes of encoding and
     # tens of MB on a 100-episode run; the analysis in

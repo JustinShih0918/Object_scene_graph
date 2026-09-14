@@ -229,6 +229,11 @@ def build_episode_record(
         **({"behaviour": agent.behaviour.summary()}
            if hasattr(agent, "behaviour") else {}),
         "prior_map": outcome.map_note,
+        # Which ASCENT-built storeys this episode planned over, and how many
+        # cells each contributed. Recorded because "the obstacle map was
+        # reused" is otherwise indistinguishable from a snapshot that loaded
+        # zero cells onto the wrong floor.
+        "prior_obstacle_map": outcome.obstacle_note,
         "attempts_used": outcome.attempts_used,
         "attempt_log": outcome.attempt_log,
         "presence_events": getattr(agent, "presence_events", []),

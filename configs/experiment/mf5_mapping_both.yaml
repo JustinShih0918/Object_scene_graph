@@ -1,0 +1,30 @@
+# @package _global_
+#
+# STAGE 1 IN ONE PASS: ASCENT's navigation walks the static scene once and
+# leaves BOTH maps behind.
+#
+#   python scripts/run_eval.py +experiment=mf5_mapping_both \
+#       'ycb.scenes=[00800-TEEsavR23oF]' \
+#       ycb.obstacle_map_out=outputs/maps_mf5_ascent \
+#       ycb.map_out=outputs/maps_mf5_osg
+#
+# `ascentnav` drives -- ASCENT's control flow on ASCENT's served models -- and
+# `agent.osg_world_model` attaches OSG's world model to the same frames, so the
+# run writes its `ObstacleMap` stack AND the schema-v2 scene graph the presence
+# filter reads back. The world model is fed after each action is chosen and
+# returns nothing, so the transcription's control flow is untouched.
+#
+# Why this beats running the two passes separately, beyond halving the time:
+# measured on 00800, `ascentnav` reaches both storeys inside its 500-step
+# budget, while the `nav_agent` mapping pass needs 1500 steps to reach the
+# second at all and at 500 ends with 213 furniture tracks and NO target
+# objects. The better explorer builds the scene graph.
+#
+# The world model runs its own YOLOE head: ASCENT drives on D-FINE, which is
+# closed-set COCO and cannot see a cracker box, a pitcher or a plate.
+defaults:
+  - mf5_ascentnav_map
+  - _self_
+
+agent:
+  osg_world_model: true

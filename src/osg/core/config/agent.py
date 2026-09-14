@@ -244,6 +244,17 @@ class AgentConfig:
     # Control flow is independent of the mover.  The standard OSG FSM remains
     # the default; the two ASCENT policies are explicit alternatives.
     policy: str = "nav_agent"  # nav_agent | ascent | ascentnav
+    # Build OSG's world model ALONGSIDE whichever policy is driving, so one
+    # mapping pass leaves both artifacts: the policy's own map and the scene
+    # graph `graph/map_store.save_map` writes. Only useful with `ascentnav`,
+    # which otherwise leaves no object layer at all -- and measured on 00800 it
+    # reaches both storeys inside 500 steps where `nav_agent` needs 1500 to
+    # reach the second. Fed after the action is decided, so it cannot change it.
+    osg_world_model: bool = False
+    # The world model's OWN detector. ASCENT drives on D-FINE, which is
+    # closed-set COCO and cannot see a cracker box; the scene graph needs the
+    # open-vocabulary head.
+    osg_world_model_weights: str = "data/weights/yoloe-11s-seg.pt"
 
     # Sensor-only PointNav mover (ASCENT/VLFM compatible defaults).
     pointnav_weights: str = "data/weights/pointnav_weights.pth"
@@ -389,6 +400,40 @@ class AgentConfig:
     # handing back to exploration part-way up a multi-flight staircase.
     climb_relink_flights: bool = False
     climb_flight_carrot: bool = False
+    # Steps of real exploration to guarantee after a failed attempt, before a
+    # candidate commit may pre-empt the round again. 0 is the shipped
+    # behaviour.
+    #
+    # `rearm` already returns the agent to EXPLORE, but EXPLORE is not where
+    # the exploration ROUND lives: `_act_inner` runs `candidates.check` first,
+    # every step, and a commit there jumps straight back to APPROACH. The
+    # round -- and with it `floor_switch`, the only call site of
+    # `_try_floor_switch` -- is additionally rate-limited to one run per
+    # `exploration.select_every` steps.
+    #
+    # Measured on 00800 cross_anchor_01, both episodes: attempt 1 fails at step
+    # 70, the next commit lands at step 74, and the four EXPLORE steps between
+    # them are all inside the 5-step rate limit -- so `select` never runs.
+    # `frontier_select_log` and `search_log_events` are both EMPTY over 180 and
+    # 362 steps, and `flights_seen`/`portals_seen` never appear in
+    # `agent_stats`. Three attempts went to three same-label tracks on the
+    # starting storey while the goal sat on the other one.
+    #
+    # Holding the commit for a window forces one honest round: the frontier
+    # selector runs, the search posterior gets to name a storey, and the floor
+    # switch gets its chance -- after which candidates resume normally. It is a
+    # hold, not a ban: nothing is blacklisted and the next window commits.
+    explore_after_failed_attempt_steps: int = 0
+    # Take the climb's direction from the flight being pursued rather than
+    # from the difference of two storey heights. 0/False is shipped behaviour.
+    #
+    # The height difference is unreliable when the estimator holds two levels a
+    # few centimetres apart: `target_y > here_y` is False at equality and the
+    # tie silently means DOWN. Measured on 00800 cross_anchor_01
+    # (outputs/mf5_pass2_v5): flight kind `up`, `climb_here_y_x100` 16,
+    # `climb_target_y_x100` 16, `climb_start_down` 1, 200 steps on the flight,
+    # `climb_max_dy_x100` 0.
+    climb_direction_from_flight: bool = False
     climb_cell_carrot: bool = False
     # After this many consecutive mover STOPs with no height gained, turn to
     # re-aim instead of pressing into the wall again. 0 disables.

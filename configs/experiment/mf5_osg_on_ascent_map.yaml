@@ -1,0 +1,69 @@
+# @package _global_
+#
+# PASS 2 of the cross-anchor experiment: OSG's presence-filter pipeline
+# navigates the MOVED layout over the obstacle map ASCENT's navigation built.
+#
+#   python scripts/run_eval.py +experiment=mf5_osg_on_ascent_map \
+#       'ycb.scenes=[00800-TEEsavR23oF]' \
+#       ycb.obstacle_map_in=outputs/maps_mf5_ascent \
+#       ycb.map_in=outputs/maps_mf5_osg \
+#       output_dir=outputs/mf5_pass2
+#
+# The agent is `mf5_osg_unified` unchanged -- the same presence filter, search
+# posterior, absence sensor and floor stack that arm is measured with. The only
+# additions are the two inputs:
+#
+#   ycb.obstacle_map_in   the per-storey occupancy from pass 1, resampled into
+#                         this run's costmaps (navigation/mapping/map_store.py)
+#   ycb.map_in            the object tracks and their presence beliefs, if a
+#                         scene-graph snapshot exists; OPTIONAL, and without it
+#                         the run maps objects from scratch while still
+#                         planning over the reused occupancy
+#
+# Neither is baked in here. Which snapshot the agent navigates from IS the
+# experiment, and a preset that chose one would hide it -- the same reason
+# `ycb_dynamic_best` leaves `map_in` unset.
+#
+# THE TWO ARMS DO NOT MEAN THE SAME THING BY "OBSTACLE", and a reused map is
+# read by whoever loads it, not by whoever wrote it:
+#
+#   ASCENT   agent.ascent_min/max_obstacle_h   0.61 - 0.88 m
+#   OSG      mapping.obstacle_low_m/high_m     0.15 - 1.50 m
+#
+# ASCENT stamps a narrow waist-height band, so a 0.3 m step or the lip of a
+# 1.2 m counter is FREE in the map pass 1 wrote and OCCUPIED in the one this
+# pass would have built. The loaded map is therefore more permissive than this
+# agent's own, which is why `ycb.obstacle_map_overwrite` defaults to false:
+# loaded cells fill in only what this run has not seen for itself, and its own
+# sensor corrects them under its own band as it goes.
+defaults:
+  - mf5_osg_unified
+  - _self_
+
+ycb:
+  # The moved world. Pass 1 mapped the static one.
+  layout_types: [cross_anchor]
+  layout_indices: [1]
+  skip_incomplete_layouts: true
+
+agent:
+  # A failed attempt returns the agent to EXPLORE, but `candidates.check` runs
+  # before the EXPLORE branch every step, so on this benchmark the next
+  # same-label track commits within one step and the exploration round never
+  # happens. Measured on 00800 (outputs/mf5_pass2_v2): three attempts, three
+  # same-storey commits, `frontier_select_log` and `search_log_events` EMPTY,
+  # episodes over at 180 and 362 of 500 steps with the goal on the other
+  # storey. 25 steps is one round plus time to act on it -- 5% of the budget,
+  # and a hold rather than a ban.
+  explore_after_failed_attempt_steps: 25
+  # A flight_up must start an UP climb. See the flag's comment: a tie between
+  # two storey heights was being read as "descend".
+  climb_direction_from_flight: true
+
+floor:
+  # The whole point of carrying ASCENT's map over is that it knows where the
+  # stairs are, and until now nothing read that: flights were picked by nearest
+  # foot, which on 00800 meant furniture every time (see the config comment on
+  # the flag). Corroborated flights sort first, and a flight_up is not offered
+  # from the topmost known storey.
+  flights_prefer_stair_mask: true

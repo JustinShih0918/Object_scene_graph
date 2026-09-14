@@ -138,10 +138,15 @@ class AscentNavAgent:
         stair_detector=None,
         ram=None,
         profiler=None,
+        world_model=None,
         **_ignored,
     ) -> None:
         self.cfg = cfg
         self.detector = detector
+        # OSG's world model, built from the same frames, or None. READ-ONLY
+        # with respect to this agent: fed in `act` after the action is decided
+        # and handing nothing back, so the F1-F14 fidelity notes stand.
+        self.world = world_model
         self.image_text = image_text
         self.pointnav = pointnav
         self.room_classifier = room_classifier
@@ -251,6 +256,8 @@ class AscentNavAgent:
         self.stairs.reset()
         self.planner.reset()
         self.scene_graph = SceneGraph()
+        if self.world is not None:
+            self.world.reset(target_category)
         if self.pointnav is not None:
             self.pointnav.reset()
         self.detector.set_vocabulary(
@@ -351,6 +358,12 @@ class AscentNavAgent:
     def act(self, frame: FrameData) -> str:
         prev = self._state
         action = self._act_inner(frame)
+        # One mapping pass, two artifacts: this agent's ObstacleMap stack and
+        # OSG's scene graph (`osg/agent/world_model.py`). AFTER the action, so
+        # its presence cannot change the transcription's control flow.
+        if self.world is not None:
+            self.world.observe(frame, self.step_count)
+            self.world.maybe_keyframe(frame)
         if self._state != prev:
             self.state_log.append((self.step_count, self._state))
         if self._state != "done":
@@ -1035,7 +1048,12 @@ class _ObjectLayerView:
     def __init__(self, om, target) -> None:
         self._om, self._target = om, target
 
-    def tracks(self, include_blacklisted: bool = False):
+    def tracks(self, include_blacklisted: bool = False,
+               include_proposals: bool = False):
+        # The signature is `ObjectLayer.tracks`'s, keyword for keyword, because
+        # `eval/record.py` calls it positionally-by-name and a shim that is one
+        # argument behind raises TypeError AFTER the episode has been walked --
+        # the whole episode is lost at the moment it is written down.
         return []
 
     def get(self, _tid):

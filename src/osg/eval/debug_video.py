@@ -24,6 +24,9 @@ class DebugVideo:
         self._w = cfg.eval.rgb_width + self._cm_w
         self._traj: list = []
         self._path = out_dir / "viz" / "debug" / f"{tag}.mp4"
+        # Constant-rate-factor for the H.264 re-encode on close. 30 is where a
+        # 36 MB episode becomes 9.5 MB with no visible loss on these panels.
+        self._crf = int(getattr(cfg.eval, "debug_video_crf", 30))
         self._path.parent.mkdir(parents=True, exist_ok=True)
         # Opened lazily: an agent that renders its own panel decides the frame
         # size, and only it knows what that is.
@@ -62,5 +65,47 @@ class DebugVideo:
         self._writer((self._w, self._h)).write(panel)
 
     def close(self) -> None:
-        if self._vw is not None:
-            self._vw.release()
+        if self._vw is None:
+            return
+        self._vw.release()
+        self._vw = None
+        self._compress()
+
+    def _compress(self) -> None:
+        """Re-encode to H.264, in place.
+
+        `cv2.VideoWriter` here writes MPEG-4 Part 2 (`mp4v`), which is what the
+        OpenCV wheel ships with reliably -- and it is enormous: a 500-step
+        episode came out at 36 MB, over the 30 MB a file share will take, so
+        the one video anybody actually wanted to look at could not be sent.
+        The same frames at CRF 30 are 9.5 MB and visually identical for this
+        purpose (a segmentation overlay beside a top-down grid).
+
+        Best effort by design. ffmpeg missing, ffmpeg failing, a zero-length
+        output: keep the original rather than lose the episode's only record.
+        The debug video is a diagnostic, and a diagnostic that can delete its
+        own evidence is worse than a large file.
+        """
+        import shutil
+        import subprocess
+
+        if self._crf <= 0:
+            return
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg is None or not self._path.exists():
+            return
+        packed = self._path.with_suffix(".h264.mp4")
+        try:
+            subprocess.run(
+                [ffmpeg, "-y", "-loglevel", "error", "-i", str(self._path),
+                 "-vcodec", "libx264", "-crf", str(self._crf),
+                 "-preset", "veryfast", "-pix_fmt", "yuv420p", str(packed)],
+                check=True, timeout=600,
+            )
+            if packed.exists() and packed.stat().st_size > 0:
+                packed.replace(self._path)
+        except Exception:  # noqa: BLE001 - never lose the recording over this
+            pass
+        finally:
+            if packed.exists():
+                packed.unlink()

@@ -277,6 +277,58 @@ class FloorPolicy:
             max(self.stats.get("stair_max_rise_m", 0.0), max(r.rise_m for r in regions)), 2
         )
 
+    # ------------------------------------------------------------- flights
+
+    def _on_stair_mask(self, flight) -> bool:
+        """Does the stair map agree this flight is a staircase?
+
+        The mask is what a prior ASCENT pass recorded as stairs and what this
+        run's own stair detector marked; `find_flights` never consults it, and
+        a height layer alone cannot tell a flight from a sofa.
+        """
+        mask = getattr(self.costmap, "stair_mask", None)
+        if mask is None:
+            return False
+        rc = np.asarray(flight.cells_rc)
+        rows = np.clip(rc[:, 0], 0, mask.shape[0] - 1)
+        cols = np.clip(rc[:, 1], 0, mask.shape[1] - 1)
+        return bool(mask[rows, cols].any())
+
+    def _rank_flights(self, usable: list, floor_y: float) -> list:
+        """Drop flights that lead where no storey is, keep the rest.
+
+        Needs TWO known storeys before it will drop anything: on a single-floor
+        costmap the estimator knows one level and every flight would look
+        impossible, which would take away the only way up.
+        """
+        levels = [float(h) for h in self.estimator.levels.values()]
+        if len(levels) < 2:
+            return usable
+        gap = float(self.cfg.floor.new_level_m) * 0.5
+        above = any(h > floor_y + gap for h in levels)
+        below = any(h < floor_y - gap for h in levels)
+        kept = [f for f in usable
+                if (f.kind == "up" and above) or (f.kind == "down" and below)]
+        dropped = len(usable) - len(kept)
+        if dropped:
+            self.stats["flights_dropped_no_storey"] = (
+                self.stats.get("flights_dropped_no_storey", 0) + dropped)
+        return kept or usable
+
+    def _best_flight(self, usable: list, agent_xy):
+        """Stair-map-corroborated flights first, nearest within that."""
+        corroborated = [f for f in usable if self._on_stair_mask(f)]
+        self.stats["flights_on_stair_mask"] = max(
+            self.stats.get("flights_on_stair_mask", 0), len(corroborated))
+        pool = corroborated or usable
+        if corroborated:
+            self.stats["flight_pick_corroborated"] = (
+                self.stats.get("flight_pick_corroborated", 0) + 1)
+        else:
+            self.stats["flight_pick_uncorroborated"] = (
+                self.stats.get("flight_pick_uncorroborated", 0) + 1)
+        return min(pool, key=lambda f: float(np.linalg.norm(f.foot_xy - agent_xy)))
+
     def pursuit_ok(self, frame, step: int, deadline: int) -> bool:
         """Should the agent keep driving to its portal instead of re-exploring?
 
@@ -484,8 +536,14 @@ class FloorPolicy:
                 f for f in flights
                 if (want is None or f.kind == want) and not self._portal_failed_here(f.foot_xy)
             ]
+            rank = bool(getattr(self.cfg.floor, "flights_prefer_stair_mask", False))
+            if usable and rank:
+                usable = self._rank_flights(usable, float(floor_y))
             if usable:
-                flight = min(usable, key=lambda f: float(np.linalg.norm(f.foot_xy - agent_xy)))
+                flight = (
+                    self._best_flight(usable, agent_xy) if rank
+                    else min(usable, key=lambda f: float(np.linalg.norm(f.foot_xy - agent_xy)))
+                )
                 # Make the treads traversable on this floor's grid, so the planner
                 # and the frontier extractor stop reading the flight as a wall.
                 apply_stair_mask(self.costmap, [StairRegion(

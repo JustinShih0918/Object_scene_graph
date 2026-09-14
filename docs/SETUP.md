@@ -124,6 +124,23 @@ python scripts/download_weights.py --rednet        # stair segmentation
 python scripts/download_weights.py --clip          # value-map image-text model
 ```
 
+The region-proposal fusion (`region_proposal.enabled`, on in every
+`*_osg_unified` preset) encodes crops with MobileCLIP-S2 through open_clip, and
+neither package is in the image:
+
+```bash
+pip install open_clip_torch
+pip install --no-deps git+https://github.com/apple/ml-mobileclip.git
+```
+
+`--no-deps` on the second is deliberate: it only supplies
+`reparameterize_model`, which fuses the reparameterisable branches as DualMap
+does (`utils/object_detector.py:161-164`), and its dependency pins would
+otherwise move torch. Without them a unified-pipeline run dies in
+`build_run_components` with `ModuleNotFoundError: No module named 'open_clip'`
+before Habitat has loaded a scene -- the weights are cached under `HF_HOME`
+(`data/weights/hf`) on first use.
+
 ### The LLM
 
 ```bash

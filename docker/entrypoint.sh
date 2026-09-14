@@ -7,6 +7,7 @@ set -euo pipefail
 # changed by this entrypoint.
 runtime_uid="$(id -u)"
 runtime_gid="$(id -g)"
+umask "${UMASK:-0002}"
 for runtime_dir in /workspace/data/weights /workspace/outputs; do
   sudo mkdir -p "${runtime_dir}"
   sudo chown "${runtime_uid}:${runtime_gid}" "${runtime_dir}"

@@ -22,7 +22,7 @@ from typing import Any, Optional
 from ..mapping.costmap import HEIGHT_AXIS, PLANE
 from .attempts import attempt_succeeded, rearm_after_failed_attempt
 from .instruments import GroundTruthVisibility
-from .prior_map import load_prior_map
+from .prior_map import load_obstacle_map, load_prior_map
 from .record import authored_episode_metadata, episode_tag
 
 
@@ -37,19 +37,26 @@ class EpisodeOutcome:
     attempts_used: int = 1
     attempt_log: list = field(default_factory=list)
     map_note: Optional[dict] = None
+    obstacle_note: Optional[dict] = None
     gt_view: Any = None
 
 
 def run_episode(cfg, env, agent, episode, target, frame, detector, debug=None) -> EpisodeOutcome:
     """Drive one episode to termination and report what happened."""
     outcome = EpisodeOutcome()
+    scene = str(authored_episode_metadata(episode).get("scene", "scene"))
     outcome.map_note = load_prior_map(
         cfg,
         agent,
-        str(authored_episode_metadata(episode).get("scene", "scene")),
+        scene,
         initial_floor_y=float(frame.camera_position[HEIGHT_AXIS])
         - float(cfg.agent.camera_height),
     )
+    # The occupancy ASCENT's navigation built, if this run was given one. AFTER
+    # the scene-graph snapshot, because that is what creates the per-storey
+    # layers this pastes into -- on a fresh stack there is only the one floor
+    # to restore (eval/prior_map.py).
+    outcome.obstacle_note = load_obstacle_map(cfg, agent, scene)
 
     # Height is tracked alongside the 2D trajectory (rather than making
     # `trajectory` 3D) so the analyze_*.py tools keep working unchanged, while

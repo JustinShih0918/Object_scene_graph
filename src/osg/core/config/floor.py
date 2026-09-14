@@ -153,6 +153,34 @@ class FloorConfig:
     climb_targets: str = "portals"
     flight_min_span_m: float = 1.0
     flight_min_cells: int = 150
+    # Rank flights by whether the STAIR MAP says they are stairs, and drop
+    # flights that lead where no storey is known to be. 0/False is the shipped
+    # behaviour: nearest foot wins, whatever it is.
+    #
+    # `find_flights` reads the height layer for cells sitting between two
+    # storeys, and furniture qualifies -- a sofa back, a counter, a stair-free
+    # mezzanine lip. Measured on 00800 cross_anchor_01 (outputs/mf5_pass2_v3),
+    # the real staircase is at world (-8.1, -13.0) and the flights actually
+    # pursued were:
+    #
+    #   ep1  step 172  (-0.67, -4.73)   210 cells   ~10 m from the stairs
+    #   ep2  step  68  (-3.32, -0.97)  1166 cells
+    #   ep2  step 192  (-9.42, -3.32)   652 cells
+    #   ep2  step 245  (-11.02, -3.82)  778 cells
+    #   ep2  step 296  (-8.32, -12.67)  596 cells   <- the staircase, at last
+    #
+    # Selection is `min(usable, key=distance to foot)`, so furniture near the
+    # agent beats a staircase across the house every time; ep2 reached the real
+    # one on its fourth try at step 296 of 430. Worse, ep1 was on the TOP
+    # storey pursuing a flight_up -- there is nothing above the top storey, so
+    # that flight cannot be a staircase by construction.
+    #
+    # The stair mask carried over from ASCENT is exactly the evidence that
+    # settles this, and nothing was reading it. Corroborated flights sort
+    # first; the direction filter needs two known storeys before it will drop
+    # anything, so a single-storey costmap at episode start still behaves as
+    # before.
+    flights_prefer_stair_mask: bool = False
     # Do not re-issue a floor pursuit that is still in flight. A directed
     # request recurs every selection round and each one restarted the pursuit,
     # resetting its progress clock, so a pursuit never ended, no failure was
