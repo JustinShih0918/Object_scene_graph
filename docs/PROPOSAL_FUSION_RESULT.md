@@ -1,5 +1,9 @@
 # The fused proposal arm on the full 107
 
+> **Superseded by [`PROPOSAL_FUSION_CLS_RESULT.md`](PROPOSAL_FUSION_CLS_RESULT.md).** This is
+> the `fuse` arm at 59/107; `fuse_cls` reached 62/107 and is the arm that shipped
+> (`configs/experiment/dualmap_osg_unified.yaml`). Kept for the paired comparison.
+
 run `outputs/osg_v4_fuse_full` vs reference `outputs/osg_sensor_v2_full`, paired on 107 trials
 
 | condition | v2 | fuse | delta | +/- |

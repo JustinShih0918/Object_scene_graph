@@ -105,7 +105,7 @@ def relative_pose(container, obj) -> np.ndarray:
     """p_rel = R_cᵀ (t_o − t_c) — survives anchor migration in Phase 6."""
 ```
 
-Every category above already exists in `DEFAULT_VOCABULARY` (`src/osg/core/config.py:14`),
+Every category above already exists in `DEFAULT_VOCABULARY` (`src/osg/core/config/detector.py`),
 so no detector change is needed.
 
 ### Files to modify
@@ -116,7 +116,7 @@ so no detector change is needed.
 | `src/osg/graph/containers.py` | **new** — membership + support rules |
 | `src/osg/graph/scene_graph.py` | `ContainerNode`; `RoomNode.container_ids`; `ObjectNodeView.container_id`/`p_rel`; `_rebuild_containers()`; `containers_in_room()`, `objects_on()` |
 | `src/osg/graph/serialize.py` | `to_json` gains a `containers` block and `container_id` on objects. **`to_prompt_text` is untouched** — it feeds LLM prompts, and changing it changes behaviour |
-| `src/osg/core/config.py` | `SceneGraphConfig`: `container_top_h_m`, `container_min_area_m2`, `container_support_tol_m` |
+| `src/osg/core/config/` | `SceneGraphConfig`: `container_top_h_m`, `container_min_area_m2`, `container_support_tol_m` |
 
 `SceneGraph.rebuild()` ordering becomes rooms → objects → **containers** → floors;
 containers need object centers, and floors already read object floor ids.
@@ -256,7 +256,7 @@ distinction DualMap's timer cannot make.
 | `src/osg/objects/presence.py` | **new** — `PresenceState`, `Expectation`, `RecallModel`, `PresenceFilter` |
 | `src/osg/objects/association.py` | `ObjectTrack.presence: PresenceState` |
 | `src/osg/objects/object_layer.py` | run the filter every keyframe *before* the early return; label-agnostic `Z`; `candidates()` sorts by `best_score * presence.p` and gains `min_presence` |
-| `src/osg/core/config.py` | nested `PresenceConfig` under `SceneGraphConfig` |
+| `src/osg/core/config/` | nested `PresenceConfig` under `SceneGraphConfig` |
 | `src/osg/agent/nav_agent.py` | thread the config through |
 | `scripts/fit_recall_model.py` | **new** — log expectation features from an eval run, fit `r`, write JSON |
 

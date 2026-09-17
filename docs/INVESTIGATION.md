@@ -1,5 +1,10 @@
 # SR-Gap Investigation (2026-07)
 
+> **Historical (2026-07), superseded by S71.** Predates `src/navigation/`, the region
+> proposer, the feature memory and the current default arm. Its comparison stack
+> `/workspace/ObjectSceneGraph_old` no longer exists. Kept for the reasoning that shaped the
+> pipeline; read [`ARCHITECTURE.md`](ARCHITECTURE.md) for what it is now.
+
 Why the from-scratch `osg` rewrite scored **~18–19% SR** on HM3D ObjectNav
 while the previous ROS2 stack (`/workspace/ObjectSceneGraph_old`) scored
 **54%** — what was measured, what was tried, and what actually moved the

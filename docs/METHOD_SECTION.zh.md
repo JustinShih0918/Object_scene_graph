@@ -1,5 +1,10 @@
 # Method
 
+> **Superseded as a draft.** The paper is final and transcribed at [`PAPER.md`](PAPER.md);
+> the English draft this annotates (`METHOD_SECTION.md`) has been deleted. This copy is kept
+> only for the Chinese review commentary interleaved with it, which exists nowhere else.
+> Where it disagrees with `PAPER.md` or with the code, it is the one that is wrong.
+
 We address object-goal navigation from an **open-vocabulary** query: the agent
 receives an RGB-D stream with pose and a target named in free text, and must
 navigate to an instance of it and stop. Its only persistent representation is an

@@ -1,5 +1,10 @@
 # Multi-Floor ObjectNav — Literature Survey and Design (2026-08)
 
+> **Partly superseded.** Its headline table was measured on the pre-S71 base with
+> `verification=nim`, and its recommendation of `exploration.frontier_cost_free_cell=true`
+> was later reversed: `configs/experiment/osg_unified_pipeline.yaml:43` sets it **false**,
+> because true perturbs single-floor exploration. The design sections still hold.
+
 Why `osg` loses most of its SR on multi-floor scenes, what the 2024–2026
 literature does about it, and the design we adopt. Companion to
 **[INVESTIGATION.md](INVESTIGATION.md)**, whose future-work item #1 this
@@ -174,7 +179,7 @@ reduces to at `min_samples=1` in one dimension — no sklearn needed.)
   "building → room → object" graph should actually be.
 
 **Latent asset:** `"stairs"` is already in `DEFAULT_VOCABULARY`
-(`core/config.py`), so stair instances are *already* detected and localized as
+(`core/config/detector.py`), so stair instances are *already* detected and localized as
 3D ellipsoid tracks in the object layer — they are simply never consumed by
 mapping or exploration. Stair detection costs us no new model and no new
 weights.

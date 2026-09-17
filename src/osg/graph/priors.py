@@ -25,7 +25,7 @@ from typing import Set
 from ..core.labels import normalize_label
 
 # Categories that reliably share a room with each ObjectNav goal. Drawn from the
-# detector vocabulary (core/config.py) so every entry is something we can
+# detector vocabulary (core/config/detector.py) so every entry is something we can
 # actually see. `plant` is deliberately empty: plants appear in every room type,
 # so their absence says nothing and a prior would only add noise.
 CATEGORY_CONTEXT = {

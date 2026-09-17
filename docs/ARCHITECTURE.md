@@ -601,7 +601,7 @@ people override: `exploration.search_posterior=true` on a command line and
 `exploration.py` in the package are the same object.
 
 Nearly every default was chosen by an experiment and carries the measurement in a
-comment beside it. `tests/unit/test_config_snapshot.py` pins all 211 of them, so
+comment beside it. `tests/unit/test_config_snapshot.py` pins all 505 of them, so
 a constant can only change when someone changes the snapshot too — which puts it
 in the diff as what it is.
 
@@ -622,14 +622,14 @@ ycb.map_in=<dir>                           start from a stale map
 ## Testing
 
 ```bash
-pytest tests/unit -q          # 398 passed, ~4 s, no GPU or data
+pytest tests/unit -q          # 1397 passed, 2 skipped, 1 xfailed, ~50 s, no GPU or data
 pytest tests/integration -q   # + the trajectory locks, ~65 s
 ```
 
 Three locks exist specifically so the code can be moved without moving its
 behaviour:
 
-- **`test_config_snapshot`** — 211 flattened defaults, pinned.
+- **`test_config_snapshot`** — 505 flattened defaults, pinned.
 - **`test_episode_record_schema`** — the 65 `episodes.jsonl` keys, derived the
   way the runner builds them. Nine analysis scripts read this record by name and
   none would fail loudly on a drop; they would report zero, and the conclusion

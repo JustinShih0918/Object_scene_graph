@@ -1,5 +1,8 @@
 # The swapped benchmark: DualMap's released trials with scissors and mug replaced
 
+> **Never run.** The file says so itself further down: paused 2026-09-10 before any trial.
+> Kept as a design note, not as a result.
+
 > **Status (2026-09-10): paused before any trial ran.** The copy, its
 > re-rendered sequences and our prior maps exist as described below; DualMap's
 > global map was being rebuilt when the work was stopped, and no benchmark

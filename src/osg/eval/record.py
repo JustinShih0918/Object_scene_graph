@@ -78,7 +78,7 @@ STAIR_LABELS = ("stairs", "staircase", "stair")
 def stair_track_fields(agent) -> dict:
     """Snapshot the mapped `stairs` tracks.
 
-    `"stairs"` is already in DEFAULT_VOCABULARY (core/config.py), so YOLOE has
+    `"stairs"` is already in DEFAULT_VOCABULARY (core/config/detector.py), so YOLOE has
     always been detecting staircases into the object layer -- but nothing has
     ever consumed or measured them. Stage 4 of the multi-floor plan
     (docs/MULTI_FLOOR.md) assumes these tracks exist and are usable; this logs

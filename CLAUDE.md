@@ -27,7 +27,7 @@ For CPU-only work: `pip install -e '.[dev]'`.
 ## Commands
 
 ```bash
-pytest tests/unit -q                                   # ~20 s, no GPU or data
+pytest tests/unit -q                                   # 1397 tests, ~50 s, no GPU or data
 pytest tests/unit/test_floors.py -q                    # one file
 pytest tests/unit/test_floors.py::test_name -q         # one test
 pytest -m sim                                          # tests/integration; needs Habitat + HM3D
@@ -106,8 +106,9 @@ names carry the scene because HM3D episode ids repeat across scenes.
 
 ### Configuration
 
-Hydra groups live in `configs/` (`agent`, `detector`, `llm`, `exploration`, `verification`,
-`scene_graph`, `eval`, `floor`, …); `configs/experiment/*.yaml` are composable presets applied with
+Hydra groups with a YAML directory live in `configs/` (`agent`, `detector`, `eval`,
+`exploration`, `llm`, `profile`, `scene_graph`, `verification`), and are selected as
+`detector=yoloe_small`. `configs/experiment/*.yaml` are composable presets applied with
 `+experiment=name`. Every group is backed by a **structured dataclass** under
 `src/osg/core/config/` (one module per group) registered with Hydra's ConfigStore, so a typo in a
 YAML or CLI override fails fast instead of silently creating a key.
