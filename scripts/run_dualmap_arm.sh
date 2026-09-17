@@ -4,6 +4,19 @@
 #   ARM=sensor_final SPLIT=data/splits/dualmap_all.json OUT=outputs/foo \
 #     MAX_PARALLEL=2 scripts/run_dualmap_arm.sh
 #
+# CONDITIONS selects the protocol slice. The default is all three, which is the
+# published benchmark (186 trials: 79 static, 54 in_anchor, 53 cross_anchor);
+# `in_anchor,cross_anchor` is the 107-trial dynamic split alone. SPLIT only
+# supplies the trial ids to resume against, so it must cover what CONDITIONS
+# asks for -- `data/splits/dualmap_all.json` holds the 107 dynamic ones.
+#
+# MAP_ROOT is a FLAT directory of `<scene>.json`, which is what
+# `prior_map._map_path` writes and `scripts/run_prior_maps.sh` produces. The
+# older `maps_v5` layout put each scene in its own subdirectory; if that is what
+# you have, set MAP_SUBDIR=1.
+#
+# OBSTACLE_MAPS is optional and is the cross-anchor experiment's point: pass 2
+# plans over the occupancy ASCENT's navigation built rather than its own.
 # MAX_PARALLEL bounds concurrent episodes; each process holds ~1.35 GB of GPU,
 # so 2 is about 2.7 GB and 3 is about 4.0 GB. Default 2, to leave the card
 # usable by anything else.
@@ -20,7 +33,15 @@ set -a; [ -f .env ] && . ./.env; set +a
 : "${SPLIT:=data/splits/dualmap_all.json}"
 : "${OUT:?set OUT}"
 : "${MAX_PARALLEL:=2}"
-: "${MAP_ROOT:=outputs/maps_released}"
+# `=` not `:=`: an explicitly EMPTY MAP_ROOT must stay empty. `${V:=d}`
+# substitutes the default for an empty value too, so `MAP_ROOT=` still sent
+# ycb.map_in=outputs/maps_released and every chunk died with MapStoreError.
+# An empty map_in is how a policy that builds its own map -- ASCENT -- is
+# told it has no prior to load (`prior_map.load_prior_map` returns None).
+: "${MAP_ROOT=outputs/maps_released}"
+: "${MAP_SUBDIR:=0}"
+: "${OBSTACLE_MAPS:=}"
+: "${CONDITIONS:=static,in_anchor,cross_anchor}"
 : "${PRESET_PREFIX:=dualmap_protocol_osg_}"
 : "${CHUNK:=4}"
 mkdir -p "$OUT"
@@ -56,10 +77,16 @@ for scene in 00829-QaLdnwvtxbs 00848-ziup5kvtCCR 00880-Nfvxx8J5NCo; do
     d="$OUT/$scene/${TAG}_$k"
     mkdir -p "$d"
     echo "[start] $ARM $scene chunk $k/$n $(date +%H:%M:%S)"
+    map_in="$MAP_ROOT"
+    [ "$MAP_SUBDIR" = "1" ] && map_in="$MAP_ROOT/$scene"
+    obstacle=()
+    [ -n "$OBSTACLE_MAPS" ] && obstacle=("ycb.obstacle_map_in=$OBSTACLE_MAPS"
+                                        ycb.obstacle_map_union=true
+                                        ycb.seed_storeys_from_obstacle_map=true)
     python scripts/run_eval.py "+experiment=${PRESET_PREFIX}${ARM}" \
-      "dualmap.scenes=[$scene]" 'dualmap.conditions=[in_anchor,cross_anchor]' \
-      "dualmap.trial_ids=[$chunk]" "ycb.map_in=$MAP_ROOT/$scene" \
-      "output_dir=$d" > "$d.log" 2>&1 &
+      "dualmap.scenes=[$scene]" "dualmap.conditions=[$CONDITIONS]" \
+      "dualmap.trial_ids=[$chunk]" "ycb.map_in=$map_in" \
+      "${obstacle[@]}" "output_dir=$d" > "$d.log" 2>&1 &
     k=$((k + CHUNK))
     sleep 20   # stagger the scene loads
   done
