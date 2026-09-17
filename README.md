@@ -6,8 +6,14 @@ container → object` 3D scene graph → frontier exploration → approach + ver
 The pipeline has three navigation modes and three policies, including the
 sensor-only ASCENT path and a floor-aware dynamic-scene path.
 
-The current pipeline (see **[docs/INVESTIGATION.md](docs/INVESTIGATION.md)** for
-how it got here):
+**[docs/PAPER.md](docs/PAPER.md)** is the ICRA 2027 submission this repository
+produced, with a table mapping every equation to the module that implements it and
+every reported number to the run it came from.
+**[docs/README.md](docs/README.md)** indexes the other 47 documents and says which
+kind each one is — reference, measurement log, frozen result, or superseded.
+
+The current pipeline (`docs/INVESTIGATION.md` records how an earlier version of it
+got here, and predates the current default arm):
 
 - **Perception — YOLOE** (open-vocab detection **and** segmentation in one
   model; no SAM) → ellipsoid object layer (dual-quadric + Wasserstein refine).

@@ -138,6 +138,11 @@ it. Two golden files pin this:
   (`scripts/compare_ascent_osg.py` prints them) and not just SR. `docs/AB_RESULTS.md` is the results
   log; `docs/INVESTIGATION.md`, `docs/MULTI_FLOOR.md`, `docs/UNIFIED_PIPELINE.md` carry the history
   of why the pipeline is shaped as it is — read the relevant one before re-litigating a decision.
+  `docs/README.md` indexes all of them and marks the ones that are superseded.
+- **The paper:** `docs/PAPER.md` is the ICRA 2027 submission in full. Its Appendix A maps every
+  equation to the module implementing it, and Appendix B traces every reported number to the run
+  that produced it — including the three rows that no run under `outputs/` currently reproduces.
+  The paper calls the system **MD-SG**; the code calls it **OSG** everywhere.
 - **Diagnostics before guesses:** `scripts/analyze_*.py` decompose a run's `episodes.jsonl` —
   `analyze_stages.py` (explore vs approach failure), `analyze_floors.py` (SR by floor class,
   floor-estimator audit), `analyze_localization.py` / `analyze_trackloc.py` (stop pose vs GT),
