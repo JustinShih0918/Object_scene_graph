@@ -59,6 +59,7 @@ from .candidate import CandidatePolicy
 from .climb import ClimbPolicy
 from .close_look import CloseLookPolicy
 from .floor_policy import FloorPolicy
+from .stair_sense import StairSense
 from ..core.labels import normalize_label
 from ..graph.containers import CONTAINER_CATEGORIES
 from .state import FORWARD_ACTION, STOP_ACTION, TURN_ACTION, State
@@ -283,6 +284,7 @@ class NavAgent:
         self.candidates = CandidatePolicy(self)
         self.close_look = CloseLookPolicy(self)
         self.climb = ClimbPolicy(self)
+        self.stairs = StairSense(self)
         # Where to go next -- frontiers and mapped surfaces under one index.
         # It owns everything an exploration round remembers; see
         # exploration/strategy.py.
@@ -479,8 +481,7 @@ class NavAgent:
         self.climb.reset()
         self._failed_switches_by_floor: dict = {}
         self._switch_banned_at: dict = {}
-        self._pitch_ticks = 0
-        self._last_down_look_step = -(10 ** 9)
+        self.stairs.reset()
         if self.commit_state is not None:
             self.commit_state.reset()
         if self.frontier_semantics is not None:
@@ -764,7 +765,7 @@ class NavAgent:
             with self.profiler.timeit("close_look"):
                 self.close_look.maybe_opportunistic(frame)
 
-        down_look = self._down_look(frame, self.floor_layer, off_map)
+        down_look = self.stairs._down_look(frame, self.floor_layer, off_map)
         if down_look is not None:
             return down_look
 
@@ -991,7 +992,7 @@ class NavAgent:
         ):
             with self.profiler.timeit("stairs"):
                 self.stair_detector.accumulate(
-                    frame, self.floor_layer, dets, self._seg_stair_mask(frame)
+                    frame, self.floor_layer, dets, self.stairs._seg_stair_mask(frame)
                 )
 
         pf = self.object_layer.presence_filter
@@ -1881,76 +1882,9 @@ class NavAgent:
             self._approach_itm_max = max(self._approach_itm_max, value)
             self._approach_itm_n += 1
 
-    def _seg_stair_mask(self, frame: FrameData) -> Optional[np.ndarray]:
-        if self.stair_segmenter is None:
-            return None
-        with self.profiler.timeit("stair_seg"):
-            return self.stair_segmenter.stair_mask(frame)
 
-    def _accumulate_down_stairs(self, frame: FrameData, layer) -> None:
-        if self.stair_detector is None:
-            return
-        with self.profiler.timeit("stairs"):
-            self.stair_detector.accumulate(
-                frame, layer, None, self._seg_stair_mask(frame)
-            )
 
-    def _down_look_here(self, frame: FrameData) -> bool:
-        """Is this a place worth pitching the camera down at?
 
-        Only asked when `agent.down_look_near_stairs_m` is set. The stair map
-        -- ASCENT's, pasted at episode start, plus anything this run's detector
-        has confirmed -- is the evidence; with no map there is nothing to
-        answer with and the look-down keeps its unconditional behaviour,
-        because discovering an unknown staircase is what it is for.
-        """
-        near_m = float(getattr(self.cfg.agent, "down_look_near_stairs_m", 0.0) or 0.0)
-        if near_m <= 0.0:
-            return True
-        mask = getattr(self.costmap, "stair_mask", None)
-        if mask is None or not mask.any():
-            return True
-        rc = self.costmap.world_to_grid(frame.camera_position[list(PLANE)])
-        radius = max(1, int(round(near_m / self.costmap.resolution)))
-        r0, r1 = max(0, rc[0] - radius), min(mask.shape[0], rc[0] + radius + 1)
-        c0, c1 = max(0, rc[1] - radius), min(mask.shape[1], rc[1] + radius + 1)
-        if r0 >= r1 or c0 >= c1:
-            return False
-        yy, xx = np.ogrid[r0:r1, c0:c1]
-        disk = (yy - rc[0]) ** 2 + (xx - rc[1]) ** 2 <= radius ** 2
-        return bool((mask[r0:r1, c0:c1] & disk).any())
-
-    def _down_look(self, frame: FrameData, layer, off_map: bool) -> Optional[str]:
-        if self._pitch_ticks > 0:
-            if not off_map:
-                self._accumulate_down_stairs(frame, layer)
-            self._pitch_ticks -= 1
-            return "look_up"
-        if self._down_look_every <= 0:
-            return None
-        # The look-down hunts for a staircase down; on a scene the estimator
-        # knows to have one level there is nothing to find, and injecting the
-        # look_down/look_up pair would perturb an otherwise single-floor run the
-        # floor group should leave untouched. Gated by the same rule as the
-        # undirected switch, and safe for the same reason: a schema-v2 prior map
-        # seeds every storey on load, so a real multi-floor run has >= 2 levels.
-        if (
-            bool(getattr(self.cfg.floor, "switch_requires_second_level", False))
-            and len(getattr(self.floors.estimator, "levels", {0: 0.0})) < 2
-        ):
-            return None
-        if self.state not in (State.INIT, State.EXPLORE, State.GOTO_FRONTIER):
-            return None
-        if self.step_count - self._last_down_look_step < self._down_look_every:
-            return None
-        if not self._down_look_here(frame):
-            self.stats["down_look_skipped_far"] = (
-                self.stats.get("down_look_skipped_far", 0) + 1)
-            return None
-        self._last_down_look_step = self.step_count
-        self._pitch_ticks += 1
-        self.stats["down_look"] = self.stats.get("down_look", 0) + 1
-        return "look_down"
 
     def _floor_direction_boost(self, kind: str) -> float:
         if not self._floor_goal_dir:
@@ -1973,30 +1907,6 @@ class NavAgent:
             )
 
 
-    def _on_a_staircase(self, agent_xy: np.ndarray) -> bool:
-        detector = self.stair_detector
-        layer = self.floor_layer
-        if detector is None or layer.up_stair_hits is None:
-            return False
-        mask = (
-            (layer.up_stair_hits >= detector.min_hits)
-            | (layer.down_stair_hits >= detector.min_hits)
-        )
-        if layer.disabled_stair is not None:
-            mask &= ~layer.disabled_stair
-        rc = layer.costmap.world_to_grid(agent_xy)
-        radius = max(
-            1,
-            int(round(float(getattr(self.cfg.agent, "stair_exit_m", 0.5)) /
-                      layer.costmap.resolution)),
-        )
-        r0, r1 = max(0, rc[0] - radius), min(mask.shape[0], rc[0] + radius + 1)
-        c0, c1 = max(0, rc[1] - radius), min(mask.shape[1], rc[1] + radius + 1)
-        if r0 >= r1 or c0 >= c1:
-            return False
-        yy, xx = np.ogrid[r0:r1, c0:c1]
-        disk = (yy - rc[0]) ** 2 + (xx - rc[1]) ** 2 <= radius ** 2
-        return bool((mask[r0:r1, c0:c1] & disk).any())
 
     def _floor_frozen(self, frame: FrameData) -> bool:
         if self.state is State.CLIMB and bool(
@@ -2004,7 +1914,7 @@ class NavAgent:
         ):
             return True
         if bool(getattr(self.cfg.mapping, "freeze_floor_on_stairs", False)):
-            return self._on_a_staircase(frame.camera_position[list(PLANE)])
+            return self.stairs._on_a_staircase(frame.camera_position[list(PLANE)])
         return False
 
     def _recheck_rejects(self, stop_reason: str) -> bool:

@@ -85,7 +85,7 @@ class FloorConfig:
     # (graph/map_store.apply_map), so a genuine multi-floor scored run has >= 2
     # levels from step 0 and its cross-floor switches are unaffected; only a
     # truly single-floor scene, which has one level and nowhere to go, is gated.
-    # Also gates the periodic stair-hunting look-down (nav_agent._down_look),
+    # Also gates the periodic stair-hunting look-down (agent/stair_sense.py),
     # which likewise has no job on a one-level scene.
     # Default off so no existing preset changes.
     switch_requires_second_level: bool = False

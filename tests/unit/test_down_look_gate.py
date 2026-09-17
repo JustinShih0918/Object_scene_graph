@@ -9,6 +9,7 @@ was pasted from a prior ASCENT pass and already says where the stairs are.
 import numpy as np
 
 from osg.agent.nav_agent import NavAgent
+from osg.agent.stair_sense import StairSense
 from osg.mapping.costmap import PLANE
 
 from .test_climb import make_cfg
@@ -36,7 +37,7 @@ def _agent(near_m):
 
 def _look(agent, xy):
     """`_down_look_here` called as a plain function on the stub."""
-    return NavAgent._down_look_here(agent, _Frame(xy))
+    return StairSense._down_look_here(agent, _Frame(xy))
 
 
 def _stairs_at(agent, xy):

@@ -126,7 +126,7 @@ class ClimbPolicy:
         it is enough.
         """
         agent_xy = frame.camera_position[list(PLANE)]
-        if self.nav._on_a_staircase(agent_xy):
+        if self.nav.stairs._on_a_staircase(agent_xy):
             return True
         reach = float(getattr(self.cfg.agent, "stair_reach_m", 0.6))
         if self.pointnav is not None:

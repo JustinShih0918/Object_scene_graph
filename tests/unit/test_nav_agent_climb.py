@@ -130,9 +130,9 @@ def test_on_a_staircase_uses_the_whole_floor_mask():
 
     agent, layer = _stairs_agent()
     _mark_stairs(agent, layer, (2.0, 0.0))
-    assert agent._on_a_staircase(np.array([2.0, 0.0]))
-    assert agent._on_a_staircase(np.array([2.0, 0.4]))
-    assert not agent._on_a_staircase(np.array([2.0, 3.0]))
+    assert agent.stairs._on_a_staircase(np.array([2.0, 0.0]))
+    assert agent.stairs._on_a_staircase(np.array([2.0, 0.4]))
+    assert not agent.stairs._on_a_staircase(np.array([2.0, 3.0]))
 
 
 def test_cells_below_the_detector_threshold_do_not_count():
@@ -143,9 +143,9 @@ def test_cells_below_the_detector_threshold_do_not_count():
     agent, layer = _stairs_agent()
     agent.stair_detector.min_hits = 3
     _mark_stairs(agent, layer, (2.0, 0.0), hits=1)
-    assert not agent._on_a_staircase(np.array([2.0, 0.0]))
+    assert not agent.stairs._on_a_staircase(np.array([2.0, 0.0]))
     _mark_stairs(agent, layer, (2.0, 0.0), hits=3)
-    assert agent._on_a_staircase(np.array([2.0, 0.0]))
+    assert agent.stairs._on_a_staircase(np.array([2.0, 0.0]))
 
 
 def test_the_two_freeze_scopes_are_independent():

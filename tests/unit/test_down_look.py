@@ -70,16 +70,16 @@ def test_probe_is_suppressed_in_committed_states():
     for st in (State.APPROACH, State.VERIFYING, State.CLIMB):
         a = _agent(every=1)
         a.state = st
-        assert a._down_look(_frame([0.0, 0.0]), a.floors.current(), False) is None
+        assert a.stairs._down_look(_frame([0.0, 0.0]), a.floors.current(), False) is None
 
 
 def test_restore_wins_even_in_a_committed_state():
     """If the state changed while tilted, the restore must still happen."""
     a = _agent(every=1)
-    a._pitch_ticks = 1
+    a.stairs._pitch_ticks = 1
     a.state = State.APPROACH
-    assert a._down_look(_frame([0.0, 0.0]), a.floors.current(), False) == "look_up"
-    assert a._pitch_ticks == 0
+    assert a.stairs._down_look(_frame([0.0, 0.0]), a.floors.current(), False) == "look_up"
+    assert a.stairs._pitch_ticks == 0
 
 
 def test_tilted_frame_feeds_the_stair_detector_without_a_detector_call():
@@ -96,8 +96,8 @@ def test_tilted_frame_feeds_the_stair_detector_without_a_detector_call():
             pass
 
     a.stair_detector = _Stairs()
-    a._pitch_ticks = 1
-    assert a._down_look(_frame([0.0, 0.0]), a.floors.current(), False) == "look_up"
+    a.stairs._pitch_ticks = 1
+    assert a.stairs._down_look(_frame([0.0, 0.0]), a.floors.current(), False) == "look_up"
     assert seen == [None], "down-stair geometry only; no detections passed"
 
 
@@ -114,8 +114,8 @@ def test_off_map_frames_are_not_accumulated():
             pass
 
     a.stair_detector = _Stairs()
-    a._pitch_ticks = 1
-    assert a._down_look(_frame([0.0, 0.0]), a.floors.current(), True) == "look_up"
+    a.stairs._pitch_ticks = 1
+    assert a.stairs._down_look(_frame([0.0, 0.0]), a.floors.current(), True) == "look_up"
     assert seen == []
 
 
