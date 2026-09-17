@@ -45,7 +45,6 @@ scene_graph:
 
 exploration:
   # -- extraction ---------------------------------------------------------
-  extractor: contour
   area_thresh_m2: 1.5
 
   # -- ranking: this is the path_cost removal --------------------------------

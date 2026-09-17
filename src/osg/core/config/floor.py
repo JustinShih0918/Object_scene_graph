@@ -32,9 +32,6 @@ class FloorConfig:
     # Consecutive steps at a height before a switch or a new level commits
     # (6 steps ~= 1.5 m at forward_m=0.25). Prevents id thrash mid-staircase.
     min_dwell_steps: int = 6
-    # Secondary source: pre-register floors seen but not yet visited from the
-    # depth cloud. Off by default -- a depth histogram also peaks on ceilings.
-    point_cloud_peaks: bool = False
     # One Costmap2D + room segmenter + room labels per storey, instead of one
     # shared map. Implies enabled=true and estimate_only=false. Without it an
     # upper floor is never mapped at all (its points fall outside the band
@@ -250,13 +247,4 @@ class FloorConfig:
     # Horizontal distance at a candidate height that proves it is a storey and
     # not a staircase landing. See FloorEstimator; 0 disables.
     min_horizontal_run_m: float = 2.5
-
-    # Stable-key floor stack controls.  The older fields above remain valid;
-    # combined presets opt into this stack through ``mapping.multi_floor`` or
-    # ``per_floor_costmap``.  Both spellings are supported by the factory.
-    band_m: float = 0.9
-    commit_steps: int = 4
-    settle_m: float = 0.2
-    freeze_in_climb: bool = False
-    freeze_on_stairs: bool = False
 

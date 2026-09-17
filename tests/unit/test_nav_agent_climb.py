@@ -35,7 +35,7 @@ def test_step_rule_remains_available_and_is_not_the_default():
     assert ExplorationConfig().stair_explored_rule == "no_frontiers"
 
 
-def _climb_agent(rule="topological"):
+def _climb_agent():
     from osg.agent.nav_agent import NavAgent
     from osg.exploration.async_scorer import AsyncScorer
     from osg.perception.detector import StubDetector
@@ -43,7 +43,6 @@ def _climb_agent(rule="topological"):
     from .test_nav_agent import _StubScorer, make_cfg
 
     cfg = make_cfg()
-    cfg.agent.climb_exit_rule = rule
     cfg.agent.stair_exit_m = 0.5
     return NavAgent(cfg, StubDetector(), AsyncScorer(_StubScorer()), None, "bed")
 
@@ -94,12 +93,6 @@ def test_cells_are_stored_in_world_coordinates():
     after = layer.costmap.grid_to_world(cells.astype(float))
     assert not np.allclose(before, after), "the grow did not shift the origin"
     assert np.allclose(agent._climb_cells_xy, before), "stored cells drifted with the map"
-
-
-def test_height_rule_is_the_default():
-    from osg.core.config import AgentConfig
-
-    assert AgentConfig().climb_exit_rule == "height"
 
 
 def _stairs_agent(**mapping):

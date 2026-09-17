@@ -39,6 +39,10 @@ preset_for() {
     v4)         echo ycb_authored_15_fused_v4 ;;
     v5)         echo ycb_authored_15_fused_v5 ;;
     v6)         echo ycb_authored_15_fused_v6 ;;
+    v7)         echo ycb_authored_15_fused_v7 ;;
+    v8)         echo ycb_authored_15_fused_v8 ;;
+    navmesh)    echo ycb_authored_15_navmesh_diag ;;
+    v7navmesh)  echo ycb_authored_15_fused_v7_navmesh ;;
     *)          echo "$1" ;;
   esac
 }

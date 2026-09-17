@@ -79,18 +79,6 @@ def ellipse_from_mask(mask: np.ndarray) -> Optional[Ellipse2D]:
     return Ellipse2D(mu=mu, cov=cov)
 
 
-def bbox_intersection_area(b1: np.ndarray, b2: np.ndarray) -> float:
-    x1 = max(b1[0], b2[0])
-    y1 = max(b1[1], b2[1])
-    x2 = min(b1[2], b2[2])
-    y2 = min(b1[3], b2[3])
-    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
-
-
-def bbox_area(b: np.ndarray) -> float:
-    return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
-
-
 def rotvec_to_matrix(rv: np.ndarray) -> np.ndarray:
     """Rodrigues formula."""
     theta = np.linalg.norm(rv)

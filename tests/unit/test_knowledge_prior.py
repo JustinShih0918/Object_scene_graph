@@ -14,7 +14,6 @@ import numpy as np
 import pytest
 
 from osg.exploration.knowledge_prior import FloorPrior, KnowledgeGraph
-from osg.exploration.score_cache import SpatialScoreCache
 
 ROOMS = {
     "toilet": {"bathroom": 0.97, "bedroom": 0.02, "kitchen": 0.01},
@@ -106,38 +105,3 @@ def test_floor_prior_unknown_category():
 
 
 # ---------------------------------------------------------------- score cache
-
-
-def test_score_is_found_by_position_not_id():
-    """Frontier ids are reassigned on every extraction, which is why scores are
-    keyed spatially at all."""
-    c = SpatialScoreCache(radius_m=0.75, ttl_steps=60)
-    c.put(np.array([1.0, 2.0]), 0.8, step=10)
-    assert c.get(np.array([1.3, 2.1]), step=12) == 0.8
-
-
-def test_score_not_found_beyond_the_radius():
-    c = SpatialScoreCache(radius_m=0.75)
-    c.put(np.array([1.0, 2.0]), 0.8, step=10)
-    assert c.get(np.array([5.0, 5.0]), step=12) is None
-
-
-def test_scores_expire():
-    c = SpatialScoreCache(radius_m=0.75, ttl_steps=20)
-    c.put(np.array([1.0, 2.0]), 0.8, step=10)
-    assert c.get(np.array([1.0, 2.0]), step=25) == 0.8
-    assert c.get(np.array([1.0, 2.0]), step=40) is None
-
-
-def test_nearest_entry_wins():
-    c = SpatialScoreCache(radius_m=1.0)
-    c.put(np.array([1.0, 0.0]), 0.2, step=1)
-    c.put(np.array([0.1, 0.0]), 0.9, step=1)
-    assert c.get(np.array([0.0, 0.0]), step=2) == 0.9
-
-
-def test_reset_clears():
-    c = SpatialScoreCache()
-    c.put(np.array([1.0, 2.0]), 0.8, step=1)
-    c.reset()
-    assert c.get(np.array([1.0, 2.0]), step=2) is None

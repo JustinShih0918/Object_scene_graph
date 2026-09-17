@@ -135,17 +135,12 @@ def test_algorithm_fingerprint_covers_every_flag_an_ab_can_switch():
     # Tuning constants that no A/B in this repo varies; listing them would be
     # noise in every diff.
     exempt = {
-        "frontier_text_scorer", "subgraph_radius_m", "images_per_frontier", "top_n_frontiers",
+        "frontier_text_scorer", "subgraph_radius_m", "top_n_frontiers",
         "frontier_dedup_m", "min_path_cost_m", "unscored_prior",
-        "info_gain_radius_m", "max_frontiers_per_call", "knowledge_radius_m",
-        "knowledge_prior_path", "value_clip_name", "value_clip_root",
-        "value_stride", "value_radius_m", "value_prompt", "value_max_depth_m",
-        "stair_explored_boost", "floor_exp_steps", "stair_min_hits",
-        "stair_retire_cells", "stair_probe_every", "score_cache_radius_m",
-        "score_cache_ttl", "ssim_thresh",
+        "info_gain_radius_m", "max_frontiers_per_call", "knowledge_radius_m", "value_clip_name", "value_clip_root",
+        "value_stride", "value_radius_m", "value_prompt", "floor_exp_steps", "stair_min_hits",
         # VerificationConfig knobs no A/B in this repo varies.
         "verify_enabled", "verify_vlm_model", "verify_min_evidence",
-        "verify_max_verify_calls", "verify_debug_dir", "verify_reverify_every",
         "verify_ring_radii_m", "verify_center_tol_deg", "verify_center_max_turns",
         # AgentConfig: protocol constants (recorded in the "config" block
         # instead) and geometry/tuning no A/B in this repo varies.
@@ -154,9 +149,7 @@ def test_algorithm_fingerprint_covers_every_flag_an_ab_can_switch():
         "approach_stop_bbox_px", "approach_depth_stop", "approach_max_steps",
         "approach_goal_tolerance_m", "approach_arrival_tol_m",
         "approach_standoff_m", "navmesh_goal_radius", "navmesh_approach_steps",
-        "stair_reach_m", "stair_overshoot_m", "climb_max_steps",
-        "stair_climb_state", "floor_gap_min_m", "stair_exit_m",
-        "check_candidates_all_states", "terminal_engage_m",
+        "stair_reach_m", "climb_max_steps", "stair_exit_m", "terminal_engage_m",
         # S33: a weights path, recorded as `rednet_stairs` (the behavioural
         # switch) rather than by filename.
         "rednet_weights",
@@ -165,6 +158,13 @@ def test_algorithm_fingerprint_covers_every_flag_an_ab_can_switch():
         "osg_world_model_weights",
         "terminal_progress_eps", "terminal_stall_steps",
     }
+    # Every exempt name must still name a field. Eight of them did not when this
+    # guard was added -- score_cache_radius_m, ssim_thresh, verify_debug_dir and
+    # friends outlived the fields they excused -- and a stale exemption is how a
+    # real field quietly stops being recorded: rename it, and its old name goes
+    # on excusing the new one's absence.
+    stale = sorted(exempt - behavioural)
+    assert not stale, f"exempt names that match no field: {stale}"
     missing = sorted(f for f in behavioural - exempt if f'"{f}"' not in block)
     assert not missing, f"not recorded in summary.json['algorithm']: {missing}"
 

@@ -187,36 +187,6 @@ class Blip2ItmScorer(ImageTextScorer):
         return out
 
 
-def build_scorer_by_name(model: str, cfg) -> Optional[ImageTextScorer]:
-    """One scorer by name, independent of whether the value map wants one.
-
-    The value map and the COMMIT GATE ask the same model two different
-    questions, and ASCENT answers both with the same BLIP-2 call
-    (`map_controller.py:540-562` computes the value-map cosine and keeps
-    `cosines[0][0]` as `_blip_cosine`, which `:770-776` thresholds at 0.15 to
-    latch `_double_check_goal`). OSG splits them so the gate can run on BLIP-2
-    while the value map stays on whatever measured best.
-    """
-    if model in ("none", "", None):
-        return None
-    if model == "constant":
-        return ConstantScorer()
-    if model == "clip":
-        return ClipScorer(
-            model_name=getattr(cfg.exploration, "value_clip_name", "ViT-B/32"),
-            device=cfg.detector.device,
-            download_root=getattr(cfg.exploration, "value_clip_root", "data/clip"),
-        )
-    if model == "blip2itm":
-        return Blip2ItmScorer(
-            url=str(getattr(cfg.exploration, "value_blip2_url",
-                            "http://localhost:13182/blip2itm")),
-            timeout_s=float(getattr(cfg.exploration, "value_blip2_timeout_s", 10.0)),
-            strict=bool(getattr(cfg.exploration, "value_strict", False)),
-        )
-    raise ValueError(f"unknown image-text model: {model}")
-
-
 def build_image_text_scorer(cfg) -> Optional[ImageTextScorer]:
     """None when the value map is off, so nothing is loaded."""
     if not getattr(cfg.exploration, "value_map", False):

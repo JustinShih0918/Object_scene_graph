@@ -62,9 +62,6 @@ class VerificationConfig:
     # Build the verifier for the ABSENCE check only, leaving the pre-approach
     # candidate gate off, so a run isolates one variable.
     absence_only: bool = False
-    # Enumerating a long list is where VLMs are least reliable, and an absence
-    # you cannot trust is worse than no absence at all.
-    absence_categories_max: int = 5
     # Below this belief the agent abandons the candidate instead of stopping on
     # it. 1.0 = always abandon, which is the right default once you notice what
     # the alternative actually is: NOT "keep believing and look again later" but

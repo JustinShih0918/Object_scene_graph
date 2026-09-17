@@ -19,8 +19,6 @@ class MappingConfig:
     inflate_margin_m: float = 0.07
     floor_reject_m: float = 0.0
     multi_floor: bool = False
-    floor_band_m: float = 0.9
-    floor_commit_steps: int = 4
     freeze_floor_in_climb: bool = False
     freeze_floor_on_stairs: bool = False
 

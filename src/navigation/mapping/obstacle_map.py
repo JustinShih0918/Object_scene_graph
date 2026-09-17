@@ -12,8 +12,6 @@ from navigation.vendor.vlfm.mapping.base_map import BaseMap
 from navigation.vendor.vlfm.utils.geometry_utils import extract_yaw, get_point_cloud, transform_points
 from navigation.vendor.vlfm.utils.img_utils import fill_small_holes
 
-from navigation.vendor.vlfm.vlm.detections import ObjectDetections
-from navigation.vendor.vlfm.mapping.object_point_cloud_map import ObjectPointCloudMap
 
 from collections import deque
 

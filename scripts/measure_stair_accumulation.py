@@ -66,7 +66,8 @@ def run(cfg: DictConfig, n_episodes: int, hit_m: float, stride: int) -> None:
 
     from osg.core.geometry import quat_to_matrix
     from osg.core.types import FrameData
-    from osg.eval.runner import _episode_uid, _goal_floor_gap_m, build_detector
+    from osg.eval.runner import _episode_uid, _goal_floor_gap_m
+    from osg.pipeline.components import build_detector
     from osg.mapping.costmap import PLANE, Costmap2D
     from osg.mapping.stairs import StairDetector
     from osg.sim.habitat_env import HabitatObjectNavEnv, _GL_TO_CV

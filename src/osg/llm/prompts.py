@@ -36,11 +36,6 @@ Unexplored frontiers (with nearby mapped objects):
 {image_note}Rate each frontier with a probability in [0, 1] that exploring it leads
 toward the target. Respond as JSON: {{"scores": {{"<frontier_id>": <prob>, ...}}}}"""
 
-FRONTIER_IMAGE_NOTE = (
-    "The attached images show views near the frontiers, in the order listed. "
-)
-
-
 VERIFY_SYSTEM = (
     "You help a robot double-check its object detector. You are shown the full "
     "camera image with ONE candidate object outlined by a red bounding box. "

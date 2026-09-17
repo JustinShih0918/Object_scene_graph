@@ -14,7 +14,6 @@ from navigation.vendor.vlfm.utils.geometry_utils import (
 
 from navigation.vendor.vlfm.mapping.base_map import BaseMap
 from navigation.vendor.vlfm.utils.img_utils import fill_small_holes
-from navigation.vendor.vlfm.vlm.detections import ObjectDetections
 from navigation.constants import MPCAT40_RGB_COLORS, MPCAT40_NAMES
 
 class ObjectPointCloudMap(BaseMap):

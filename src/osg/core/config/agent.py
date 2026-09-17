@@ -312,7 +312,6 @@ class AgentConfig:
     verify_stop_view: str = "live"
     terminal_requires_detection: bool = True
     frontier_reachability_gate: bool = True
-    check_candidates_all_states: bool = False
     terminal_rule: str = "depth"  # depth | nearest_point
     terminal_engage_m: float = 1.0
     terminal_stop_m: float = 0.6
@@ -370,11 +369,7 @@ class AgentConfig:
     rednet_stairs: bool = False
     rednet_weights: str = "data/weights/rednet_semmap_mp3d_40.pth"
     stair_reach_m: float = 0.6
-    stair_overshoot_m: float = 1.5
     climb_max_steps: int = 80
-    stair_climb_state: bool = True
-    floor_gap_min_m: float = 0.9
-    climb_exit_rule: str = "height"  # height | topological
     stair_exit_m: float = 0.5
     # Let a floor pursuit become a climb. Until now State.CLIMB was never
     # entered: the carrot, the on-stairs test and the exit rule were all here

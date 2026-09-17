@@ -92,7 +92,6 @@ class SceneGraphConfig:
     # ellipsoid cannot cover, and those are seen together; an object and its own
     # ghost are not (docs/DYNAMIC_SCENES.md, the in-anchor ghosting bug).
     link_max_frame_gap: int = 50
-    near_edge_dist_m: float = 1.5
     assoc_score_thresh: float = 0.4
     assoc_depth_gate_m: float = 0.5
     # Wasserstein data association requires the detection label to match the

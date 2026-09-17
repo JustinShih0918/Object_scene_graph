@@ -371,34 +371,6 @@ class FeatureMemory:
         self.counters["feature_crops_encoded"] += len(feats)
         return len(feats)
 
-    def embed_prior_tracks(self, tracks: Iterable[Any], map_path: str) -> int:
-        """Give every stored crop a feature at prior-map load. Returns how many
-        tracks ended up carrying one (<1 s for a 700-track map)."""
-        pending, crops, n = [], [], 0
-        for track in tracks:
-            ft = self._prior_cache.get((map_path, int(track.id)))
-            if ft is not None:
-                track.clip_ft = ft
-                track.clip_n = 1
-                self.tag(track)
-                n += 1
-                continue
-            crop = getattr(track, "best_crop", None)
-            if crop is None or getattr(crop, "size", 0) == 0:
-                continue
-            pending.append(track)
-            crops.append(crop)
-        if crops:
-            feats = self.encoder.encode_images(crops)
-            for track, ft in zip(pending, feats):
-                track.clip_ft = ft
-                track.clip_n = 1
-                self._prior_cache[(map_path, int(track.id))] = ft
-                self.tag(track)
-                n += 1
-        self.counters["feature_tracks_embedded"] += n
-        return n
-
     def best_near(self, centre_xy, tracks, *, floor_key=None) -> Optional[Any]:
         """DualMap's local inquiry: the track near this surface that looks most
         like the query. Argmax, never a threshold, so it always answers.
@@ -485,17 +457,3 @@ class FeatureMemory:
         if a.size < 3:
             return True
         return float(2.0 * max(a[0], a[2])) <= cap
-
-    def note_admitted(self, track) -> None:
-        """Count each track admitted by appearance once per episode."""
-        key = int(track.id)
-        if key in self._admitted_seen:
-            return
-        self._admitted_seen.add(key)
-        if bool(getattr(track, "from_prior", False)):
-            self.counters["feature_admitted_prior"] += 1
-        else:
-            self.counters["feature_admitted_live"] += 1
-
-    def bump(self, name: str, by: int = 1) -> None:
-        self.counters[name] = self.counters.get(name, 0) + int(by)

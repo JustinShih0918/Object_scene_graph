@@ -18,9 +18,14 @@ is a proxy and is stated as such: **an episode that ran the full 500 steps shoul
 segment into at least 3 rooms.** A house explored for 500 steps that reads as one
 room is wrong regardless of what the true count is.
 
-Usage:
-    python scripts/run_eval.py ... eval.save_costmap=true output_dir=outputs/probe
-    python scripts/measure_room_seg.py outputs/probe
+CANNOT BE RUN AS-IS. It reads `outputs/<run>/costmaps/*.npz`, and nothing has
+ever written those: `eval.save_costmap` was declared in EvalConfig, recorded in
+every summary.json, and read by no code at all. The flag has been removed. To
+use this again, have the runner dump `grid`, `origin`, `resolution` and `steps`
+per episode and point the script at the directory. The docstring above is the
+measurement it produced when the dump existed.
+
+    python scripts/measure_room_seg.py outputs/probe    # once the dump is back
 """
 from __future__ import annotations
 
@@ -52,7 +57,7 @@ def main() -> None:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else "outputs/probe") / "costmaps"
     files = sorted(root.glob("*.npz"))
     if not files:
-        sys.exit(f"no costmaps in {root} -- run with eval.save_costmap=true")
+        sys.exit(f"no costmaps in {root} -- see this file's docstring; nothing writes them")
 
     maps = [load_costmap(f) for f in files]
     exhausted = [i for i, (_, s) in enumerate(maps) if s >= FULL_BUDGET]

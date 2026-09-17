@@ -24,7 +24,6 @@ class ExplorationConfig:
     voronoi_goal_near_m: float = 0.7
     frontier_dedup_m: float = 1.0
     frontier_min_cells: int = 8
-    extractor: str = "wfd"  # wfd | contour
     area_thresh_m2: float = 1.5
     selector: str = "utility"  # utility | ascent
     nearby_distance_m: float = 3.0
@@ -41,7 +40,6 @@ class ExplorationConfig:
     reselect_every: int = 0
     frontier_desc: str = "graph"  # graph | frame_objects | frame
     frontier_desc_match_m: float = 1.0
-    images_per_frontier: int = 1  # each image costs ~1-2k ctx tokens
     max_frontiers_per_call: int = 4
     unscored_prior: float = 0.3
     min_path_cost_m: float = 0.5
@@ -296,12 +294,10 @@ class ExplorationConfig:
     frontier_cost_free_cell: bool = False
     los_visibility_penalty: float = 1.0
     stair_prior: float = 0.6
-    stair_explored_boost: float = 3.0
     stair_explored_rule: str = "no_frontiers"  # no_frontiers | steps
     floor_exp_steps: int = 100
     stair_min_hits: int = 1
     stair_min_cells: int = 25
-    stair_retire_cells: bool = False
     value_map: bool = False
     # ASCENT constructs its ValueMap with `use_max_confidence=False`
     # (`map_controller.py:79-83`): a confidence-weighted running average. The
@@ -332,6 +328,5 @@ class ExplorationConfig:
     value_radius_m: float = 0.5
     value_prompt: str = "Seems like there is a {target} ahead."
     knowledge_prior: bool = False
-    knowledge_prior_path: Optional[str] = None
     knowledge_radius_m: float = 3.0
     knowledge_weight: float = 1.0

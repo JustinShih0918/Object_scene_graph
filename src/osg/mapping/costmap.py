@@ -278,9 +278,6 @@ class Costmap2D:
     def free_mask(self) -> np.ndarray:
         return self.grid == FREE
 
-    def unknown_mask(self) -> np.ndarray:
-        return self.grid == UNKNOWN
-
     def coverage_cells(self) -> int:
         return int((self.grid != UNKNOWN).sum())
 

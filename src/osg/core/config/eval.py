@@ -49,7 +49,6 @@ class EvalConfig:
     # single-floor preset since the 2D scene graph cannot represent stairs.
     content_scenes: Optional[List[str]] = None
     save_viz: bool = True
-    save_costmap: bool = False
     # Per-step debug video: for each episode write viz/debug/ep<ID>.mp4 whose
     # frames are [live RGB + YOLOE segmentation overlay | top-down costmap] at
     # every step. The detector is re-run per step FOR VISUALIZATION ONLY (it

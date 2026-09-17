@@ -130,14 +130,6 @@ def swapped_trial_id(released_id: str) -> str:
     return f"{scene}__{condition}__{layout}__{fwd.get(query, query)}"
 
 
-def released_trial_id(trial_id: str) -> str:
-    """The id this trial had in the released protocol (identity without a swap)."""
-    if not SWAP:
-        return trial_id
-    scene, condition, layout, query = trial_id.split("__", 3)
-    back = {v.replace(" ", "_"): k.replace(" ", "_") for k, v in SWAP.get("queries", {}).items()}
-    return f"{scene}__{condition}__{layout}__{back.get(query, query)}"
-
 PUBLISHED = {
     ("00829-QaLdnwvtxbs", "in_anchor"): (12, 18),
     ("00848-ziup5kvtCCR", "in_anchor"): (12, 18),

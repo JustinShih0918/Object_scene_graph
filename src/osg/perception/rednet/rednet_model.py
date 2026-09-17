@@ -497,18 +497,3 @@ def load_rednet(device, ckpt="", resize=True, stabilize=False):
     #     print(param_tensor, "\t", model.state_dict()[param_tensor].size())
       
     return model
-
-def save_ckpt(ckpt_dir, model, optimizer, global_step, epoch, local_count, num_train):
-    # usually this happens only on the start of a epoch
-    epoch_float = epoch + (local_count / num_train)
-    epoch_float = epoch + (local_count / num_train)
-    state = {
-        'global_step': global_step,
-        'epoch': epoch_float,
-        'state_dict': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-    }
-    ckpt_model_filename = "ckpt_epoch_{:0.2f}.pth".format(epoch_float)
-    path = os.path.join(ckpt_dir, ckpt_model_filename)
-    torch.save(state, path)
-    print('{:>2} has been successfully saved'.format(path))
