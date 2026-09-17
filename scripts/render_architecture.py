@@ -150,35 +150,49 @@ def main() -> None:
     # segmenter and the container layer as an earlier draft had it.
     rgbd = box(ax, 0.022, 0.700, 0.062, 0.105, "RGB-D\n+ pose", fs=9.0)
     kf = box(ax, 0.100, 0.700, 0.078, 0.105, "Keyframe\nSelection")
-    det = box(ax, 0.196, 0.700, 0.092, 0.105, "Open-Vocabulary\nDetection")
-    ell = box(ax, 0.404, 0.700, 0.096, 0.105, "Association\n+ Ellipsoid Fitting")
-    obj = box(ax, 0.516, 0.700, 0.076, 0.105, "Object\nNodes", ec=C_OBJ, tc=C_OBJ)
-    pres = box(ax, 0.608, 0.700, 0.080, 0.105, "Presence\nFilter")
+    # Two perception channels, not one.  The named channel is calibrated and
+    # gates on its own score; the class-agnostic channel has no score to
+    # calibrate and is admitted on a CLIP cosine, so it stays a separate tier
+    # all the way through to candidate ranking.  Drawing them as one box was
+    # the figure's only real disagreement with the method.
+    yolo = box(ax, 0.184, 0.762, 0.114, 0.043, "YOLOE-seg  (named)", fs=7.8)
+    fsam = box(ax, 0.184, 0.700, 0.114, 0.043,
+               "FastSAM + CLIP  (open-set)", fs=7.8)
+    fuse = box(ax, 0.304, 0.700, 0.046, 0.105, "Fused\nDetections", fs=8.2)
+    ell = box(ax, 0.414, 0.700, 0.074, 0.105, "Association\n+ Ellipsoid Fit", fs=8.2)
+    ref = box(ax, 0.492, 0.700, 0.066, 0.105, "Multi-view\nRefinement", fs=8.2)
+    obj = box(ax, 0.562, 0.700, 0.056, 0.105, "Object\nNodes", ec=C_OBJ, tc=C_OBJ,
+              fs=8.4)
+    pres = box(ax, 0.622, 0.700, 0.070, 0.105, "Presence\nFilter", fs=8.4)
 
     cost = box(ax, 0.100, 0.545, 0.078, 0.100, "Costmap\n(per floor)")
     flr = box(ax, 0.196, 0.545, 0.092, 0.100, "Floor Estimation\n+ Portals",
               ec=C_FLOOR, tc=C_FLOOR)
     room = box(ax, 0.300, 0.545, 0.092, 0.100, "Room\nSegmentation",
                ec=C_ROOM, tc=C_ROOM)
-    cont = box(ax, 0.516, 0.545, 0.076, 0.100, "Container\nNodes",
-               ec=C_CONT, tc=C_CONT)
+    cont = box(ax, 0.550, 0.545, 0.080, 0.100, "Container\nNodes",
+               ec=C_CONT, tc=C_CONT, fs=8.6)
 
-    arrow(ax, rgbd, kf); arrow(ax, kf, det); arrow(ax, ell, obj); arrow(ax, obj, pres)
+    arrow(ax, rgbd, kf)
+    arrow(ax, kf, yolo); arrow(ax, kf, fsam)
+    arrow(ax, yolo, fuse); arrow(ax, fsam, fuse)
+    arrow(ax, ell, ref); arrow(ax, ref, obj); arrow(ax, obj, pres)
     arrow(ax, kf, cost, side="s2n")
     arrow(ax, cost, flr); arrow(ax, flr, room)
-    tile = (0.404, 0.548, 0.070, 0.094)  # matches the inset rect below
+    tile = (0.414, 0.548, 0.070, 0.094)  # matches the inset rect below
     arrow(ax, room, tile, color=C_ROOM)
     arrow(ax, tile, cont, color=C_ROOM)
     arrow(ax, obj, cont, side="s2n", color=C_OBJ)
-    caption(ax, 0.346, 0.760, "instances", fs=7.6)
+    caption(ax, 0.379, 0.822, "instances", fs=7.4)
     caption(ax, 0.066, 0.662, "depth", fs=7.2)
-    caption(ax, 0.439, 0.660, "room-labelled costmap", fs=7.0, color=C_ROOM)
+    caption(ax, 0.449, 0.660, "room-labelled costmap", fs=7.0, color=C_ROOM)
+    caption(ax, 0.525, 0.822, r"$\geq 3$ views", fs=7.2)
 
     if crops:
-        for i, (_, crop) in enumerate(crops[:3]):
-            inset(fig, [0.300 + i * 0.034, 0.706, 0.030, 0.092], crop, border=C_OBJ)
+        for i, (_, crop) in enumerate(crops[:2]):
+            inset(fig, [0.356 + i * 0.029, 0.706, 0.026, 0.092], crop, border=C_OBJ)
     if top is not None:
-        inset(fig, [0.408, 0.548, 0.070, 0.094], top, border=MUTED)
+        inset(fig, [0.418, 0.548, 0.070, 0.094], top, border=MUTED)
 
     if section is not None:
         a = fig.add_axes([0.706, 0.560, 0.282, 0.360])
