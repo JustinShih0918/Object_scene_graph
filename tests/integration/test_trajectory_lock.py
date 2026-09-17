@@ -250,7 +250,9 @@ if __name__ == "__main__":
         for field_name, value in (
             ("exploration_sha256", json.dumps(action_hash(explore_actions))),
             ("dynamic_sha256", json.dumps(action_hash(dyn_actions))),
-            ("dynamic_fingerprint", json.dumps(fingerprint(dyn_agent))),
+            # repr(), not json.dumps(): a Python literal, and any bool in the
+            # fingerprint would come back as `false`.
+            ("dynamic_fingerprint", repr(fingerprint(dyn_agent))),
         ):
             updated, n = re.subn(
                 r"^(\s*)" + field_name + r"=.*$",

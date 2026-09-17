@@ -25,6 +25,7 @@ climbs but `depth` does, the flight carrot is. If nothing climbs, the loop is.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -257,9 +258,97 @@ def _run_variant(env, cfg, pointnav, foot, top, path3d, variant, max_steps, plac
         "forced_forward": st.get("climb_forced_forward", 0),
         "blocked_turn": st.get("climb_blocked_turn", 0),
         "actions": {a: actions.count(a) for a in sorted(set(actions))},
+        # The sequence, not just its histogram: two different climbs can share
+        # a histogram. This is what tests/integration/test_climb_lock.py pins.
+        "actions_sha256": hashlib.sha256(",".join(actions).encode("utf-8")).hexdigest(),
         "carrot_trace": trace[:400:2][:24],   # (standing_y, goal_dist_m, cells_in_band), 1 per step
         "y_trace": [round(float(v), 2) for v in ys[::max(1, len(ys) // 30)]],
     }
+
+
+def build_climb_fixture(cfg, *, storeys=None, descend=False, scene=""):
+    """Everything a climb needs before its first action: the environment, the
+    ground-truth flight between two CONNECTED storeys, and a `place()` that puts
+    the agent at its foot facing up it.
+
+    Extracted verbatim from `main()` so that
+    `tests/integration/test_climb_lock.py` drives the same setup this diagnostic
+    does rather than a copy of it that will drift. The one deliberate change: a
+    scene with no navigable flight now raises instead of returning 2 from a
+    function whose return value was discarded.
+    """
+    probe = _load_probe()
+    from osg.pipeline.components import build_env
+    from osg.planning.pointnav_driver import build_pointnav
+    env = build_env(cfg)
+    env.reset()
+    sim, pf = env.env.sim, env.env.sim.pathfinder
+
+    buckets = probe._storey_points(pf)
+    if storeys:
+        want = [float(v) for v in storeys.split(",")]
+        lo_h, hi_h = (min(buckets, key=lambda h: abs(h - w)) for w in sorted(want))
+        found = probe._find_flight(pf, buckets[lo_h], buckets[hi_h])
+    else:
+        # The two biggest storeys are not always the two the episodes cross: on
+        # 00808 they are the basement and the ground floor, and the basement is
+        # 100% off the start island, so no flight between them exists at all.
+        # Fall through the size-ordered pairs until one is actually connected.
+        order = sorted(buckets, key=lambda h: -len(buckets[h]))
+        found = lo_h = hi_h = None
+        for i in range(len(order)):
+            for j in range(i + 1, len(order)):
+                a, b = min(order[i], order[j]), max(order[i], order[j])
+                got = probe._find_flight(pf, buckets[a], buckets[b])
+                if got is not None:
+                    found, lo_h, hi_h = got, a, b
+                    break
+            if found is not None:
+                break
+    if found is None:
+        raise SystemExit(
+            f"no navigable flight between any storey pair of {scene or cfg.ycb.scenes[0]}")
+    print(f"    storeys {lo_h:+.2f} -> {hi_h:+.2f}")
+    rise, pts, _geo = found
+    ys = pts[:, HEIGHT]
+    if int(np.argmax(ys)) < int(np.argmin(ys)):
+        pts, ys = pts[::-1], ys[::-1]
+    climbing = np.flatnonzero(np.diff(ys) > 0.15)
+    start_i, top_i = int(climbing[0]), int(climbing[-1] + 1)
+    foot, top = pts[start_i], pts[top_i]
+    path3d = _densify(pts[start_i:top_i + 1])
+    if descend:
+        # The climb runs the other way: the agent stands at the top and the
+        # flight's "foot" -- the mouth on this storey, as `find_flights` names
+        # it for a descent -- is the highest tread. `_flight_carrot` then hunts
+        # for cells 0.35-1.0 m BELOW the agent, and `_do_climb` pitches the
+        # camera down first (ASCENT's phase 2). None of this was covered by
+        # the ascending probe, and the first descent on a real staircase
+        # (outputs/mf5_pass2_v10 ep1) went 23 cm and stalled.
+        foot, top = top, foot
+        path3d = path3d[::-1]
+        pts, start_i = pts[::-1], len(pts) - 1 - top_i
+    print(f"ground-truth flight{' (DESCENDING)' if descend else ''}: start {np.round(foot, 2)} -> end {np.round(top, 2)}  "
+          f"({top[HEIGHT] - foot[HEIGHT]:+.2f} m, {len(path3d)} densified points)")
+
+    import habitat_sim  # noqa: F401  (agent state types)
+    from habitat_sim.utils.common import quat_from_two_vectors
+
+    def place():
+        state = sim.get_agent_state()
+        state.position = foot
+        facing = path3d[min(3, len(path3d) - 1)] - foot   # a few points along the flight
+        facing[HEIGHT] = 0.0
+        if np.linalg.norm(facing) > 1e-6:
+            state.rotation = quat_from_two_vectors(
+                np.array([0.0, 0.0, -1.0]), facing / np.linalg.norm(facing))
+        sim.get_agent(0).set_state(state, reset_sensors=True)
+
+    pointnav = build_pointnav(cfg)
+    probe_ns = SimpleNamespace(
+        env=env, sim=sim, pointnav=pointnav, foot=foot, top=top,
+        path3d=path3d, place=place, lo_h=lo_h, hi_h=hi_h)
+    return probe_ns
 
 
 def main() -> None:
@@ -295,74 +384,11 @@ def main() -> None:
             f"ycb.obstacle_map_in={args.maps}",
             "eval.save_viz=false", "eval.debug_frames=false", *args.set])
 
-    from osg.pipeline.components import build_env
-    from osg.planning.pointnav_driver import build_pointnav
-    env = build_env(cfg)
-    env.reset()
-    sim, pf = env.env.sim, env.env.sim.pathfinder
+    fx = build_climb_fixture(cfg, storeys=args.storeys, descend=args.descend,
+                             scene=args.scene)
+    env, pointnav = fx.env, fx.pointnav
+    foot, top, path3d, place = fx.foot, fx.top, fx.path3d, fx.place
 
-    buckets = probe._storey_points(pf)
-    if args.storeys:
-        want = [float(v) for v in args.storeys.split(",")]
-        lo_h, hi_h = (min(buckets, key=lambda h: abs(h - w)) for w in sorted(want))
-        found = probe._find_flight(pf, buckets[lo_h], buckets[hi_h])
-    else:
-        # The two biggest storeys are not always the two the episodes cross: on
-        # 00808 they are the basement and the ground floor, and the basement is
-        # 100% off the start island, so no flight between them exists at all.
-        # Fall through the size-ordered pairs until one is actually connected.
-        order = sorted(buckets, key=lambda h: -len(buckets[h]))
-        found = lo_h = hi_h = None
-        for i in range(len(order)):
-            for j in range(i + 1, len(order)):
-                a, b = min(order[i], order[j]), max(order[i], order[j])
-                got = probe._find_flight(pf, buckets[a], buckets[b])
-                if got is not None:
-                    found, lo_h, hi_h = got, a, b
-                    break
-            if found is not None:
-                break
-    if found is None:
-        print(f"no navigable flight between any storey pair of {args.scene}",
-              file=sys.stderr)
-        return 2
-    print(f"    storeys {lo_h:+.2f} -> {hi_h:+.2f}")
-    rise, pts, _geo = found
-    ys = pts[:, HEIGHT]
-    if int(np.argmax(ys)) < int(np.argmin(ys)):
-        pts, ys = pts[::-1], ys[::-1]
-    climbing = np.flatnonzero(np.diff(ys) > 0.15)
-    start_i, top_i = int(climbing[0]), int(climbing[-1] + 1)
-    foot, top = pts[start_i], pts[top_i]
-    path3d = _densify(pts[start_i:top_i + 1])
-    if args.descend:
-        # The climb runs the other way: the agent stands at the top and the
-        # flight's "foot" -- the mouth on this storey, as `find_flights` names
-        # it for a descent -- is the highest tread. `_flight_carrot` then hunts
-        # for cells 0.35-1.0 m BELOW the agent, and `_do_climb` pitches the
-        # camera down first (ASCENT's phase 2). None of this was covered by
-        # the ascending probe, and the first descent on a real staircase
-        # (outputs/mf5_pass2_v10 ep1) went 23 cm and stalled.
-        foot, top = top, foot
-        path3d = path3d[::-1]
-        pts, start_i = pts[::-1], len(pts) - 1 - top_i
-    print(f"ground-truth flight{' (DESCENDING)' if args.descend else ''}: start {np.round(foot, 2)} -> end {np.round(top, 2)}  "
-          f"({top[HEIGHT] - foot[HEIGHT]:+.2f} m, {len(path3d)} densified points)")
-
-    import habitat_sim  # noqa: F401  (agent state types)
-    from habitat_sim.utils.common import quat_from_two_vectors
-
-    def place():
-        state = sim.get_agent_state()
-        state.position = foot
-        facing = path3d[min(3, len(path3d) - 1)] - foot   # a few points along the flight
-        facing[HEIGHT] = 0.0
-        if np.linalg.norm(facing) > 1e-6:
-            state.rotation = quat_from_two_vectors(
-                np.array([0.0, 0.0, -1.0]), facing / np.linalg.norm(facing))
-        sim.get_agent(0).set_state(state, reset_sensors=True)
-
-    pointnav = build_pointnav(cfg)
     results = []
     for variant in args.variants.split(","):
         r = _run_variant(env, cfg, pointnav, foot, top, path3d, variant.strip(),
