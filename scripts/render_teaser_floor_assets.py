@@ -4,7 +4,7 @@
 Run in the Habitat Docker environment before composing the teaser::
 
     docker exec docker-nav-1 /opt/conda/envs/habitat/bin/python \
-        /workspace/scripts/render_teaser_floor_assets.py
+        scripts/render_teaser_floor_assets.py
 
 The two views use the same camera and crop. Black void outside the scanned
 mesh becomes transparent; the image is a scene render, not a logged trajectory.

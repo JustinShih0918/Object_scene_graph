@@ -24,7 +24,7 @@ export PYTHONPATH="$(pwd)/src"
 
 : "${SCENES:=00878-XB4GS9ShBRE 00869-MHPLjHsuG27 00873-bxsVRursffK 00824-Dd4bFSTQ8gi 00871-VBzV5z6i1WS}"
 : "${PRESET:=ycb_authored_15}"
-: "${MAPS:=/workspace/outputs/maps_15}"
+: "${MAPS:=outputs/maps_15}"
 : "${MIN_FREE_MIB:=2600}"
 : "${MAX_PARALLEL:=2}"
 

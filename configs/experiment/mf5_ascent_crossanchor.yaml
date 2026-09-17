@@ -1,6 +1,6 @@
 # @package _global_
 #
-# The ASCENT BASELINE on the cross-anchor benchmark: the same 26 episodes OSG
+# The ASCENT BASELINE on the cross-anchor benchmark: the same 25 episodes OSG
 # runs in `mf5_osg_on_ascent_map`, driven by the transcription of ASCENT's own
 # control flow (`src/navigation/`, fidelity notes in its README) instead of
 # OSG's FSM.
@@ -32,7 +32,7 @@ ycb:
   layout_types: [cross_anchor]
   layout_indices: [1]
   # Only the cross-floor relocations, which is what the multi-floor benchmark
-  # is: the same 26 episodes the OSG arm runs.
+  # is: the same 25 episodes the OSG arm runs.
   cross_floor_relocations_only: true
   start_on_prior_floor: true
   # DualMap's released scoring rule. Without it `attempt_succeeded` falls back

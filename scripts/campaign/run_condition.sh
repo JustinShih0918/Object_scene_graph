@@ -5,7 +5,7 @@ set -u
 TAG="$1"; shift
 MAPS="${MAPS:-outputs/maps_hires}"
 EXTRA=("$@")
-set -a; . /workspace/.env; set +a
+set -a; . "$(git rev-parse --show-toplevel)/.env"; set +a
 cd /workspace
 
 COMMON=(

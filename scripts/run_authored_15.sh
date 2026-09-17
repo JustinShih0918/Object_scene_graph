@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Our pipeline on our own authored benchmark: the 15-scene root under
-# /datasets/habitat-data-collector/outputs/dualmap_authoring (111 objects, one
+# $OSG_YCB_AUTHORING_ROOT (111 objects, one
 # layout index, in_anchor + cross_anchor), scored by the same rule as the
 # released DualMap benchmark -- a STOP within 1 m horizontal of the object,
 # within three attempts (`ycb.score_by_object_distance`).
@@ -27,7 +27,7 @@ set -a; . ./.env; set +a
 : "${MAPS:=outputs/maps_15}"
 : "${OUT:=outputs/osg_authored_15}"
 : "${MAX_PARALLEL:=4}"
-: "${ROOT:=/datasets/habitat-data-collector/outputs/dualmap_authoring}"
+: "${ROOT:=${OSG_YCB_AUTHORING_ROOT:-/habitat-data-collector/outputs/dualmap_authoring}}"
 : "${SCENES:=$(ls "$ROOT" | grep -E '^[0-9]{5}-' | tr '\n' ' ')}"
 : "${DRY_RUN:=}"
 

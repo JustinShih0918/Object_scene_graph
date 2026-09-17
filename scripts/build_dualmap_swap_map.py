@@ -12,7 +12,7 @@ preloads it. The released data is never touched: the destination must be
 outside it.
 
     python scripts/build_dualmap_swap_map.py --scene 00848-ziup5kvtCCR \
-        --release /datasets/habitat-data-collector/data/dualmap_swap/HM3D_collect \
+        --release $OSG_DATA_ROOT/dualmap_swap/HM3D_collect \
         --class-list configs/dualmap_swap/hm3d300_classes_ycb_swap.txt
 """
 from __future__ import annotations
@@ -23,9 +23,15 @@ import shutil
 import sys
 from pathlib import Path
 
-WORKSPACE = Path("/workspace")
-DUALMAP_ROOT = WORKSPACE / "outputs/dualmap_comparison/vendor/DualMap"
-ORIGINAL = Path("/datasets/habitat-data-collector/data/dualmap/HM3D_collect")
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
+
+from osg.core.paths import collector_data_root  # noqa: E402
+
+DUALMAP_ROOT = REPO / "outputs/dualmap_comparison/vendor/DualMap"
+# The collector mount moved from /datasets/habitat-data-collector to
+# /habitat-data-collector; osg.core.paths carries both, so ask it.
+ORIGINAL = collector_data_root() / "dualmap/HM3D_collect"
 
 
 def main() -> None:
@@ -53,7 +59,7 @@ def main() -> None:
     map_dir = scene_dir / "global_map" / "hm3d"
     if map_dir.exists():
         shutil.rmtree(map_dir)
-    work = (args.work or (WORKSPACE / "outputs/dualmap_swap_support/map_build" / args.scene)).resolve()
+    work = (args.work or (REPO / "outputs/dualmap_swap_support/map_build" / args.scene)).resolve()
     work.mkdir(parents=True, exist_ok=True)
     class_list = args.class_list.resolve()
 

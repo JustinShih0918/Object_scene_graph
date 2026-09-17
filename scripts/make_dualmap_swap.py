@@ -18,7 +18,7 @@ reads it when `OSG_DUALMAP_RELEASE_ROOT` points at the copy, and renames the
 queries in the protocol accordingly.
 
     python scripts/make_dualmap_swap.py \
-        --dst /datasets/habitat-data-collector/data/dualmap_swap/HM3D_collect \
+        --dst $COLLECTOR_DATA/dualmap_swap/HM3D_collect \
         --swap 037_scissors=006_mustard_bottle 025_mug=002_master_chef_can
 """
 from __future__ import annotations
@@ -31,8 +31,14 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_SRC = Path("/datasets/habitat-data-collector/data/dualmap/HM3D_collect")
-YCB = Path("/datasets/habitat-data-collector/data/versioned_data/ycb")
+# The collector mount moved from /datasets/habitat-data-collector to
+# /habitat-data-collector; osg.core.paths carries both, so ask it.
+from osg.core.paths import collector_data_root  # noqa: E402
+
+_COLLECTOR = collector_data_root()
+
+DEFAULT_SRC = Path(f"{_COLLECTOR}/dualmap/HM3D_collect")
+YCB = Path(f"{_COLLECTOR}/versioned_data/ycb")
 QUERY_NAME = {
     "006_mustard_bottle": "mustard bottle",
     "002_master_chef_can": "coffee can",

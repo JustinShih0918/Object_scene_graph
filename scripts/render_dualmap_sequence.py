@@ -12,7 +12,7 @@ recorded poses of the ORIGINAL scene instead and reports the pixel agreement
 with the shipped frames, which is how the pose convention was verified.
 
     python scripts/render_dualmap_sequence.py --scene 00848-ziup5kvtCCR \
-        --release /datasets/habitat-data-collector/data/dualmap_swap/HM3D_collect --out .../rendered
+        --release $COLLECTOR_DATA/dualmap_swap/HM3D_collect --out .../rendered
 """
 from __future__ import annotations
 
@@ -24,12 +24,20 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-HM3D = Path("/datasets/habitat-data-collector/data/scene_datasets/hm3d")
-OBJECTS = Path("/datasets/habitat-data-collector/data/objects/ycb/configs")
+# The collector mount moved from /datasets/habitat-data-collector to
+# /habitat-data-collector; osg.core.paths carries both, so ask it.
+from osg.core.paths import collector_data_root  # noqa: E402
+
+_COLLECTOR = collector_data_root()
+
+HM3D = Path(f"{_COLLECTOR}/scene_datasets/hm3d")
+OBJECTS = Path(f"{_COLLECTOR}/objects/ycb/configs")
 if not OBJECTS.is_dir():
-    OBJECTS = Path("/datasets/habitat-data-collector/data/versioned_data/ycb/configs")
+    OBJECTS = Path(f"{_COLLECTOR}/versioned_data/ycb/configs")
 if not HM3D.is_dir():
-    HM3D = Path("/workspace/data/scene_datasets/hm3d")
+    from osg.core.paths import hm3d_scene_root  # noqa: E402
+
+    HM3D = hm3d_scene_root()
 
 
 def make_sim(scene: str, width: int, height: int, hfov_deg: float):
@@ -119,7 +127,7 @@ def main() -> None:
     parser.add_argument("--scene", required=True)
     parser.add_argument("--release", type=Path, required=True, help="the release root holding the layouts to render")
     parser.add_argument("--recorded", type=Path,
-                        default=Path("/datasets/habitat-data-collector/data/dualmap/HM3D_collect"),
+                        default=Path(f"{_COLLECTOR}/dualmap/HM3D_collect"),
                         help="the original release with rgb/depth/pose.txt")
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument("--check", type=int, default=0, help="render N original poses and compare with the shipped frames")

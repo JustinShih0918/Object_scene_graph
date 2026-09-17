@@ -4,7 +4,7 @@
 Run inside the Habitat container::
 
     docker exec docker-nav-1 /opt/conda/envs/habitat/bin/python \
-        /workspace/scripts/render_ycb_layout_assets.py
+        scripts/render_ycb_layout_assets.py
 
 The result contains the actual YCB meshes from the static, in-anchor, and
 cross-anchor JSON layouts.  All layouts share the same camera and crop, so a

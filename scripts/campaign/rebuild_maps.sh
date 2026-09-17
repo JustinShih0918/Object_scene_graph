@@ -17,7 +17,7 @@
 set -u
 OUT="${1:-outputs/maps_v4}"
 : "${LAYOUT_ROOT:=outputs/substituted_layouts}"
-set -a; . /workspace/.env; set +a
+set -a; . "$(git rev-parse --show-toplevel)/.env"; set +a
 cd /workspace
 
 COMMON=(

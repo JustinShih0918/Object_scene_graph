@@ -20,7 +20,7 @@ export PYTHONPATH="$(pwd)/src"
 
 : "${SCENES:=00808-y9hTuugGdiq 00814-p53SfW6mjZe 00800-TEEsavR23oF}"
 : "${ARMS:=base fused}"
-: "${MAPS:=/workspace/outputs/maps_15}"
+: "${MAPS:=outputs/maps_15}"
 : "${OUT:=outputs/fusion_ab}"
 : "${MAX_PARALLEL:=3}"
 : "${LAYOUTS:=[in_anchor,cross_anchor]}"

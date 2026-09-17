@@ -25,7 +25,7 @@ export PYTHONPATH="$(pwd)/src"
 
 : "${SCENES:=00808-y9hTuugGdiq 00821-eF36g7L6Z9M 00800-TEEsavR23oF 00810-CrMo8WxCyVb}"
 : "${ARMS:=base v5}"
-: "${MAPS:=/workspace/outputs/maps_15}"
+: "${MAPS:=outputs/maps_15}"
 : "${OUT:=outputs/crossfloor_ab}"
 : "${MIN_FREE_MIB:=2600}"
 : "${MAX_PARALLEL:=2}"
