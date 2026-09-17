@@ -45,12 +45,14 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
 
 # EGL/GL userland for headless habitat-sim (driver libs are injected by
 # nvidia-container-toolkit at run time); build-essential/ninja for the CUDA
-# extension; tmux because the model servers run in a tmux session.
+# extension; tmux because the model servers run in a tmux session. ffmpeg and
+# xvfb are also used by habitat-data-collector's recording and headless
+# authoring scripts.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
     apt-get update && apt-get install -y --no-install-recommends \
     git curl ca-certificates bzip2 unzip build-essential ninja-build \
     libegl1 libgl1 libglvnd0 libx11-6 libxext6 libopengl0 libglx0 \
-    libjpeg-dev libpng-dev libglib2.0-0 sudo tmux \
+    libjpeg-dev libpng-dev libglib2.0-0 sudo tmux ffmpeg xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -L https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
@@ -77,8 +79,15 @@ RUN pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 \
       --index-url https://download.pytorch.org/whl/cu121 \
     && pip install --no-cache-dir \
        "numpy<2" "ultralytics==8.3.*" openai "hydra-core>=1.3" omegaconf \
-       scipy scikit-image scikit-learn opencv-python-headless pytest pytest-timeout \
-       imageio matplotlib anthropic "rerun-sdk"
+       scipy scikit-image scikit-learn "opencv-python==4.10.0.84" \
+       pytest pytest-timeout imageio matplotlib pillow pyyaml tqdm anthropic \
+       "rerun-sdk"
+
+# habitat-data-collector shares this interpreter. habitat-sim is already
+# supplied above (the compatible 0.3.1 Conda build), while its remaining
+# non-ROS requirements are included in the install above. ROS 2 is optional in
+# the collector and is intentionally not mixed into this Python 3.9 env:
+# Ubuntu 22.04's ROS Humble binaries, including rclpy, target Python 3.10.
 
 # CLIP tokenizer for YOLOE's text prompts (otherwise ultralytics AutoUpdate
 # re-installs it in every ephemeral container).
@@ -212,7 +221,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES=all \
     MAGNUM_LOG=quiet \
     HABITAT_SIM_LOG=quiet \
     __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json \
-    PYTHONPATH=/workspace/src \
+    HABITAT_COLLECTOR_ROOT=/habitat-data-collector \
+    PYTHONPATH=/workspace/src:/habitat-data-collector \
     ASCENT_PYTHON=/opt/conda/envs/ascent/bin/python
 
 # wgpu (the Rerun native viewer) probes every backend it is built with,
@@ -255,6 +265,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
     && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers \
     && chown -R $USER_UID:$USER_GID /opt/ascent \
     && rm -rf /var/lib/apt/lists/*
+
+# `docker exec -it docker-nav-1 bash` -- the way everyone actually gets a shell
+# here -- BYPASSES the ENTRYPOINT, so entrypoint.sh's `umask "${UMASK:-0002}"`
+# never reaches those shells. They ran at the default 0022, every file written
+# from them came out 0644, and a second host user sharing the mount could read
+# the repository but not modify a single file in it. Set it where a bypassing
+# shell still reads it: profile.d for login shells, bash.bashrc for the
+# interactive non-login shell `docker exec ... bash` actually starts.
+RUN printf 'umask %s\n' '002' > /etc/profile.d/00-shared-umask.sh \
+    && chmod 0644 /etc/profile.d/00-shared-umask.sh \
+    && printf '\n# Shared bind mount: new files must stay writable by the owning group.\numask 002\n' \
+       >> /etc/bash.bashrc
 
 USER $USERNAME
 

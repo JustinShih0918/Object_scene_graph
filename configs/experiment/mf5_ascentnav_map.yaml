@@ -30,7 +30,12 @@ mapping:
   multi_floor: true
 
 ycb:
-  layout_root: /datasets/habitat-data-collector/outputs/dualmap_multifloor
+  # The mount moved: docker/compose.yaml now bind-mounts the whole collector
+  # checkout at /habitat-data-collector, and /datasets stopped existing. Read
+  # the env var compose sets, with the current mount as the fallback, so this
+  # preset resolves on a container built either way (osg/core/paths.py holds
+  # the same two candidates for the dataclass defaults).
+  layout_root: ${oc.env:OSG_YCB_MULTI_FLOOR_ROOT,/habitat-data-collector/outputs/dualmap_multifloor}
   scenes:
     - 00800-TEEsavR23oF
     - 00808-y9hTuugGdiq

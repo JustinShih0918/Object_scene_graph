@@ -84,6 +84,49 @@ printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" >> docker/.env
 `NVIDIA_API_KEY` is only needed for `verification=nim`, which is off in the
 default arm. The collector paths only matter for the `ycb_*` experiments.
 
+### When a second person cannot modify the files
+
+Two failures compound, and the symptom is the same for both: a teammate (or you
+from another machine) can read the whole checkout and overwrite nothing —
+rsyncing a replacement dataset in fails with `Permission denied`.
+
+1. **`UID`/`GID` were never set**, so the container ran as 1000:1000 while the
+   host user is someone else. Every file it wrote is owned by a uid that does
+   not exist on the host. This is the step above; `stat -c '%u:%g' outputs` on
+   the host tells you immediately whether it was done.
+2. **`docker exec` bypasses the ENTRYPOINT.** `entrypoint.sh` sets
+   `umask "${UMASK:-0002}"`, but the shell everyone actually works in comes
+   from `docker exec -it docker-nav-1 bash`, which never runs it — so that
+   shell ran at the default 0022 and wrote 0644 files even when the ownership
+   was right. The image now sets `umask 002` in `/etc/profile.d` and
+   `/etc/bash.bashrc` as well, so a bypassing shell still gets it. **Rebuild
+   is required** for that to take effect.
+
+Repairing what was already written (run inside the container; `hm3ddata` is
+whatever group both accounts share — `id -gn` on the host):
+
+```bash
+sg hm3ddata -c 'chgrp -R -f hm3ddata /workspace
+                chmod -R -f g+rwX /workspace
+                find /workspace -type d -print0 | xargs -0 -r chmod -f g+s'
+```
+
+The setgid bit is the part that lasts: without it a new file takes the
+*creator's* primary group, and the next session reintroduces the problem one
+directory at a time.
+
+Bind-mount parents created by Docker itself stay `root:root 755` and need
+sudo — `/datasets`, `/datasets/habitat-data-collector` and its `outputs/`
+here. Their leaf directories carry host ownership and are unaffected, so this
+only blocks creating a *new* dataset directory, not replacing an existing one:
+
+```bash
+sudo chgrp hm3ddata /datasets /datasets/habitat-data-collector \
+                    /datasets/habitat-data-collector/outputs
+sudo chmod 2775     /datasets /datasets/habitat-data-collector \
+                    /datasets/habitat-data-collector/outputs
+```
+
 ## 3. Model weights
 
 Nothing is committed. `pretrained_weights/` inside the submodule is gitignored,

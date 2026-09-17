@@ -68,6 +68,13 @@ class YCBAuthoredConfig:
         default_factory=lambda: ["upward", "downward"]
     )
     start_on_prior_floor: bool = False
+    # Start on the storey the object is ACTUALLY on, instead of the one the
+    # prior claims. This is the control that separates the two halves of a
+    # cross-floor episode: with it the agent begins on the goal storey and the
+    # staircase is removed from the problem, so what remains is the search and
+    # the terminal approach. Measured against the normal start (on the prior
+    # storey) it says whether a scene's failures are stairs or approach.
+    start_on_target_floor: bool = False
     relocation_floor_tolerance_m: float = 0.5
     # Explicit scene lists normally fail on any absent requested slot. Combined
     # campaigns span heterogeneous authoring coverage and opt into recording
@@ -117,6 +124,42 @@ class YCBAuthoredConfig:
     # already witnessed for itself. False keeps this session's own evidence
     # and fills in only what it has not seen.
     obstacle_map_overwrite: bool = False
+    # Keep EVERY mapping episode's snapshot, not the single best one, and in
+    # pass 2 paste all of a scene's snapshots into the same costmaps.
+    #
+    # Why: the protocol runs one mapping episode per authored object and the
+    # writer keeps whichever saw the most (`save_obstacle_map_for_scene`), so
+    # five of six explorations are thrown away. Measured on 00800 against the
+    # scene's navmesh, the kept 500-step episode covers 51% of the lower
+    # storey's navigable area and 80% of the upper, and the cross-anchor
+    # target for episode 1 sits 5.1 m outside it -- the agent cannot search a
+    # room its prior does not contain. The explorations start from different
+    # poses and see different rooms, so their UNION is strictly more map for
+    # no extra simulation.
+    #
+    # Only snapshots whose explored-storey count matches the agent's stack are
+    # merged: `ObstacleMap` records no world height, floors are matched BY
+    # ORDER (see `load_obstacle_map`), and a one-storey snapshot pasted onto a
+    # two-storey stack would land a whole floor on the wrong storey. Skipped
+    # ones are reported in `prior_obstacle_map.union_skipped`.
+    obstacle_map_union: bool = False
+    # Take the STOREY HEIGHTS from the obstacle snapshots, adding any storey
+    # the scene-graph prior missed.
+    #
+    # Why: the two prior artifacts come from mapping episodes, and an episode
+    # that never climbed has no upper storey to record. Measured on 00808,
+    # where NO single mapping episode visited both storeys: the scene graph
+    # kept one whose upper "floor" is the stairs themselves, recorded at
+    # 1.03 m, when the storeys are 0.06 and 2.86. Pass 2 reads its storey
+    # heights from that stack, so the upper floor's occupancy would be pasted
+    # 1.8 m below where it belongs and the stair ramp built between the wrong
+    # pair. The obstacle snapshots DO record 2.86 (`floor_y`, the height the
+    # mapping agent stood at), so they can fill the gap.
+    #
+    # A storey is added only when the stack has none within
+    # `storey_seed_tol_m`; existing layers are never moved.
+    seed_storeys_from_obstacle_map: bool = False
+    storey_seed_tol_m: float = 1.0
     # Score a STOP by horizontal distance to the OBJECT, the released DualMap
     # benchmark's rule, instead of habitat's geodesic distance to an authored
     # viewpoint (whose rings at 0.8-2.0 m make the effective tolerance about

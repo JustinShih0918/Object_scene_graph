@@ -132,6 +132,22 @@ class VerificationConfig:
     # that becomes reachable later can come back.
     unreachable_is_absorbing: bool = True
     min_obs: int = 3
+    # A track far ABOVE the storey the agent stands on needs a second look
+    # before it may take an attempt. 0.0 disables it, which is the shipped
+    # behaviour; the multi-floor arm sets it.
+    #
+    # Measured on 00800 (outputs/mf5_pass2_p1500): the toy-airplane episode
+    # spent both of its early attempts, by step 95, on tracks whose centres sat
+    # at y 5.64 and 5.09 -- 1.9 and 2.5 m ABOVE the 3.16 m storey it was on,
+    # each with a single observation. The true target was on the other storey
+    # at 0.96. v11-v13 record the same shape: every wrong commit was more than
+    # 0.8 m above its storey.
+    #
+    # A height alone must not be absorbing -- a real object CAN sit high on a
+    # shelf -- so this asks for corroboration rather than refusing: at
+    # `commit_high_min_obs` observations the track competes normally again.
+    commit_max_above_storey_m: float = 0.0
+    commit_high_min_obs: int = 2
     # Candidate quality gates: sliver/fragment detections (a chair edge seen
     # through furniture) must not trigger the expensive approach+verify loop.
     min_score: float = 0.70

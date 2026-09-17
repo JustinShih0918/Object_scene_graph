@@ -434,6 +434,163 @@ class AgentConfig:
     # `climb_target_y_x100` 16, `climb_start_down` 1, 200 steps on the flight,
     # `climb_max_dy_x100` 0.
     climb_direction_from_flight: bool = False
+    # `_flight_carrot` never aims at a cell closer than this, horizontally.
+    # 0.0 is the shipped behaviour (nearest in-band cell, wherever it is).
+    #
+    # Measured with scripts/probe_climb_osg.py on 00800's navmesh flight,
+    # descending: with TRUE tread heights the carrot's goal sits 0.66-1.01 m
+    # ahead and the agent arrives (-1.80 m, 28 steps); with the pasted RAMP
+    # the goal shrinks 0.68 -> 0.48 -> 0.36 -> 0.10 m and the climb stalls at
+    # -0.12 m. The mouth of that flight is a flat landing: the ramp says the
+    # floor drops at once, the agent walks 0.5 m without descending, and the
+    # nearest cell "0.35 m below" is now the one under its feet. A ramp cannot
+    # know where the landings are; the carrot can refuse to turn toward its
+    # own feet, which on a staircase is never the way.
+    climb_carrot_min_ahead_m: float = 0.0
+    # The carrot must also be AHEAD, not merely far enough away. `min_ahead`
+    # prices distance; this prices direction, and on a pasted map they are not
+    # the same thing. A stored flight carries a LINEAR RAMP for heights
+    # (`map_store._ramp_stair_heights`), so an iso-height contour is a line
+    # across the whole blob and "the nearest cell 0.35-1.0 m further along in
+    # height" can sit BEHIND the agent.
+    #
+    # Measured with scripts/probe_climb_osg.py on 00821's descent, same flight,
+    # same climb loop, only the height field differing:
+    #   exact  (true tread heights)  ARRIVED  -3.32 m in  60 steps, 31 fwd / 28 turns
+    #   ramp   (linear ramp)                  -0.93 m in 300 steps, 50 fwd / 249 turns
+    #                                         -- 20 of 55 steps ran BACKWARDS
+    #   pasted (the stored map)               +0.00 m, stalled at 52 steps
+    # The climb loop is not the defect; what it is aimed at is.
+    #
+    # Keeps only candidates in the half-plane toward the far end of the flight,
+    # and falls back to the unfiltered band if that would leave nothing -- a
+    # direction rule may not make the climb impossible.
+    climb_carrot_forward_only: bool = False
+    # When every remaining tread is nearer than `climb_carrot_min_ahead_m`,
+    # take the nearest one anyway instead of returning no carrot at all.
+    # OFF by default = the shipped behaviour. The arm turns it on: measured on
+    # 00873 ep50005, the ascent stalls at 1.80 m of a 3.20 m flight with 109
+    # cells in band and no carrot picked, because the last-resort branch
+    # applied the spacing rule as a hard filter with nothing behind it.
+    climb_carrot_relax_min_ahead: bool = False
+    # Choose the next waypoint by walking distance ALONG the flight instead of
+    # by height band / euclidean nearest. OFF by default = shipped behaviour.
+    # A switchback has no straight axis: on 00873, 28 of the flight's 57
+    # ground-truth steps run backwards along its own foot->top chord, so both
+    # the band rule and the "highest tread" fallback aim across the banister.
+    climb_carrot_follow_path: bool = False
+    # How far off the flight the agent may be and still follow its path.
+    # Beyond this the older carrots take over and head for the mouth.
+    climb_carrot_path_max_offset_m: float = 1.0
+    # Hold the flight carrot until the agent REACHES it (this many metres) or
+    # climbs past its height, instead of re-picking the nearest tread every
+    # step. 0 keeps the shipped per-step pick.
+    #
+    # Why: `_flight_carrot` picks the nearest cell in a height band, so the
+    # goal moves every step -- and `PointNavDriver` wipes its recurrent state
+    # whenever the goal moves more than 0.1 m, which is then EVERY step. A
+    # point-goal policy reset every step cannot build momentum: it turns
+    # toward the new goal, takes one action, and starts again. Measured
+    # (outputs/mf5_pass2_v16 ep1): 300 steps for 2.56 m of descent, with no
+    # `climb_forced_forward` and no `climb_blocked_turn` in the whole climb --
+    # the mover always had an action, so the agent was never pressed against
+    # anything, it was turning. The same production climb on the same pasted
+    # flight, started aligned with it by `scripts/probe_climb_osg.py`, covers
+    # 2.74 m in 50 steps.
+    climb_carrot_hold_m: float = 0.0
+    # Do not turn on a staircase when the carrot is already within this many
+    # degrees of dead ahead: one turn is `turn_deg` (30), so a correction
+    # smaller than half of that OVERSHOOTS, and the next step corrects back.
+    # Measured on the climb traces (outputs/mf5_pass2_v18): on the descent 25%
+    # of turns immediately reversed the previous turn, on the ascent 43%, and
+    # the agent covered 6.6 m of net displacement along a 28.1 m path (8.9 m
+    # along 41.7 m on the ascent) -- three quarters of the motion undone. 0
+    # keeps the mover's own turns.
+    climb_turn_deadband_deg: float = 0.0
+    # Once locked forward, the error has to exceed THIS to turn again -- the
+    # hysteresis half of the lock, without which the agent sits on the
+    # deadband edge and chatters. Defaults to one full turn step.
+    climb_turn_release_deg: float = 0.0
+    # The lock must YIELD when forward is not working. Measured
+    # (outputs/mf5_pass2_v19): with the deadband alone, 328 of 332 turns were
+    # suppressed and the agent issued 340 forward actions that produced 5.4 m
+    # of path -- it was pressing into the banister, because the mover's turns
+    # are not only alignment, they are how it gets around things, and the
+    # action alone does not say which. So: if the last forward step did not
+    # move the agent this far, the next turn goes through.
+    climb_turn_stuck_eps_m: float = 0.05
+    # And never suppress more than this many turns in a row, whatever the
+    # geometry says. 0 for no cap.
+    climb_turn_suppress_max: int = 0
+    # Turn in place at the start of a climb until the first tread is within
+    # this many degrees of dead ahead, before taking a single step. 0 skips it.
+    #
+    # Why: `scripts/probe_climb_osg.py` drives the SAME production climb up
+    # the SAME pasted flight in 50 steps for 2.74 m, and the one thing it does
+    # differently is start the agent aligned with the flight. A run arrives at
+    # the mouth from a walk, facing wherever the approach left it, and then
+    # asks a point-goal policy to rotate and translate at once on stairs.
+    # Capped at a full revolution so it can never spin in place forever.
+    climb_align_first_deg: float = 0.0
+    # How many floor switches may FAIL from one storey before the agent stops
+    # asking to leave it and searches instead. 0 keeps asking forever.
+    #
+    # Measured (outputs/mf5_pass2_v18, the cracker box): it climbed to the
+    # correct storey at step 161, searched three containers, and from step 333
+    # to 841 made SIX descent attempts, every one ending in
+    # `portal_end_no_vertical_progress` -- 508 steps, half the episode, trying
+    # to leave the storey the target was actually on. It selected a frontier
+    # three times in 1000 steps. A storey the agent cannot leave is a storey
+    # it should be searching.
+    max_failed_switches_per_storey: int = 0
+    # How long that ban lasts, in steps; 0 is the rest of the episode. A
+    # permanent ban is too absolute: in outputs/mf5_pass2_v19 the cracker box
+    # failed twice while the turn lock was breaking its climb, hit the limit,
+    # and could then never reach the target storey at all (banned 16 times,
+    # `goal_floor_reached` false). The ban should cost the agent the next
+    # stretch of the episode, not the episode.
+    switch_ban_steps: int = 0
+    # End a climb by height only once the KNOWN gap to the target storey is
+    # closed (minus this tolerance), rather than at `floor.new_level_m`.
+    # 0.0 disables, which is the shipped behaviour.
+    #
+    # Measured on 00800 cross_anchor_01 (outputs/mf5_pass2_v11 ep2): the
+    # storeys are 3.0 m apart and `new_level_m` is 1.8, so the first
+    # successful climb in any run -- +1.83 m in 64 steps -- was declared a
+    # storey at 1.83 m with the agent standing on the treads. The estimator
+    # never committed the upper storey, the posterior picked a cabinet on the
+    # LOWER one, and the agent walked back down. The prior map carries both
+    # storey heights, and `_goal_floor_y_cache` is the one being climbed to.
+    climb_to_target_storey_tol_m: float = 0.0
+    # After this many failed attempts on ONE storey, that storey is disproved:
+    # its target-labelled tracks stop vetoing a floor switch, and the nearest
+    # other known storey is requested directly. 0 is the shipped behaviour.
+    #
+    # A failed attempt is the strongest signal the pipeline gets that THIS
+    # storey is not it, and until now it lowered exactly one track. Measured
+    # on 00800 cross_anchor_01 (outputs/mf5_pass2_v6): the upper storey held
+    # eight "toy airplane" tracks -- a ceiling fixture at 2.6 m and its kin,
+    # detector scores up to 0.82 -- with 0 presence events for the label in
+    # 200 steps, because a false positive IS present and every look re-detects
+    # it. Three attempts went to three of them; `floor_target_evidence` then
+    # added _TARGET_PRESENT for the believed fakes and `may_switch` refused to
+    # leave "a floor that has the thing we are looking for on it". The true
+    # target was one storey down and never once in view.
+    #
+    # Every failed attempt on the storey counts, the stale anchor included: an
+    # attempt at the prior's own pose that finds nothing is the single
+    # strongest "it moved" reading there is.
+    floor_disproved_after_failed_attempts: int = 0
+    # While a floor switch is being walked (`floors.pursuing`), only a
+    # candidate seen LIVE within `range_m` with detector score >= `min_score`
+    # may pre-empt it. Off (False) is the shipped behaviour: any candidate
+    # pre-empts. Measured on 00800 ep1, every run: the down-flight is chosen
+    # at step 172 and a same-floor detection commits at step 181, nine steps
+    # later, abandoning it; `candidates.check` runs in GOTO_FRONTIER and
+    # nothing protected a switch that was decided but not yet walked.
+    protect_floor_switch: bool = False
+    protect_floor_switch_range_m: float = 1.5
+    protect_floor_switch_min_score: float = 0.6
     climb_cell_carrot: bool = False
     # After this many consecutive mover STOPs with no height gained, turn to
     # re-aim instead of pressing into the wall again. 0 disables.
@@ -441,4 +598,16 @@ class AgentConfig:
     climb_carrot: bool = False
     climb_carrot_m: float = 0.8
     down_look_every: int = 0
+    # Where the look-down is allowed to fire, in metres from a cell the stair
+    # map calls stairs. The look-down exists to DISCOVER a staircase down, and
+    # it is purely periodic: every `down_look_every` steps the agent pitches
+    # down, accumulates stair evidence from whatever is in front of it, and
+    # pitches back -- two steps, wherever it happens to be standing. When a
+    # prior ASCENT map has already been pasted, where the stairs are is known,
+    # so looking for them in the middle of a bedroom is two wasted steps and a
+    # chance to plant stair evidence on furniture. Measured (v13/v14, 00800):
+    # 6-16 look-downs an episode, none of them at the staircase. 0 disables
+    # the gate, which is the shipped behaviour; with no stair map at all the
+    # gate never applies, because then there IS something to discover.
+    down_look_near_stairs_m: float = 0.0
 

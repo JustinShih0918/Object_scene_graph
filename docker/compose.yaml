@@ -26,8 +26,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       args:
-        USER_UID: ${UID:-1000}
-        USER_GID: ${GID:-1000}
+        USER_UID: ${UID:?Set UID in docker/.env to the output of id -u}
+        USER_GID: ${GID:?Set GID in docker/.env to the output of id -g}
     runtime: nvidia
     depends_on:
       - ollama
@@ -35,7 +35,11 @@ services:
     tty: true
     # Keep bind-mounted files owned by the host user. Set UID/GID in
     # docker/.env to the output of `id -u` and `id -g` on the host.
-    user: "${UID:-1000}:${GID:-1000}"
+    user: "${UID:?Set UID in docker/.env}:${GID:?Set GID in docker/.env}"
+    # An explicit uid:gid can discard supplementary image groups. Retain the
+    # Ubuntu sudo group so entrypoint.sh can initialize named-volume folders.
+    group_add:
+      - "27"
     command: [ "bash" ]
     environment:
       - OLLAMA_HOST=http://ollama:11434
@@ -46,13 +50,12 @@ services:
       - YOLO_CONFIG_DIR=/tmp/Ultralytics
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - UMASK=0002
-      # Keep navigation independent of the mutable scene_datasets/hm3d link.
-      # The code still accepts these as environment overrides for alternate
-      # collector mounts, but the default image always uses HM3D v0.2.
-      - OSG_DATA_ROOT=/datasets/habitat-data-collector/data
-      - OSG_HM3D_SCENES_DIR=/datasets/habitat-data-collector/data/versioned_data/hm3d-0.2
-      - OSG_YCB_AUTHORING_ROOT=/datasets/habitat-data-collector/outputs/dualmap_authoring
-      - OSG_YCB_MULTI_FLOOR_ROOT=/datasets/habitat-data-collector/outputs/dualmap_multifloor
+      # habitat-data-collector is mounted as one complete, editable checkout.
+      - HABITAT_COLLECTOR_ROOT=/habitat-data-collector
+      - OSG_DATA_ROOT=/habitat-data-collector/data
+      - OSG_HM3D_SCENES_DIR=/habitat-data-collector/data/versioned_data/hm3d-0.2
+      - OSG_YCB_AUTHORING_ROOT=/habitat-data-collector/outputs/dualmap_authoring
+      - OSG_YCB_MULTI_FLOOR_ROOT=/habitat-data-collector/outputs/dualmap_multifloor
       # --- x11: GUI tools inside the container (the Rerun 3D viewer) ---------
       # Inherit the host's DISPLAY. Empty when the host has no X session, which
       # is harmless: GUI apps then fail with "Failed to open connection to X
@@ -71,20 +74,22 @@ services:
       # Without this the eval dies in the env worker with "No Stage Attributes
       # exists for requested scene ...basis.glb", not a missing-file error.
       - ${HM3D_SCENES:-../data/versioned_data}:/workspace/data/versioned_data
-      # Mount X11 server
-        # Run with the host identity so bind-mounted files remain host-writable.
-        # Set UID/GID in docker/.env to the host's `id -u` and `id -g` values.
-        user: "${UID:-1000}:${GID:-1000}"
+      # Mount the full collector checkout at one stable location. Disabling
+      # automatic host-path creation avoids Docker creating a root-owned empty
+      # directory when HABITAT_COLLECTOR_DIR contains a typo.
+      - type: bind
+        source: ${HABITAT_COLLECTOR_DIR:-../../habitat-data-collector}
+        target: /habitat-data-collector
+        bind:
+          create_host_path: false
+      # X11 server and GPU rendering devices for interactive collector tools.
       - /tmp/.X11-unix:/tmp/.X11-unix # X11-unix is mounted to allow GUI applications to display on host.
       - $HOME/.Xauthority:/tmp/.Xauthority # Xauthority is mounted to allow X11 forwarding for remote display.
       # Mount Direct Rendering Infrastructure (DRI) for hardware acceleration support such as OpenGL.
       - /dev/dri:/dev/dri
-      - ${HABITAT_COLLECTOR_DATA_DIR:-../../habitat-data-collector/data}:/datasets/habitat-data-collector/data:rw
-      - ${DUALMAP_AUTHORING_DIR:-../../habitat-data-collector/outputs/dualmap_authoring}:/datasets/habitat-data-collector/outputs/dualmap_authoring:rw
-      - ${DUALMAP_MULTI_FLOOR_DIR:-../../habitat-data-collector/outputs/dualmap_multifloor}:/datasets/habitat-data-collector/outputs/dualmap_multifloor:rw
     deploy:
       resources:
-          - UMASK=0002
+        reservations:
           devices:
             - driver: nvidia
               count: 1

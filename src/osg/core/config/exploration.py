@@ -148,6 +148,17 @@ class ExplorationConfig:
     # "15% better or stay". With `floor_mass_rule: mean` this is what lets the
     # posterior answer "no opinion" instead of breaking a tie by floor area.
     floor_mass_margin: float = 0.0
+    # Steps after ARRIVING on a storey during which an empty container
+    # posterior there means "unmapped", not "the target is not here". 0 is the
+    # shipped rule: with nothing at all here, anywhere else is better at once
+    # (tests/unit/test_floor_anchor_order.py). Measured on 00800
+    # (outputs/mf5_pass2_v12 ep1): three steps after climbing down, the
+    # storey had no containers yet -- they are rebuilt from tracks at
+    # keyframes -- so `floor_mass={'0': 11.8}` named only the storey just
+    # left, and the agent climbed straight back up. The margin rule cannot
+    # see this: 0 * margin is 0. Within this window the round explores here
+    # instead; containers appear as the storey is mapped.
+    empty_storey_settle_steps: int = 0
     # Belief carried by the single most plausible mapped surface. The candidate
     # priors are affinity x proximity normalised so the best of them equals this,
     # which separates the ORDERING (what the proximity model is for) from the

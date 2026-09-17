@@ -14,11 +14,21 @@ from typing import Iterable
 
 
 HM3D_VERSION = "0.2"
+# The collector checkout is bind-mounted whole at /habitat-data-collector
+# (docker/compose.yaml); before that merge only its `data` and
+# `outputs/dualmap_authoring` were mounted, under /datasets. Both are tried, in
+# that order, so a container built either way resolves without an env override.
 _DEFAULT_DATA_ROOTS = (
+    Path("/habitat-data-collector/data"),
     Path("/datasets/habitat-data-collector/data"),
 )
 _DEFAULT_AUTHORING_ROOTS = (
+    Path("/habitat-data-collector/outputs/dualmap_authoring"),
     Path("/datasets/habitat-data-collector/outputs/dualmap_authoring"),
+)
+_DEFAULT_MULTI_FLOOR_ROOTS = (
+    Path("/habitat-data-collector/outputs/dualmap_multifloor"),
+    Path("/datasets/habitat-data-collector/outputs/dualmap_multifloor"),
 )
 
 
@@ -56,6 +66,24 @@ def hm3d_scenes_dir() -> Path:
 def hm3d_scene_root() -> Path:
     """Return the canonical HM3D v0.2 ``hm3d`` tree."""
     return hm3d_scenes_dir() / "hm3d"
+
+
+def ycb_multi_floor_root() -> Path:
+    """Return the multi-storey layout mount.
+
+    A SEPARATE dataset from the 15-scene authoring root, not a subset of it:
+    `scripts/make_multifloor_dataset.py` re-plans the cross-anchor layout of
+    five multi-storey scenes so that EVERY object changes storey. The
+    `mf5_*` presets read it, and until now they hard-coded the /datasets
+    spelling, which stopped existing when the mount moved.
+    """
+    configured = _configured_path(("OSG_YCB_MULTI_FLOOR_ROOT", "YCB_MULTI_FLOOR_ROOT"))
+    if configured is not None:
+        return configured
+    for candidate in _DEFAULT_MULTI_FLOOR_ROOTS:
+        if candidate.is_dir():
+            return candidate
+    return _DEFAULT_MULTI_FLOOR_ROOTS[0]
 
 
 def ycb_authoring_root() -> Path:

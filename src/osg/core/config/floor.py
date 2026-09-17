@@ -95,7 +95,14 @@ class FloorConfig:
     # ASCENT's gate: only reason about storeys when the best frontier left on
     # this floor is further away than this.
     near_frontier_m: float = 4.0
-    # ASCENT's T/10 -- stops the agent oscillating between floors.
+    # Here we set a minimum interval between floor switches, to stop the agent
+    # oscillating between floors. NOT inherited from ASCENT: its reference
+    # implementation gates switching on events, not on time -- when a floor
+    # runs out of frontiers it is marked explored and the agent leaves
+    # (`ascent_policy.py:656-670`), with no interval guard anywhere in
+    # `relative_work/ascent/ascent/`. The "T/10" this comment used to cite is
+    # a related-work note about the ASCENT PAPER (docs/MULTI_FLOOR.md:152),
+    # not about the code we transcribe.
     switch_min_interval: int = 50
     # MFNP's two free guards: too early the current floor is barely mapped, too
     # late there is no budget left to recover from a wrong choice.
@@ -202,6 +209,17 @@ class FloorConfig:
     # A continuation flight, found from a landing, is half a storey rather than
     # a whole one; `find_flights` is asked for a smaller span when relinking.
     flight_relink_span_m: float = 0.5
+    # `find_flights` keeps cells within `new_level_m` of the floor, and that is
+    # a constant. On 00800 the storeys are 3.0 m apart and the ramp pasted
+    # from the ASCENT map spans all of it, so the flight the carrot follows
+    # stopped 1.6 m up (measured, outputs/mf5_pass2_v13: the ascent stalled at
+    # +1.97 m and the descent at -1.51 m, both at the end of the truncated
+    # flight, and the depth-ray fallback then drove the agent into the
+    # balustrade for the rest of the 200-step budget). With this on, the span
+    # asked of `find_flights` is the gap to the nearest OTHER known level when
+    # there is one -- the prior map seeds every storey's height at episode
+    # start -- and `new_level_m` otherwise.
+    flight_span_from_levels: bool = False
     # How close counts as the same failed place.
     portal_failure_radius_m: float = 1.5
     use_target_evidence: bool = True

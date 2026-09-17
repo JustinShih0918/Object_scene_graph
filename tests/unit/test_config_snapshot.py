@@ -23,9 +23,56 @@ import json
 from pathlib import Path
 
 from osg.core.config import OSGConfig
+from osg.core.paths import (
+    collector_data_root,
+    hm3d_scene_root,
+    hm3d_scenes_dir,
+    ycb_authoring_root,
+    ycb_multi_floor_root,
+)
 
 SNAPSHOT = Path(__file__).parent / "golden" / "config_snapshot.json"
 EXPERIMENT_SNAPSHOT = Path(__file__).parent / "golden" / "experiment_fingerprints.json"
+
+
+def _env_root_tokens() -> list:
+    """`(resolved path, placeholder)` for every root that comes from the mount.
+
+    Four defaults -- `ycb.data_root`, `ycb.hm3d_root`, `ycb.layout_root` and
+    `eval.scenes_dir` -- are resolved from environment variables at import
+    time, so hashing them verbatim pins THIS CONTAINER'S bind mounts rather
+    than a calibrated constant. That is not a hypothetical: the mount moved
+    from `/datasets/habitat-data-collector` to `/habitat-data-collector`
+    (docker/compose.yaml) and both goldens failed on all 85 presets with no
+    default having changed at all.
+
+    Substituting a placeholder keeps what the snapshot is FOR -- a number, or
+    a path's structure below the mount, cannot move unnoticed -- while letting
+    the file mean the same thing on two machines. Longest first, because
+    `hm3d_scene_root` contains `hm3d_scenes_dir` contains `collector_data_root`.
+    """
+    tokens = [
+        (str(hm3d_scene_root()), "<HM3D_SCENE_ROOT>"),
+        (str(hm3d_scenes_dir()), "<HM3D_SCENES_DIR>"),
+        (str(ycb_multi_floor_root()), "<YCB_MULTI_FLOOR_ROOT>"),
+        (str(ycb_authoring_root()), "<YCB_AUTHORING_ROOT>"),
+        (str(collector_data_root()), "<DATA_ROOT>"),
+    ]
+    return sorted(tokens, key=lambda pair: len(pair[0]), reverse=True)
+
+
+def normalise_env_paths(value):
+    """Replace mounted-root prefixes with placeholders, recursively."""
+    if isinstance(value, str):
+        for resolved, token in _env_root_tokens():
+            if resolved and resolved in value:
+                value = value.replace(resolved, token)
+        return value
+    if isinstance(value, list):
+        return [normalise_env_paths(item) for item in value]
+    if isinstance(value, dict):
+        return {key: normalise_env_paths(item) for key, item in value.items()}
+    return value
 
 
 def flatten(obj, prefix: str = "") -> dict:
@@ -41,9 +88,9 @@ def flatten(obj, prefix: str = "") -> dict:
         if dataclasses.is_dataclass(value):
             out.update(flatten(value, key + "."))
         elif isinstance(value, tuple):
-            out[key] = list(value)
+            out[key] = normalise_env_paths(list(value))
         else:
-            out[key] = value
+            out[key] = normalise_env_paths(value)
     return out
 
 
@@ -63,7 +110,15 @@ def test_no_calibrated_default_has_moved():
     assert not added, f"config fields added without updating the snapshot: {added}"
 
 
-def test_every_experiment_preset_composes_and_matches_its_fingerprint():
+def experiment_fingerprints() -> dict:
+    """`{preset: sha256}` over every composed experiment.
+
+    A function rather than a test body because the regenerator below has to
+    produce exactly what the test compares against. It did not, once: the
+    `__main__` block wrote only `config_snapshot.json`, so the documented
+    "run this to regenerate" left this golden stale and the next unrelated
+    change inherited a red test it had not caused.
+    """
     from hydra import compose, initialize_config_dir
     from omegaconf import OmegaConf
 
@@ -71,16 +126,22 @@ def test_every_experiment_preset_composes_and_matches_its_fingerprint():
 
     register_configs()
     root = Path(__file__).resolve().parents[2] / "configs"
-    actual = {}
+    out = {}
     with initialize_config_dir(config_dir=str(root), version_base="1.3"):
         for path in sorted((root / "experiment").glob("*.yaml")):
             cfg = compose(config_name="config", overrides=[f"+experiment={path.stem}"])
             encoded = json.dumps(
-                OmegaConf.to_container(cfg, resolve=False),
+                normalise_env_paths(OmegaConf.to_container(cfg, resolve=False)),
                 sort_keys=True, separators=(",", ":"),
             ).encode("utf-8")
-            actual[path.stem] = hashlib.sha256(encoded).hexdigest()
-    assert actual == json.loads(EXPERIMENT_SNAPSHOT.read_text(encoding="utf-8"))
+            out[path.stem] = hashlib.sha256(encoded).hexdigest()
+    return out
+
+
+def test_every_experiment_preset_composes_and_matches_its_fingerprint():
+    assert experiment_fingerprints() == json.loads(
+        EXPERIMENT_SNAPSHOT.read_text(encoding="utf-8")
+    )
 
 
 def test_every_field_is_reachable_by_its_dotted_name():
@@ -101,6 +162,11 @@ if __name__ == "__main__":  # regenerate deliberately, never automatically
         encoding="utf-8",
     )
     print(f"wrote {SNAPSHOT}")
+    EXPERIMENT_SNAPSHOT.write_text(
+        json.dumps(experiment_fingerprints(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(f"wrote {EXPERIMENT_SNAPSHOT}")
 
 
 # ------------------------------------------------- the best-known config (M)

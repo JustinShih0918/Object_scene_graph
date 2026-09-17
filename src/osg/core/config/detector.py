@@ -48,6 +48,15 @@ class DetectorConfig:
     # GroundingDINO, the detector half of ASCENT's stair fusion
     # (`map_controller.py:700-704, 782-786`): caption "stair .", logit >= 0.60.
     gdino_url: str = "http://localhost:13184/gdino"
+    # ASCENT's non-COCO branch (`map_controller.py:715-719`): when the query is
+    # not a COCO class, ask GroundingDINO for it BY NAME instead of D-FINE.
+    # Empty = off, which is what every HM3D arm was measured with (their targets
+    # are all COCO, so the branch never fired in the reference run either).
+    # Set it to the gdino endpoint for benchmarks whose targets COCO cannot
+    # name -- YCB objects like "cracker box", where the arm otherwise detects
+    # the target 0 times in 91 in-view frames and never STOPs.
+    gdino_target_url: str = ""
+    gdino_target_conf: float = 0.35
     gdino_stair_conf: float = 0.60
     # Raise `PerceptionUnavailable` on any served-model failure instead of
     # returning a neutral value. The ascentnav preset turns this on.
