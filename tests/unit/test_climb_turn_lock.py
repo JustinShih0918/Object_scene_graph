@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from osg.agent.nav_agent import NavAgent
+from osg.agent.climb import ClimbPolicy
 
 from .test_climb import make_cfg
 
@@ -24,7 +24,7 @@ def _agent(deadband=15.0, release=30.0, stuck_eps=0.0, cap=0, last_action="turn_
     cfg.agent.climb_turn_suppress_max = cap
     return SimpleNamespace(cfg=cfg, stats={}, _climb_turn_locked=False,
                            _climb_suppressed_run=0, _climb_last_xy=None,
-                           _last_action=last_action)
+                           nav=SimpleNamespace(_last_action=last_action))
 
 
 def _frame(heading_deg):
@@ -37,7 +37,7 @@ def _frame(heading_deg):
 
 
 def _lock(agent, heading_deg, goal, action):
-    return NavAgent._climb_turn_lock(
+    return ClimbPolicy._climb_turn_lock(
         agent, _frame(heading_deg), np.zeros(2), np.asarray(goal, float), action)
 
 
@@ -133,8 +133,7 @@ def _aligner(limit=20.0, aligned=False, turns=0, axis=(0.0, 1.0), flight=True):
 
 
 def _align(agent, heading_deg):
-    from osg.agent.nav_agent import NavAgent as _NA
-    return _NA._climb_align_action(agent, _frame(heading_deg), np.zeros(2))
+    return ClimbPolicy._climb_align_action(agent, _frame(heading_deg), np.zeros(2))
 
 
 def test_it_turns_in_place_until_it_faces_the_flight():

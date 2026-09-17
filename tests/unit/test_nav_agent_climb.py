@@ -53,10 +53,10 @@ def test_on_the_staircase_is_not_off_it():
     import numpy as np
 
     agent = _climb_agent()
-    agent._climb_cells_xy = np.array([[1.0, 0.0], [1.2, 0.0], [1.4, 0.0]])
-    assert not agent._left_the_stairs(np.array([1.1, 0.0]))
-    assert not agent._left_the_stairs(np.array([1.0, 0.4]))
-    assert agent._left_the_stairs(np.array([1.0, 2.0]))
+    agent.climb._climb_cells_xy = np.array([[1.0, 0.0], [1.2, 0.0], [1.4, 0.0]])
+    assert not agent.climb._left_the_stairs(np.array([1.1, 0.0]))
+    assert not agent.climb._left_the_stairs(np.array([1.0, 0.4]))
+    assert agent.climb._left_the_stairs(np.array([1.0, 2.0]))
 
 
 def test_no_recorded_cells_does_not_trap_the_climb():
@@ -65,8 +65,8 @@ def test_no_recorded_cells_does_not_trap_the_climb():
     import numpy as np
 
     agent = _climb_agent()
-    agent._climb_cells_xy = None
-    assert agent._left_the_stairs(np.array([0.0, 0.0]))
+    agent.climb._climb_cells_xy = None
+    assert agent.climb._left_the_stairs(np.array([0.0, 0.0]))
 
 
 def test_cells_are_stored_in_world_coordinates():
@@ -86,13 +86,13 @@ def test_cells_are_stored_in_world_coordinates():
 
     f = Frontier(id=0, centroid_xy=layer.costmap.grid_to_world(np.array([10.0, 10.0])),
                  cells=cells, size=2, kind="stair_up")
-    agent._climb_cells_xy = layer.costmap.grid_to_world(f.cells.astype(float))
+    agent.climb._climb_cells_xy = layer.costmap.grid_to_world(f.cells.astype(float))
 
     # Grow the map: the same world points now live at different indices.
     layer.costmap.ensure_contains(np.array([200.0, 200.0]))
     after = layer.costmap.grid_to_world(cells.astype(float))
     assert not np.allclose(before, after), "the grow did not shift the origin"
-    assert np.allclose(agent._climb_cells_xy, before), "stored cells drifted with the map"
+    assert np.allclose(agent.climb._climb_cells_xy, before), "stored cells drifted with the map"
 
 
 def _stairs_agent(**mapping):

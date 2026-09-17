@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from osg.agent.nav_agent import NavAgent
+from osg.agent.climb import ClimbPolicy
 from osg.mapping.costmap import Costmap2D
 
 from .test_climb import make_cfg
@@ -50,7 +50,7 @@ def _agent(hold_m):
         _climb_direction=1, _flight_carrot_xy=None, _flight_carrot_h=0.0,
         _climb_blocked_carrots=[],
     )
-    agent._hold_flight_carrot = lambda xy, h, i: NavAgent._hold_flight_carrot(agent, xy, h, i)
+    agent._hold_flight_carrot = lambda xy, h, i: ClimbPolicy._hold_flight_carrot(agent, xy, h, i)
     return agent
 
 
@@ -63,7 +63,7 @@ def _carrot(agent, x, standing=None):
     standing = SLOPE * x if standing is None else standing
     frame = SimpleNamespace(camera_position=np.array(
         [x, standing + agent.cfg.agent.camera_height, 0.0]))
-    return NavAgent._flight_carrot(agent, frame, np.array([x, 0.0]))
+    return ClimbPolicy._flight_carrot(agent, frame, np.array([x, 0.0]))
 
 
 def test_without_the_hold_the_goal_moves_every_step():

@@ -198,32 +198,32 @@ def _run_variant(env, cfg, pointnav, foot, top, path3d, variant, max_steps, plac
     agent._goal_floor_y_cache = float(top[HEIGHT])
 
     ended = {}
-    real_end = agent._end_climb
+    real_end = agent.climb._end_climb
     def _end(ok, why):
         ended["ok"], ended["why"] = bool(ok), str(why)
         real_end(ok, why)
-    agent._end_climb = _end
+    agent.climb._end_climb = _end
 
     # What the carrot actually picks, step by step: where the agent stands,
     # how high, where it is sent, and how far that is. The ramps and the true
     # heights differ ONLY in this choice, so this is where the difference is.
     trace = []
-    real_carrot = agent._flight_carrot
+    real_carrot = agent.climb._flight_carrot
     def _traced(fr, axy):
         goal = real_carrot(fr, axy)
         standing = float(fr.camera_position[HEIGHT]) - float(cfg.agent.camera_height)
         fl = agent.floors.pursuit_flight
         n_band = 0
         if fl is not None and fl.n_cells:
-            ahead = (np.asarray(fl.heights, float) - standing) * (1.0 if agent._climb_direction >= 0 else -1.0)
+            ahead = (np.asarray(fl.heights, float) - standing) * (1.0 if agent.climb._climb_direction >= 0 else -1.0)
             n_band = int(((ahead >= 0.35) & (ahead <= 1.0)).sum())
         trace.append((round(standing, 2),
                       None if goal is None else round(float(np.linalg.norm(goal - axy)), 2),
                       n_band))
         return goal
-    agent._flight_carrot = _traced
+    agent.climb._flight_carrot = _traced
 
-    agent._start_climb(frame)
+    agent.climb._start_climb(frame)
     ys = [float(sim.get_agent_state().position[HEIGHT])]
     actions = []
     for _ in range(max_steps):
@@ -239,7 +239,7 @@ def _run_variant(env, cfg, pointnav, foot, top, path3d, variant, max_steps, plac
             agent.pointnav.observe(frame)
             agent._agent_xy = frame.camera_position[PLANE_IDX].copy()
             agent.floors.observe(frame, agent.step_count)
-            action = agent._do_climb(frame)
+            action = agent.climb._do_climb(frame)
         if agent.state is not State.CLIMB or action is None or action == "stop":
             break
         actions.append(action)
@@ -247,10 +247,10 @@ def _run_variant(env, cfg, pointnav, foot, top, path3d, variant, max_steps, plac
         ys.append(float(sim.get_agent_state().position[HEIGHT]))
     ys = np.asarray(ys)
     st = agent.stats
-    sign = 1.0 if agent._climb_direction >= 0 else -1.0
+    sign = 1.0 if agent.climb._climb_direction >= 0 else -1.0
     prog = (ys - ys[0]) * sign                    # progress IN the climb direction
     return {
-        "variant": variant, "direction": int(agent._climb_direction),
+        "variant": variant, "direction": int(agent.climb._climb_direction),
         "steps": len(ys) - 1, "dy_max": round(float(sign * prog.max()), 3),
         "y_end": round(float(ys[-1]), 3), "fell_back_m": round(float(prog.max() - prog[-1]), 3),
         "end": ended, "carrot_flight": st.get("climb_flight_carrot", 0),

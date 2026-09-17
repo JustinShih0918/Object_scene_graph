@@ -70,17 +70,17 @@ def test_arriving_at_the_stair_goal_starts_a_climb(intrinsics):
     agent = _agent()
     _pursuit(agent, goal_xy=(1.0, 2.0))
     frame = _frame(intrinsics, (1.2, 2.0), y=1.5)
-    assert agent._at_the_stairs(frame)
-    agent._start_climb(frame)
+    assert agent.climb._at_the_stairs(frame)
+    agent.climb._start_climb(frame)
     assert agent.state is State.CLIMB
     assert agent.stats["climb_start"] == 1
-    assert agent._climb_direction == +1
+    assert agent.climb._climb_direction == +1
 
 
 def test_far_from_the_goal_and_off_any_stair_evidence_is_not_a_climb(intrinsics):
     agent = _agent()
     _pursuit(agent, goal_xy=(1.0, 2.0))
-    assert not agent._at_the_stairs(_frame(intrinsics, (5.0, 5.0), y=1.5))
+    assert not agent.climb._at_the_stairs(_frame(intrinsics, (5.0, 5.0), y=1.5))
 
 
 def test_the_climb_is_off_by_default(intrinsics):
@@ -93,8 +93,8 @@ def test_a_descent_is_recognised_from_the_target_height(intrinsics):
     agent.floors.estimator.current = UPPER
     agent.floors.stack.current_id = UPPER
     _pursuit(agent, goal_xy=(1.0, 2.0), target_y=0.0)
-    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
-    assert agent._climb_direction == -1
+    agent.climb._start_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
+    assert agent.climb._climb_direction == -1
 
 
 # ------------------------------------------------------------------ body
@@ -107,20 +107,20 @@ def test_a_descent_tilts_the_camera_down_once_first(intrinsics):
     agent.floors.stack.current_id = UPPER
     _pursuit(agent, goal_xy=(1.0, 2.0), target_y=0.0)
     frame = _frame(intrinsics, (1.0, 2.0), y=4.4)
-    agent._start_climb(frame)
-    assert agent._do_climb(frame) == "look_down"
-    assert agent._climb_pitched
-    assert agent._do_climb(frame) != "look_down"
+    agent.climb._start_climb(frame)
+    assert agent.climb._do_climb(frame) == "look_down"
+    assert agent.climb._climb_pitched
+    assert agent.climb._do_climb(frame) != "look_down"
 
 
 def test_the_climb_ends_when_a_new_storey_is_committed(intrinsics):
     agent = _agent()
     _pursuit(agent)
     frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
-    agent._start_climb(frame)
+    agent.climb._start_climb(frame)
     # The estimator commits the upper floor, as observe() does on the stairs.
     agent.floors.stack.current_id = UPPER
-    agent._do_climb(_frame(intrinsics, (1.0, 4.0), y=4.4))
+    agent.climb._do_climb(_frame(intrinsics, (1.0, 4.0), y=4.4))
     assert agent.state is State.EXPLORE
     assert agent.stats.get("climb_ok") == 1
     assert agent.stats.get("climb_end_new_floor") == 1
@@ -133,11 +133,11 @@ def test_the_climb_ends_on_budget_and_records_the_failure(intrinsics):
     agent.cfg.floor.portal_failure_memory = True
     _pursuit(agent, goal_xy=(1.0, 2.0))
     frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
-    agent._start_climb(frame)
+    agent.climb._start_climb(frame)
     for _ in range(25):
         if agent.state is not State.CLIMB:
             break
-        agent._do_climb(frame)
+        agent.climb._do_climb(frame)
     assert agent.state is State.EXPLORE
     assert agent.stats.get("climb_fail") == 1
     assert agent.stats.get("climb_end_budget") == 1
@@ -150,9 +150,9 @@ def test_height_gained_counts_even_if_the_pursuit_was_ended_elsewhere(intrinsics
     agent = _agent()
     agent.cfg.floor.new_level_m = 1.8
     _pursuit(agent)
-    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
+    agent.climb._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
     agent.floors.pursuing = False
-    agent._do_climb(_frame(intrinsics, (1.0, 3.0), y=1.5 + 1.2))
+    agent.climb._do_climb(_frame(intrinsics, (1.0, 3.0), y=1.5 + 1.2))
     assert agent.stats.get("climb_ok") == 1
     assert agent.stats.get("climb_end_height") == 1
 
@@ -163,8 +163,8 @@ def test_the_carrot_is_what_moves_the_agent(intrinsics):
     agent = _agent()
     _pursuit(agent)
     frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
-    agent._start_climb(frame)
-    action = agent._do_climb(frame)
+    agent.climb._start_climb(frame)
+    action = agent.climb._do_climb(frame)
     assert action in ("move_forward", "turn_left", "turn_right")
 
 
@@ -265,7 +265,7 @@ def test_the_reach_is_never_inside_the_movers_own_stop_radius(intrinsics):
     agent.cfg.agent.stair_reach_m = 0.6
     agent.pointnav = SimpleNamespace(stop_radius=0.9)
     _pursuit(agent, goal_xy=(1.0, 2.0))
-    assert agent._at_the_stairs(_frame(intrinsics, (1.87, 2.0), y=1.5))
+    assert agent.climb._at_the_stairs(_frame(intrinsics, (1.87, 2.0), y=1.5))
 
 
 def test_a_pursuit_in_flight_is_not_reissued(intrinsics):
@@ -303,8 +303,8 @@ def test_ascending_aims_at_the_farthest_stair_cell_in_reach(intrinsics):
     agent.cfg.agent.climb_cell_carrot = True
     _stamp(agent, [(1.5, 2.0), (2.0, 2.0), (2.5, 2.0), (9.0, 9.0)])
     _pursuit(agent, goal_xy=(1.0, 2.0))
-    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
-    goal = agent._stair_cell_carrot(np.array([1.0, 2.0]))
+    agent.climb._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
+    goal = agent.climb._stair_cell_carrot(np.array([1.0, 2.0]))
     assert goal is not None
     assert abs(goal[0] - 2.5) < 0.06 and abs(goal[1] - 2.0) < 0.06, "the 9 m cell is out of reach"
 
@@ -316,8 +316,8 @@ def test_descending_aims_at_the_nearest_lip(intrinsics):
     agent.floors.stack.current_id = UPPER
     _stamp(agent, [(1.5, 2.0), (2.5, 2.0)], kind="down")
     _pursuit(agent, goal_xy=(1.0, 2.0), target_y=0.0)
-    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
-    goal = agent._stair_cell_carrot(np.array([1.0, 2.0]))
+    agent.climb._start_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
+    goal = agent.climb._stair_cell_carrot(np.array([1.0, 2.0]))
     assert goal is not None and abs(goal[0] - 1.5) < 0.06
 
 
@@ -325,8 +325,8 @@ def test_without_stair_cells_the_depth_ray_is_the_fallback(intrinsics):
     agent = _agent()
     agent.cfg.agent.climb_cell_carrot = True
     _pursuit(agent)
-    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
-    assert agent._stair_cell_carrot(np.array([1.0, 2.0])) is None
+    agent.climb._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
+    assert agent.climb._stair_cell_carrot(np.array([1.0, 2.0])) is None
 
 
 def test_a_run_of_blocked_forwards_becomes_a_turn(intrinsics):
@@ -340,8 +340,8 @@ def test_a_run_of_blocked_forwards_becomes_a_turn(intrinsics):
     )
     _pursuit(agent)
     frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
-    agent._start_climb(frame)
-    actions = [agent._carrot_action(frame, np.array([1.0, 2.0])) for _ in range(3)]
+    agent.climb._start_climb(frame)
+    actions = [agent.climb._carrot_action(frame, np.array([1.0, 2.0])) for _ in range(3)]
     assert actions[:2] == ["move_forward", "move_forward"]
     assert actions[2] == "turn_left"
     assert agent.stats.get("climb_blocked_turn") == 1
@@ -366,8 +366,8 @@ def test_the_flight_carrot_aims_at_the_next_tread(intrinsics):
     _pursuit(agent, goal_xy=(1.0, 2.0))
     agent.floors.pursuit_flight = _flight(agent, heights, xs)
     frame = _frame(intrinsics, (1.0, 2.0), y=0.88)  # standing at floor level
-    agent._start_climb(frame)
-    goal = agent._flight_carrot(frame, np.array([1.0, 2.0]))
+    agent.climb._start_climb(frame)
+    goal = agent.climb._flight_carrot(frame, np.array([1.0, 2.0]))
     assert goal is not None
     # 0.35-1.0 m above standing height 0.0: treads at 0.51..1.02; nearest is x=1.6
     assert abs(goal[0] - 1.6) < 0.06
@@ -383,8 +383,8 @@ def test_at_the_top_the_highest_tread_is_the_goal(intrinsics):
     _pursuit(agent, goal_xy=(1.0, 2.0))
     agent.floors.pursuit_flight = _flight(agent, heights, xs)
     frame = _frame(intrinsics, (1.3, 2.0), y=0.88 + 0.34)  # standing on the second tread
-    agent._start_climb(frame)
-    goal = agent._flight_carrot(frame, np.array([1.3, 2.0]))
+    agent.climb._start_climb(frame)
+    goal = agent.climb._flight_carrot(frame, np.array([1.3, 2.0]))
     assert goal is not None and abs(goal[0] - 1.6) < 0.06
     assert agent.stats.get("climb_flight_carrot_top") == 1
 
@@ -394,8 +394,8 @@ def test_without_a_flight_the_carrot_declines(intrinsics):
     agent.cfg.agent.climb_flight_carrot = True
     _pursuit(agent)
     frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
-    agent._start_climb(frame)
-    assert agent._flight_carrot(frame, np.array([1.0, 2.0])) is None
+    agent.climb._start_climb(frame)
+    assert agent.climb._flight_carrot(frame, np.array([1.0, 2.0])) is None
 
 
 # ------------------------------------------- v16: through the half-landing
@@ -412,7 +412,7 @@ def test_the_climb_picks_up_the_next_flight_from_a_landing(intrinsics):
     agent.floors.stack.current_id = UPPER
     _pursuit(agent, goal_xy=(1.0, 2.0), target_y=0.0)
     frame = _frame(intrinsics, (1.0, 2.0), y=4.4)
-    agent._start_climb(frame)
+    agent.climb._start_climb(frame)
 
     # Its only tread is ABOVE the agent: descending, there is nothing ahead on
     # this flight, which is what standing on the landing at its foot looks like.
@@ -421,9 +421,9 @@ def test_the_climb_picks_up_the_next_flight_from_a_landing(intrinsics):
     nxt = Flight(kind="down", cells_rc=np.array([[20, 20]]), heights=np.array([1.0]),
                  foot_xy=np.array([1.4, 2.0]), top_xy=np.array([2.0, 2.0]), span_m=0.6)
     agent.floors.pursuit_flight = finished
-    agent._relink_flight = lambda f, xy: (setattr(agent.floors, "pursuit_flight", nxt), True)[1]
+    agent.climb._relink_flight = lambda f, xy: (setattr(agent.floors, "pursuit_flight", nxt), True)[1]
 
-    agent._do_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
+    agent.climb._do_climb(_frame(intrinsics, (1.0, 2.0), y=4.4))
     assert agent.floors.pursuit_flight is nxt
     assert agent.stats.get("climb_relinked") == 1
 
@@ -442,9 +442,9 @@ def test_levels_are_suppressed_for_the_whole_climb_not_just_on_treads(intrinsics
     _pursuit(agent)
     frame = _frame(intrinsics, (1.0, 2.0), y=1.5)
     assert not agent.floors.climbing
-    agent._start_climb(frame)
+    agent.climb._start_climb(frame)
     assert agent.floors.climbing, "the whole climb suppresses, not only the treads"
-    agent._end_climb(False, "budget")
+    agent.climb._end_climb(False, "budget")
     assert not agent.floors.climbing
 
 
@@ -455,7 +455,7 @@ def test_a_storey_of_height_ends_the_climb_when_levels_are_suppressed(intrinsics
     agent.cfg.floor.no_level_on_flight = True
     agent.cfg.floor.new_level_m = 1.8
     _pursuit(agent)
-    agent._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
-    agent._do_climb(_frame(intrinsics, (1.0, 4.0), y=1.5 + 1.9))
+    agent.climb._start_climb(_frame(intrinsics, (1.0, 2.0), y=1.5))
+    agent.climb._do_climb(_frame(intrinsics, (1.0, 4.0), y=1.5 + 1.9))
     assert agent.stats.get("climb_ok") == 1
     assert agent.stats.get("climb_end_storey_of_height") == 1

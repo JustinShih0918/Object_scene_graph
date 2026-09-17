@@ -231,10 +231,10 @@ def build_episode_record(
         # Per-step trace, only when debug frames are on: ~20 numbers a step,
         # which would bloat every normal run's episodes.jsonl. It is what the
         # S49/S50 detector-recall and framing measurements were built from.
-        # Where the climb's steps went (agent/nav_agent._traced_climb).
-        **({"climb_trace": agent._climb_trace}
+        # Where the climb's steps went (agent/climb.py, ClimbPolicy._traced_climb).
+        **({"climb_trace": agent.climb_trace}
            if (cfg.eval.debug_frames or getattr(cfg.eval, "behaviour_log", False))
-           and getattr(agent, "_climb_trace", None) else {}),
+           and getattr(agent, "climb_trace", None) else {}),
         **({"step_trace": agent.step_trace}
            if (cfg.eval.debug_frames or getattr(cfg.eval, "behaviour_log", False))
            and hasattr(agent, "step_trace") else {}),
