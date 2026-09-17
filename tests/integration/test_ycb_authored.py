@@ -1,4 +1,12 @@
-"""Integration coverage for the mounted authored-YCB staging dataset."""
+"""Integration coverage for the mounted authored-YCB staging dataset.
+
+The authored corpus is regenerated from time to time, so nothing here may pin
+which scenes it contains: five of the fifteen scenes this file was written
+against are gone and five others have appeared. What is worth asserting is the
+relationship between the corpus and the loader -- discovery returns exactly the
+scenes that carry a complete layout -- and that staging one of them is
+deterministic and places the objects where the layout says.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,7 +28,25 @@ def _mounted() -> bool:
     return DATA_ROOT.is_dir() and LAYOUT_ROOT.is_dir()
 
 
-def _config():
+def _authored_scenes() -> list[str]:
+    """Scene directories on the mount that carry a static layout."""
+    return sorted(
+        path.name
+        for path in LAYOUT_ROOT.iterdir()
+        if (path / "static_scene_config.json").is_file()
+    )
+
+
+def _smoke_scene() -> str:
+    """The original deterministic scene when it is mounted, else any authored
+    one -- what this test checks is the loader, not the scene."""
+    scenes = _authored_scenes()
+    if not scenes:
+        pytest.skip(f"no authored scenes under {LAYOUT_ROOT}")
+    return "00829-QaLdnwvtxbs" if "00829-QaLdnwvtxbs" in scenes else scenes[0]
+
+
+def _config(scene: str):
     from hydra import compose, initialize_config_dir
 
     from osg.core.config import register_configs
@@ -31,10 +57,7 @@ def _config():
             config_name="config",
             overrides=[
                 "+experiment=ycb_authored_nav",
-                # The mounted authoring set now contains 15 complete scenes;
-                # keep this six-episode smoke test focused on its original
-                # deterministic scene.
-                "ycb.scenes=[00829-QaLdnwvtxbs]",
+                f"ycb.scenes=[{scene}]",
                 "eval.save_viz=false",
                 "eval.debug_frames=false",
             ],
@@ -56,38 +79,26 @@ def test_current_wildcard_discovery_selects_complete_scene():
         target_labels=YCB_TARGET_LABELS,
         hm3d_root=DATA_ROOT / "versioned_data/hm3d-0.2/hm3d",
     )
-    assert len(found.layouts) == 15
-    assert {layout.scene_name for layout in found.layouts} == {
-        "00808-y9hTuugGdiq",
-        "00810-CrMo8WxCyVb",
-        "00813-svBbv1Pavdk",
-        "00820-mL8ThkuaVTM",
-        "00821-eF36g7L6Z9M",
-        "00823-7MXmsvcQjpJ",
-        "00824-Dd4bFSTQ8gi",
-        "00839-zt1RVoi7PcG",
-        "00844-q5QZSEeHe5g",
-        "00848-ziup5kvtCCR",
-        "00853-5cdEh9F2hJL",
-        "00871-VBzV5z6i1WS",
-        "00876-mv2HUxq3B53",
-        "00880-Nfvxx8J5NCo",
-        "00891-cvZr5TUy5C5",
-    }
+    # The invariant is loader-versus-mount, not a list of scene names: a
+    # re-authored corpus must move this assertion, never break it.
+    expected = set(_authored_scenes())
+    assert expected, f"no authored scenes under {LAYOUT_ROOT}"
+    assert {layout.scene_name for layout in found.layouts} == expected
+    assert len(found.layouts) == len(expected)
 
 
 @pytest.mark.timeout(600)
-def test_six_deterministic_episodes_and_reset_injection():
+def test_authored_episodes_are_deterministic_and_injected():
     if not _mounted():
         pytest.skip("collector data is not mounted")
     from osg.sim.ycb_env import YCBAuthoredNavEnv, prepare_ycb_benchmark
 
-    cfg = _config()
+    cfg = _config(_smoke_scene())
     prepared = prepare_ycb_benchmark(cfg, force=True)
     regenerated = prepare_ycb_benchmark(cfg, force=True)
     assert regenerated.manifests == prepared.manifests
     episodes = [item for manifest in prepared.manifests for item in manifest["episodes"]]
-    assert len(episodes) == 6
+    assert episodes, "staging produced no episodes"
     assert all(item["start"]["initial_geodesic_distance"] >= 3.0 for item in episodes)
     assert all(item["viewpoints"] for item in episodes)
     assert all(
@@ -102,7 +113,7 @@ def test_six_deterministic_episodes_and_reset_injection():
     layout = env._layout_by_key[(authored["scene"], authored["layout_id"])]
     expected = {obj.semantic_id: np.asarray(obj.translation) for obj in layout.objects}
     object_manager = env.env.sim.get_rigid_object_manager()
-    assert object_manager.get_num_objects() == 6
+    assert object_manager.get_num_objects() == len(layout.objects)
     objects = env._active_objects
     actual = {
         int(obj.semantic_id): np.asarray(obj.translation, dtype=float)
