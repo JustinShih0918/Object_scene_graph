@@ -14,6 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+
 from .record import authored_episode_metadata, episode_tag, safe_tag
 
 
@@ -23,6 +25,125 @@ def authored_scene(episode) -> str:
 
 def _map_path(root: str, scene: str) -> Path:
     return Path(str(root)) / f"{safe_tag(scene)}.json"
+
+
+def _episode_map_path(root: str, scene: str, episode) -> Path:
+    return Path(str(root)) / f"{safe_tag(scene)}__{safe_tag(episode_tag(episode))}.json"
+
+
+def _scene_map_paths(root: str, scene: str) -> list:
+    """Every snapshot for this scene: the best-of file and any per-episode
+    ones, in a stable order so a union is reproducible."""
+    base = Path(str(root))
+    found = [p for p in sorted(base.glob(f"{safe_tag(scene)}__*.json"))]
+    single = _map_path(root, scene)
+    if single.exists():
+        found.insert(0, single)
+    return found
+
+
+def storeys_from_snapshots(paths, gap_m: float = 0.9) -> list:
+    """The scene's storeys, clustered out of the obstacle snapshots.
+
+    Every mapped floor contributes the height its mapping agent stood at,
+    weighted by how much of it was explored, and floors closer together than
+    `gap_m` are ONE storey. That last part is the whole point: ASCENT allocates
+    a floor per staircase it notices, so one storey arrives as several -- on
+    00808 the upper one shows up at 2.86, 3.07, 3.11 and 3.26 across eight
+    snapshots, and a landing shows up at 0.86. Averaging the cluster by
+    explored area puts the storey where the agent actually walked, rather than
+    at whichever fragment happened to be read first.
+    """
+    from navigation.mapping.map_store import floor_summaries, load_obstacle_maps
+
+    seen = []
+    for path in paths:
+        for floor in floor_summaries(load_obstacle_maps(path)):
+            if floor["explored_cells"] <= 0 or floor.get("floor_y") is None:
+                continue
+            seen.append((float(floor["floor_y"]), int(floor["explored_cells"])))
+    if not seen:
+        return []
+    seen.sort()
+    clusters, current = [], [seen[0]]
+    for height, cells in seen[1:]:
+        if height - current[-1][0] <= float(gap_m):
+            current.append((height, cells))
+        else:
+            clusters.append(current)
+            current = [(height, cells)]
+    clusters.append(current)
+    out = []
+    for cluster in clusters:
+        weight = sum(c for _, c in cluster) or 1
+        out.append(sum(h * c for h, c in cluster) / weight)
+    return out
+
+
+def _seed_storeys(cfg, stack, paths) -> tuple:
+    """Reconcile the scene-graph prior's storeys with the snapshots'.
+
+    Returns `(added, uncorroborated)`. A storey the snapshots show and the
+    stack lacks is ADDED; a stack layer no storey backs is reported, and the
+    caller leaves it out of the paste. Layers the snapshots DO back are never
+    moved: their rooms, containers and tracks were built at that height.
+
+    Both halves are needed. Measured on 00808, where no single mapping episode
+    visited both storeys: the scene graph kept one that started mid-staircase,
+    so its storeys are 0.06 and 1.03 when the real ones are 0.06 and ~3.0.
+    Adding 3.0 is not enough -- with 1.03 still in the set, the lower storey's
+    stair ramp is written from 0.06 to 1.03, the flight tops out a metre up,
+    and the climb dies there: 7 climbs across 3 episodes, none gaining more
+    than 0.40 m.
+    """
+    if not bool(getattr(cfg.ycb, "seed_storeys_from_obstacle_map", False)):
+        return [], []
+    tol = float(getattr(cfg.ycb, "storey_seed_tol_m", 1.0) or 1.0)
+    storeys = storeys_from_snapshots(paths)
+    if not storeys:
+        return [], []
+    added = []
+    for height in storeys:
+        known = [float(getattr(layer, "floor_y", 0.0)) for layer in stack._layers.values()]
+        if any(abs(height - other) <= tol for other in known):
+            continue
+        key = (max(stack._layers) + 1) if stack._layers else 0
+        stack.set_height(key, height)          # `layer()` creates it
+        added.append(round(height, 3))
+    loose = [
+        int(key) for key, layer in stack._layers.items()
+        if all(abs(float(getattr(layer, "floor_y", 0.0)) - h) > tol for h in storeys)
+    ]
+    return added, loose
+
+
+def _match_floors(stored, keys, heights, tol_m: float = 1.0, strict: bool = False):
+    """Which OSG storey each of a snapshot's floors belongs to.
+
+    BY HEIGHT when the snapshot records one per floor -- `floor_y`, the mean
+    height the mapping agent stood at on that floor. That is the only way a
+    snapshot which mapped ONE storey can be placed on a two-storey stack, and
+    four of the six mapping episodes on 00800 are exactly that.
+
+    Otherwise BY ORDER, which is all an older snapshot allows: the floor list
+    runs bottom storey first and the stack is sorted by height. Order matching
+    a snapshot with a different number of mapped storeys would put a whole
+    floor on the wrong one, so for a union that case yields nothing and is
+    reported instead.
+
+    Returns `(pairs, how)` where `pairs` is [(floor, index into keys)].
+    """
+    if stored and all(f.get("floor_y") is not None for f in stored):
+        pairs = []
+        for floor in stored:
+            gaps = [abs(float(floor["floor_y"]) - h) for h in heights]
+            i = min(range(len(gaps)), key=gaps.__getitem__)
+            if gaps[i] <= tol_m:
+                pairs.append((floor, i))
+        return pairs, "height"
+    if strict and len(stored) != len(keys):
+        return [], "order-mismatch"
+    return [(f, i) for i, f in enumerate(stored[:len(keys)])], "order"
 
 
 def save_obstacle_map_for_scene(cfg, agent, episode) -> Optional[str]:
@@ -40,6 +161,14 @@ def save_obstacle_map_for_scene(cfg, agent, episode) -> Optional[str]:
 
     authored = authored_episode_metadata(episode)
     scene = authored_scene(episode)
+    if bool(getattr(cfg.ycb, "obstacle_map_union", False)):
+        # Every episode keeps its own snapshot; pass 2 unions them. No
+        # best-of comparison, because none of them is being discarded.
+        path = _episode_map_path(root, scene, episode)
+        save_obstacle_maps(path, agent, scene=scene,
+                           layout_id=str(authored.get("layout_id", "")),
+                           episode_id=str(episode_tag(episode)))
+        return str(path)
     path = _map_path(root, scene)
     # Keep the pass that mapped the most: the protocol runs several episodes
     # per scene and the map worth keeping is the one that saw the most of it.
@@ -73,6 +202,133 @@ def save_obstacle_map_for_scene(cfg, agent, episode) -> Optional[str]:
     return str(path)
 
 
+def paste_snapshots(paths, costmaps, heights, *, overwrite: bool = False,
+                    strict: Optional[bool] = None) -> dict:
+    """Paste every snapshot in `paths` onto `costmaps[i]`, the storey at `heights[i]`.
+
+    The loop `load_obstacle_map` runs, with the destination costmaps passed in
+    rather than reached out of a `FloorStack`, so an OFFLINE caller -- the
+    coverage audit, the map figure, the frame check -- pastes exactly the cells
+    a run will and cannot drift from it. The paste was transposed once
+    (`navigation/mapping/map_store._to_geometric_layout`) and every geometric
+    reading taken before that was found was 8-9 m from the truth; a second
+    implementation is how that returns.
+
+    EMPTY STOREYS ARE SKIPPED before matching, and that is not a tidy-up:
+    `_new_floor` allocates a storey the moment a staircase is DETECTED, so a
+    real pass ends with placeholders above and below the storeys it walked.
+
+    `strict` defaults to "a union of several snapshots is strict" -- with one
+    snapshot an order match is the shipped behaviour, with several an order
+    mismatch discards that snapshot rather than putting a floor on the wrong
+    storey.
+    """
+    from navigation.mapping.map_store import (
+        apply_to_costmap,
+        floor_summaries,
+        load_obstacle_maps,
+    )
+
+    paths = list(paths)
+    if strict is None:
+        strict = len(paths) > 1
+    written, pairs, used, skipped, snapshots = 0, [], [], [], []
+    first_blob, stored_first, all_first = None, [], []
+    for path in paths:
+        blob = load_obstacle_maps(path)
+        all_floors = floor_summaries(blob)
+        stored = [f for f in all_floors if f["explored_cells"] > 0]
+        if first_blob is None:
+            first_blob, stored_first, all_first = blob, stored, all_floors
+        matched, how = _match_floors(stored, range(len(costmaps)), heights,
+                                     strict=strict)
+        snapshots.append({
+            "path": str(path), "file": Path(path).name,
+            "layout_id": str(blob.get("layout_id", "")),
+            "episode_id": str(blob.get("episode_id", "")),
+            "floors": all_floors, "matched_by": how,
+        })
+        if not matched:
+            # A snapshot that cannot be placed is skipped, never guessed at:
+            # floors matched BY ORDER need the snapshot to have mapped the same
+            # NUMBER of storeys, and pasting one that did not would put a whole
+            # floor on the wrong storey.
+            skipped.append({"path": Path(path).name, "mapped_floors": len(stored),
+                            "why": how})
+            continue
+        for floor, i in matched:
+            # The storey a flight from here would arrive at: the one above, or
+            # for the topmost the one below, since its staircase descends.
+            nxt = heights[i + 1] if i + 1 < len(heights) else (
+                heights[i - 1] if i > 0 else None)
+            n = apply_to_costmap(blob, floor["index"], costmaps[i],
+                                 overwrite=overwrite,
+                                 floor_y=heights[i], next_floor_y=nxt)
+            written += n
+            pairs.append({"ascent_floor": floor["index"], "osg_floor": i,
+                          "cells": int(n), "from": Path(path).name,
+                          "matched_by": how})
+        used.append(Path(path).name)
+    return {
+        "pasted": pairs, "skipped": skipped, "used": used,
+        "cells_written": int(written), "snapshots": snapshots,
+        "first_blob": first_blob, "stored_first": stored_first,
+        "all_first": all_first,
+    }
+
+
+def paste_scene(root: str, scene: str, storeys, *, union: bool = True,
+                size_m: float = 60.0, overwrite: bool = False,
+                track_height: bool = True, strict: Optional[bool] = None) -> dict:
+    """Every snapshot for `scene` under `root`, on one fresh costmap per storey.
+
+    The offline entry point. Resolution is READ FROM THE SNAPSHOT rather than
+    assumed: `apply_to_costmap` raises `ObstacleStoreError` on a mismatch, and
+    a map directory written at another `mapping.resolution` should say so
+    rather than be mis-pasted.
+    """
+    from navigation.mapping.map_store import floor_summaries, load_obstacle_maps
+    from ..mapping.costmap import Costmap2D
+
+    paths = _scene_map_paths(root, scene) if union else []
+    if not paths:
+        path = _map_path(root, scene)
+        if not path.exists():
+            return {"paths": [], "costmaps": [], "pasted": [], "skipped": [],
+                    "used": [], "cells_written": 0, "snapshots": [],
+                    "first_blob": None, "stored_first": [], "all_first": []}
+        paths = [path]
+
+    resolution = None
+    for path in paths:
+        for floor in floor_summaries(load_obstacle_maps(path)):
+            if floor["explored_cells"] > 0:
+                resolution = float(floor["resolution"])
+                break
+        if resolution is not None:
+            break
+    if resolution is None:
+        return {"paths": [str(p) for p in paths], "costmaps": [], "pasted": [],
+                "skipped": [], "used": [], "cells_written": 0, "snapshots": [],
+                "first_blob": None, "stored_first": [], "all_first": []}
+
+    heights = [float(h) for h in storeys]
+    costmaps = []
+    for _ in heights:
+        costmap = Costmap2D(resolution=resolution, size_m=size_m)
+        if track_height:
+            # `_ramp_stair_heights` writes the tread ramp into this plane and
+            # is a no-op without it, which costs the climber its waypoints.
+            costmap.height = np.full(costmap.grid.shape, np.nan, dtype=np.float32)
+        costmaps.append(costmap)
+    result = paste_snapshots(paths, costmaps, heights, overwrite=overwrite,
+                             strict=strict)
+    result["paths"] = [str(p) for p in paths]
+    result["costmaps"] = costmaps
+    result["resolution"] = resolution
+    return result
+
+
 def load_obstacle_map(cfg, agent, scene: str) -> Optional[dict]:
     """Pass 2: plan over the occupancy ASCENT's navigation built.
 
@@ -94,50 +350,53 @@ def load_obstacle_map(cfg, agent, scene: str) -> Optional[dict]:
     root = str(getattr(cfg.ycb, "obstacle_map_in", "") or "")
     if not root:
         return None
-    from navigation.mapping.map_store import (
-        apply_to_costmap,
-        floor_summaries,
-        load_obstacle_maps,
-    )
 
-    path = _map_path(root, scene)
-    if not path.exists():
-        if str(getattr(cfg.ycb, "obstacle_map_out", "") or "") == root:
-            return None  # pass 1 accumulating into its own output
-        raise FileNotFoundError(f"no obstacle snapshot for {scene} at {path}")
-    blob = load_obstacle_maps(path)
-    all_floors = floor_summaries(blob)
-    stored = [f for f in all_floors if f["explored_cells"] > 0]
+    union = bool(getattr(cfg.ycb, "obstacle_map_union", False))
+    paths = _scene_map_paths(root, scene) if union else []
+    if not paths:
+        path = _map_path(root, scene)
+        if not path.exists():
+            if str(getattr(cfg.ycb, "obstacle_map_out", "") or "") == root:
+                return None  # pass 1 accumulating into its own output
+            raise FileNotFoundError(f"no obstacle snapshot for {scene} at {path}")
+        paths = [path]
 
     stack = agent._floor_stack
-    keys = sorted(stack._layers, key=lambda k: float(
-        getattr(stack._layers[k], "floor_y", 0.0)))
-    overwrite = bool(getattr(cfg.ycb, "obstacle_map_overwrite", False))
+    seeded, loose = _seed_storeys(cfg, stack, paths)
+    keys = sorted(
+        (k for k in stack._layers if k not in set(loose)),
+        key=lambda k: float(getattr(stack._layers[k], "floor_y", 0.0)),
+    )
     # The storey heights, so the pasted treads can be given a height ramp --
     # without it `find_flights` sees no staircase and the waypoint climber
     # never fires (navigation/mapping/map_store.py:_ramp_stair_heights).
     heights = [float(getattr(stack._layers[k], "floor_y", 0.0)) for k in keys]
-    written, pairs = 0, []
-    for i, (floor, key) in enumerate(zip(stored, keys)):
-        # The storey a flight from here would arrive at: the one above, or for
-        # the topmost the one below, since its staircase descends.
-        nxt = heights[i + 1] if i + 1 < len(heights) else (
-            heights[i - 1] if i > 0 else None)
-        n = apply_to_costmap(blob, floor["index"], stack._layers[key].costmap,
-                             overwrite=overwrite,
-                             floor_y=heights[i], next_floor_y=nxt)
-        written += n
-        pairs.append({"ascent_floor": floor["index"], "osg_floor": int(key),
-                      "cells": int(n)})
+
+    result = paste_snapshots(
+        paths, [stack._layers[k].costmap for k in keys], heights,
+        overwrite=bool(getattr(cfg.ycb, "obstacle_map_overwrite", False)),
+    )
+    # `paste_snapshots` indexes storeys positionally, because an offline caller
+    # has no FloorStack; the record names the stack's own keys.
+    pairs = [dict(pair, osg_floor=int(keys[pair["osg_floor"]]))
+             for pair in result["pasted"]]
+    stored_first = result["stored_first"]
+
     return {
-        "path": str(path),
-        "from_layout": str(blob.get("layout_id", "")),
-        "stored_floors": len(all_floors),
-        "mapped_floors": len(stored),
-        "traj_on_map": [f.get("traj_on_map") for f in stored],
+        "path": str(paths[0]),
+        "from_layout": str((result["first_blob"] or {}).get("layout_id", "")),
+        "stored_floors": len(result["all_first"]),
+        "mapped_floors": len(stored_first),
+        "traj_on_map": [f.get("traj_on_map") for f in stored_first],
         "matched_floors": pairs,
-        "cells_written": int(written),
-        "unmatched_floors": max(0, len(stored) - len(keys)),
+        "cells_written": int(result["cells_written"]),
+        "unmatched_floors": max(0, len(stored_first) - len(keys)),
+        "matched_by": ({p.get("matched_by") for p in pairs} and
+                       sorted({str(p.get("matched_by")) for p in pairs})),
+        "storeys_seeded": seeded,
+        "storeys_uncorroborated": loose,
+        "union_snapshots": result["used"] if union else [],
+        "union_skipped": result["skipped"],
     }
 
 

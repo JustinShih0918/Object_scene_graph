@@ -488,6 +488,13 @@ def generate_manifest(
                 and prior_floor_y is not None
                 else None
             )
+            # The control arm: begin on the storey the object is really on, so
+            # the episode measures search and approach with the staircase taken
+            # out. Takes precedence, because asking for both is asking for the
+            # destination.
+            if bool(getattr(cfg.ycb, "start_on_target_floor", False)) \
+                    and destination_floor_y is not None:
+                required_y = destination_floor_y
             try:
                 starts = _starts_for_object(
                     simulator.sim.pathfinder, viewpoints, authored, cfg,
@@ -797,6 +804,10 @@ class ObjectDistanceRule:
         self.enabled = bool(enabled)
         self.threshold_m = float(threshold_m)
         self.max_attempts = int(max_attempts)
+        #: Set by the env: attempts -> geodesic from the episode start to the
+        #: winning stop, or None. The rule is pure bookkeeping and holds no
+        #: simulator, so the one thing it cannot compute is a path length.
+        self.shortest_fallback = None
         self.reset()
 
     def reset(self) -> None:
@@ -841,6 +852,16 @@ class ObjectDistanceRule:
         horizontal = spatial = None
         if target is not None:
             horizontal, spatial = self.distances(position, target)
+        if success and (shortest_m is None or not math.isfinite(shortest_m)
+                        or shortest_m <= 0):
+            # LAST RESORT, and it is not a fudge: a successful stop is within
+            # `threshold_m` of the object by definition, so the geodesic from
+            # the start to that stop is a legitimate shortest-path numerator --
+            # it is what the ring sampling was trying to find. Without it a real
+            # success reports SPL 0.0 and drags the mean down (1 of 9 successes
+            # in outputs/mf5_pass2_final).
+            if callable(self.shortest_fallback):
+                shortest_m = self.shortest_fallback(attempts)
         spl = 0.0
         if success and shortest_m is not None and math.isfinite(shortest_m) and shortest_m > 0:
             spl = shortest_m / max(shortest_m, self._travelled, 1e-12)
@@ -930,6 +951,9 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
             raise RuntimeError("failed to refresh observations after YCB object injection")
         self._frame_id = 0
         if self._object_rule.enabled:
+            self._start_position = np.asarray(
+                self.env.sim.get_agent_state().position, dtype=float)
+            self._object_rule.shortest_fallback = self._shortest_to_stop
             self._object_rule.shortest_m = self._shortest_to_object()
             self._object_rule.travelled(
                 np.asarray(self.env.sim.get_agent_state().position, dtype=float)
@@ -957,9 +981,14 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
         threshold = float(self._object_rule.threshold_m)
         best = math.inf
         seen = set()
-        for radius in (0.0, 0.25, 0.5, 0.75, 0.95):
-            for sample in range(1 if radius == 0.0 else 36):
-                angle = 2.0 * math.pi * sample / max(1, (1 if radius == 0.0 else 36))
+        # Denser than it looks like it needs to be, because the failure mode is
+        # silent: when no sample snaps to a pathable point within the radius,
+        # `shortest_m` is None and `summary` reports SPL 0.0 for an episode that
+        # SUCCEEDED -- measured on 00862/50001, which stopped inside 1.0 m and
+        # still scored spl=0.000. Sampling costs milliseconds once per episode.
+        for radius in (0.0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 0.95):
+            for sample in range(1 if radius == 0.0 else 72):
+                angle = 2.0 * math.pi * sample / max(1, (1 if radius == 0.0 else 72))
                 point = np.array(
                     [target[0] + radius * math.cos(angle), target[1],
                      target[2] + radius * math.sin(angle)], dtype=np.float32,
@@ -982,6 +1011,34 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
                 if pathfinder.find_path(path):
                     best = min(best, float(path.geodesic_distance))
         return best if math.isfinite(best) else None
+
+    def _shortest_to_stop(self, attempts) -> Optional[float]:
+        """Geodesic from the episode start to the STOP that scored.
+
+        Used only when `_shortest_to_object`'s ring sampling found no pathable
+        point inside the success radius. That stop is within `threshold_m` of
+        the object by construction, so this measures the same quantity the
+        sampling was after, from a point known to be both reachable and inside
+        the radius.
+        """
+        import habitat_sim
+
+        start = getattr(self, "_start_position", None)
+        if start is None:
+            return None
+        won = next((a for a in attempts if a.get("success") and a.get("position")), None)
+        if won is None:
+            return None
+        try:
+            path = habitat_sim.ShortestPath()
+            path.requested_start = np.asarray(start, dtype=np.float32)
+            path.requested_end = np.asarray(won["position"], dtype=np.float32)
+            if not self.env.sim.pathfinder.find_path(path):
+                return None
+            d = float(path.geodesic_distance)
+        except Exception:
+            return None
+        return d if math.isfinite(d) and d > 0 else None
 
     def step(self, action: str):
         # Habitat ends the episode on the terminal STOP without routing it
@@ -1117,6 +1174,10 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
         base["success"] = float(block["success"])
         base["spl"] = float(block["spl"])
         base["distance_to_goal"] = float(block["final_distance_horizontal_m"])
+        # Carry SPL's inputs through, so a recorded SPL can be audited against
+        # the numbers it was computed from rather than taken on trust.
+        for key in ("shortest_path_to_object_m", "travelled_m", "attempt_count"):
+            base[key] = block.get(key)
         return base
 
     def benchmark_metadata(self) -> Dict[str, Any]:

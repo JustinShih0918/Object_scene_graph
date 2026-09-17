@@ -31,6 +31,7 @@ from .metrics import (
     per_relocation,
 )
 from .prior_map import save_map_for_scene
+from .obstacle_map_viz import save_obstacle_map_pngs
 from .record import (
     build_episode_record,
     detector_identity,
@@ -170,6 +171,23 @@ def run_eval(cfg) -> dict:
             # "explore_after_failed_attempt_steps"
             # "flights_prefer_stair_mask"
             # "climb_direction_from_flight"
+            # "floor_disproved_after_failed_attempts" "protect_floor_switch"
+            # "protect_floor_switch_range_m" "protect_floor_switch_min_score"
+            # "climb_carrot_min_ahead_m"
+            # "climb_to_target_storey_tol_m"
+            # "flight_span_from_levels"
+            # "down_look_near_stairs_m"
+            # "obstacle_map_union"
+            # "seed_storeys_from_obstacle_map" "storey_seed_tol_m"
+            # "climb_carrot_hold_m"
+            # "profile_sync"
+            # "climb_turn_deadband_deg" "climb_turn_release_deg"
+            # "max_failed_switches_per_storey" "switch_ban_steps"
+            # "climb_turn_stuck_eps_m" "climb_turn_suppress_max"
+            # "climb_align_first_deg" "climb_carrot_forward_only"
+            # "climb_carrot_relax_min_ahead" "climb_carrot_follow_path"
+            # "climb_carrot_path_max_offset_m"
+            # "empty_storey_settle_steps"
             # "search_frontier_weight" "search_glance_detect_prob"
             # "search_glance_floor" "search_glance_range_m" "search_max_steps"
             # "search_posterior" "search_proximity_floor" "search_proximity_len_m"
@@ -197,6 +215,7 @@ def run_eval(cfg) -> dict:
             # "verify_center_before_verify" "verify_choice_mode"
             # "verify_detector_absence_recall" "verify_min_bbox_px"
             # "verify_min_obs" "verify_min_score" "verify_rank_candidates_by_presence"
+            # "verify_commit_max_above_storey_m" "verify_commit_high_min_obs"
             # "verify_reject_cooldown_steps" "verify_ring_radius_extent_aware"
             # "verify_retire_stale_twins_after_absence" "verify_stop_at_stale_anchor_once"
             # "verify_stale_stop_at_nearest_free" "verify_failed_attempt_disables_place"
@@ -226,7 +245,7 @@ def run_eval(cfg) -> dict:
 
     results: list = []
     episodes_file = out_dir / "episodes.jsonl"
-    profiler_all = Profiler()
+    profiler_all = Profiler(sync=bool(getattr(cfg.eval, "profile_sync", False)))
 
     for _dataset_i in range(n_total):
         if len(results) >= n_run:
@@ -259,7 +278,7 @@ def run_eval(cfg) -> dict:
         # moment an id collides.
         scorer.reset()
 
-        profiler = Profiler()
+        profiler = Profiler(sync=bool(getattr(cfg.eval, "profile_sync", False)))
         agent = build_agent(
             cfg, components, target,
             keyframe_dir=str(out_dir / "keyframes" / ep_tag) if cfg.eval.save_viz else None,
@@ -314,6 +333,10 @@ def run_eval(cfg) -> dict:
     )
     with open(out_dir / "summary.json", "w") as f:
         json.dump(summary, f, indent=2)
+    # The prior map with the targets drawn on it, one per scene. Only a run
+    # that READ an obstacle map has anything to draw.
+    for path in save_obstacle_map_pngs(cfg, out_dir):
+        print(f"obstacle map figure: {path}")
     profiler_all.write_csv(str(out_dir / "timing.csv"))
     scorer.shutdown()
     env.close()

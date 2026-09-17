@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import json
 import urllib.error
+import time
 import urllib.request
 from typing import Dict, Iterable, List, Optional
 
@@ -88,19 +89,40 @@ def post_json(url: str, payload: dict, timeout_s: float, strict: bool,
     return out
 
 
-def probe_perception_servers(endpoints: Dict[str, str], timeout_s: float = 5.0) -> None:
+def probe_perception_servers(endpoints: Dict[str, str], timeout_s: float = 5.0,
+                             attempts: int = 4, backoff_s: float = 3.0) -> None:
     """GET every endpoint; raise naming every one that is not up.
 
     ASCENT's servers answer GET with `{"status": "ok", ...}`.
+
+    RETRIED, because one slow answer is not a dead server. A single 5 s GET
+    with no retry turns a momentarily BUSY server into a failed run: with three
+    clients sharing the five servers, a GET that queues behind MobileSAM's
+    inference lock overran the timeout and killed the chunk before Habitat even
+    loaded. Measured on the DualMap arm -- chunks failing from 18:02 while
+    another chunk kept running successfully until 18:46, which is not what a
+    dead server looks like. 168 of 186 trials were lost to it.
+
+    The gate itself is unchanged: a server that is really down still fails the
+    run rather than being silently tolerated, which is the whole point of
+    `detector.strict`.
     """
     dead = []
     for name, url in endpoints.items():
-        try:
-            with urllib.request.urlopen(url, timeout=timeout_s) as r:
-                if r.status != 200:
-                    dead.append(f"{name} ({url}): HTTP {r.status}")
-        except Exception as exc:  # noqa: BLE001
-            dead.append(f"{name} ({url}): {exc}")
+        last = None
+        for attempt in range(max(1, int(attempts))):
+            try:
+                with urllib.request.urlopen(url, timeout=timeout_s) as r:
+                    if r.status == 200:
+                        last = None
+                        break
+                    last = f"HTTP {r.status}"
+            except Exception as exc:  # noqa: BLE001
+                last = str(exc)
+            if attempt + 1 < int(attempts):
+                time.sleep(float(backoff_s) * (attempt + 1))
+        if last is not None:
+            dead.append(f"{name} ({url}): {last}")
     if dead:
         raise PerceptionUnavailable(
             "perception servers not ready -- start them with "

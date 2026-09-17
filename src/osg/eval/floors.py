@@ -82,6 +82,104 @@ def navmesh_floor_heights(
     return [round(float(ys[i]), 3) for i in merged]
 
 
+def navmesh_path_for(scene: str, scenes_dir) -> Optional["Path"]:
+    """`<scenes_dir>/hm3d/<split>/<scene>/<hash>.basis.navmesh`, or None.
+
+    `scene` is the full HM3D directory name (`00800-TEEsavR23oF`); the mesh
+    inside is named after the hash half alone.
+    """
+    from pathlib import Path
+
+    root = Path(str(scenes_dir))
+    for pattern in (f"hm3d/*/{scene}/*.basis.navmesh",
+                    f"*/{scene}/*.basis.navmesh",
+                    f"{scene}/*.basis.navmesh"):
+        found = sorted(root.glob(pattern))
+        if found:
+            return found[0]
+    return None
+
+
+def load_pathfinder(navmesh):
+    """A bare `habitat_sim.nav.PathFinder` -- no Simulator, no GL, no GPU.
+
+    ~1 s per scene and importable from any offline tool. Returns None when
+    habitat_sim is unavailable or the mesh will not load, so a caller can
+    report "not checked" instead of crashing.
+    """
+    try:
+        import habitat_sim
+    except ImportError:
+        return None
+    pathfinder = habitat_sim.nav.PathFinder()
+    pathfinder.load_nav_mesh(str(navmesh))
+    return pathfinder if pathfinder.is_loaded else None
+
+
+def navmesh_storeys(pathfinder, *, n_points: int = 12000, seed: int = 0,
+                    band_m: float = 0.75) -> dict:
+    """The scene's storeys with a navigable-area weight and a point sample.
+
+    `navmesh_floor_heights` finds the storey COUNT reliably, but not the
+    storey HEIGHT: `get_topdown_view` is asked for the slice at `y` with a
+    0.5 m tolerance, so every peak sits ~0.35 m above the floor it names --
+    measured 0.513 / 3.513 on 00800, whose authored floors are 0.163 / 3.163.
+    A third of a metre is more than the tolerance anything downstream matches
+    with, so the peaks are used only to BUCKET an area-uniform sample of
+    navigable points, and each storey's height is the MEDIAN y of its own
+    points. That reproduces 0.163 / 3.163 exactly, and agrees with the
+    collector's independently-derived `authoring.floors[].y_min` to three
+    decimals on every multi-floor scene.
+
+    Gap-clustering the sample directly does NOT work and must not be tried
+    again: a navigable staircase makes the height histogram continuous, so one
+    cluster swallows the scene (measured on 00800 at a 0.5 m gap).
+
+    `get_random_navigable_point` is area-uniform over navmesh polygons, so a
+    point COUNT is an area estimate and `pathfinder.navigable_area` converts a
+    fraction to m². 12000 points is about +/-0.5% at 1 sigma on a 0.8 fraction.
+    Points further than `band_m` from every peak are on the stairs between
+    storeys; they belong to no storey, and are reported as `off_band_frac`
+    rather than diluting one.
+    """
+    import numpy as np
+
+    peaks = navmesh_floor_heights(pathfinder)
+    if not peaks:
+        return {"navigable_area_m2": 0.0, "off_band_frac": 0.0, "storeys": [],
+                "points": np.zeros((0, 3))}
+    rng = np.random.default_rng(seed)
+    pathfinder.seed(int(rng.integers(0, 2 ** 31 - 1)))
+    points = np.asarray(
+        [pathfinder.get_random_navigable_point() for _ in range(int(n_points))],
+        dtype=np.float64,
+    )
+    area = float(pathfinder.navigable_area)
+    peaks_arr = np.asarray(peaks, dtype=np.float64)
+    gaps = np.abs(points[:, HEIGHT_AXIS][:, None] - peaks_arr[None, :])
+    nearest = np.argmin(gaps, axis=1)
+    within = gaps[np.arange(len(points)), nearest] <= float(band_m)
+
+    storeys = []
+    for index, peak in enumerate(peaks):
+        mine = points[(nearest == index) & within]
+        n = int(len(mine))
+        storeys.append({
+            "index": index,
+            "height": float(np.median(mine[:, HEIGHT_AXIS])) if n else float(peak),
+            "peak_height": float(peak),
+            "n_points": n,
+            "area_m2": area * n / max(1, len(points)),
+            "points": mine,
+        })
+    return {
+        "navigable_area_m2": area,
+        "off_band_frac": float(1.0 - within.mean()) if len(points) else 0.0,
+        "storeys": storeys,
+        "points": points,
+    }
+
+
 def goal_view_heights(episode) -> List[float]:
     """Heights of every goal view point of a habitat ObjectGoal episode.
 

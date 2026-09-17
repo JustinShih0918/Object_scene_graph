@@ -316,6 +316,13 @@ class AscentNavAgent:
         om._downstair_detector = self.downstair_detector
         return {
             "obstacle": om,
+            # The world height this storey was walked at, as a running sum and
+            # count. Recorded, never read by the control flow -- it exists so a
+            # saved snapshot can say WHICH storey each of its floors is, rather
+            # than leaving pass 2 to infer it from list order. Lives in the
+            # floor dict so `_floors.insert(0, ...)` carries it along.
+            "standing_y_sum": 0.0,
+            "standing_y_n": 0,
             "value": ValueMap(value_channels=1, size=MAP_SIZE, obstacle_map=None,
                               use_max_confidence=self.use_max_confidence),
             "object": ObjectPointCloudMap(erosion_size=5, size=MAP_SIZE),
@@ -447,6 +454,11 @@ class AscentNavAgent:
             self.stairs.climb_stair_flag,
         )
         om.update_agent_traj(robot_xy, heading)
+        if not self.stairs.climb_stair_flag:
+            # Not mid-flight: this is the storey's own height.
+            floor = self._floors[self._floor_idx]
+            floor["standing_y_sum"] += float(frame.camera_position[1]) - self.camera_height
+            floor["standing_y_n"] += 1
         if om._has_up_stair and self._floor_idx + 1 >= len(self._floors):     # `:531-535`
             self._floors.append(self._new_floor())
         if om._has_down_stair and self._floor_idx == 0:

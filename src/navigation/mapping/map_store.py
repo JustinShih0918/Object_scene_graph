@@ -195,6 +195,18 @@ def save_obstacle_maps(
             "min_height": float(om._min_height),
             "max_height": float(om._max_height),
             "floor_num_steps": int(getattr(om, "_floor_num_steps", 0)),
+            # WHICH storey this floor is, in world metres -- the mean height
+            # the agent stood at while mapping it, off the stairs
+            # (`navigation/agent.py:_new_floor`). Without it a snapshot's
+            # floors can only be matched to a stack BY ORDER, which needs the
+            # snapshot to have mapped the same NUMBER of storeys; four of the
+            # six mapping episodes on 00800 mapped one storey each and could
+            # not be used at all. None on a floor that was never walked, and on
+            # any snapshot written before this field existed.
+            "floor_y": (
+                None if not int(floor.get("standing_y_n", 0) or 0)
+                else float(floor["standing_y_sum"]) / int(floor["standing_y_n"])
+            ),
             "explored_cells": int(np.count_nonzero(om.explored_area)),
             "obstacle_cells": int(np.count_nonzero(om._map)),
             **_self_consistency(om),
@@ -252,6 +264,7 @@ def load_obstacle_maps(path: Path) -> Dict[str, Any]:
                     arrays[key], count=count
                 ).astype(bool).reshape(shape)
     blob["_arrays"] = arrays
+    _to_geometric_layout(blob)
     return blob
 
 
@@ -268,6 +281,8 @@ def floor_summaries(blob: Dict[str, Any]) -> List[Dict[str, Any]]:
         out.append({
             "index": int(record["index"]),
             "resolution": float(record["resolution"]),
+            "floor_y": (None if record.get("floor_y") is None
+                        else float(record["floor_y"])),
             "traj_poses": int(record.get("traj_poses", 0)),
             "traj_on_map": record.get("traj_on_map"),
             "explored_cells": int(record.get("explored_cells", 0)),
@@ -289,6 +304,53 @@ def _anchor_from(blob: Dict[str, Any]):
     return EpisodeAnchor(np.asarray(meta["xy"], dtype=float),
                          float(meta["heading"]))
 
+
+
+def _grid_keys(blob: Dict[str, Any]):
+    """Every stored 2-D grid: the packed masks and the derived occupancy."""
+    arrays = blob.get("_arrays") or {}
+    for key, value in arrays.items():
+        if isinstance(value, np.ndarray) and value.ndim == 2 and value.shape[0] == value.shape[1]:
+            yield key
+
+
+def _to_geometric_layout(blob: Dict[str, Any]) -> None:
+    """Transpose every grid so [row, col] means what `_px_to_world` assumes.
+
+    vlfm's `BaseMap._xy_to_px` returns GEOMETRIC pixels, (row, col) =
+    (size - y*ppm - origin, x*ppm + origin), and that is the convention every
+    point it records is in -- `robot_px`, the stair endpoints, the frontiers.
+    But its grids are written `_map[px[:, 1], px[:, 0]]`: indexed [col, row].
+    So on disk the ARRAYS are the transpose of the POINTS, and reading both
+    the same way puts the map 8-9 m from where the agent walked.
+
+    Measured on 00800 against the navmesh (the one frame that is unambiguous):
+    lower-storey navigable points landed FREE 0.04 / OCCUPIED 0.04 / UNKNOWN
+    0.92 on the paste as stored, and FREE 0.49 / OCCUPIED 0.00 / UNKNOWN 0.51
+    transposed; the stair treads hit the pasted stair mask 0.00 as stored and
+    0.36 transposed; ASCENT's own trajectory touched the stored stair mask 0
+    times and the transposed one 146. The earlier trajectory "validation"
+    looked the map up through vlfm's own indexing and so could not see this.
+
+    Applied ONCE, here, so every consumer -- the paste, the figure, the
+    summaries -- sees geometric grids, and undone in `apply_obstacle_maps`,
+    which hands them back to an `ObstacleMap` that indexes them vlfm's way.
+    """
+    if blob.get("_layout") == "geometric":
+        return
+    arrays = blob["_arrays"]
+    for key in list(_grid_keys(blob)):
+        arrays[key] = np.ascontiguousarray(arrays[key].T)
+    blob["_layout"] = "geometric"
+
+
+def _to_vlfm_layout(blob: Dict[str, Any]) -> None:
+    if blob.get("_layout") != "geometric":
+        return
+    arrays = blob["_arrays"]
+    for key in list(_grid_keys(blob)):
+        arrays[key] = np.ascontiguousarray(arrays[key].T)
+    blob["_layout"] = "vlfm"
 
 def apply_to_costmap(
     blob: Dict[str, Any],
@@ -430,15 +492,80 @@ def apply_to_costmap(
             costmap.stair_mask = np.zeros(costmap.grid.shape, dtype=bool)
         costmap.stair_mask[r0:r1, c0:c1] |= stairs
         window[stairs] = FREE
-        _ramp_stair_heights(
-            costmap, stairs, r0, c0, floor_y, next_floor_y,
-            near_rc=_stair_base_rc(
+        ends = _stair_ends_from_trajectory(blob, record, stairs, r0, c0, costmap, anchor)
+        if ends is None:
+            ends = _stair_base_rc(
                 arrays, record, costmap, size, epo, ppm, anchor, r0, c0,
                 floor_y, next_floor_y,
-            ),
-        )
+            )
+        _ramp_stair_heights(costmap, stairs, r0, c0, floor_y, next_floor_y, near_rc=ends)
 
     return int(np.count_nonzero(writable))
+
+
+def _stair_ends_from_trajectory(blob, record, stairs, r0, c0, costmap, anchor,
+                                near_m: float = 1.0, min_poses: int = 8):
+    """(this storey's end, far end) of the flight, in window coordinates, from
+    where ASCENT's own agent WALKED.
+
+    The stored endpoints are unreliable for this: on 00800, `_up_stair_start`
+    -> `_up_stair_end` runs from the TOP of the real staircase to the bottom,
+    and a ramp oriented by them correlates -0.91 with the true tread heights.
+    Free-floor adjacency fails too, because ASCENT's lower-storey map bleeds
+    up the stairs onto the upper landing (both ends touch "this storey's"
+    floor, 0.61 vs 0.47). What cannot be wrong is the order in which the agent
+    walked the treads: the storey whose time-ordered trajectory runs along
+    the flight entered it at ITS OWN end and left toward the other storey.
+    Measured: floor 2's track has 143 poses on the flight, entry t=0.33,
+    exit t=2.12, and that names the far end correctly against the navmesh.
+
+    One physical staircase serves both storeys, so the walker's orientation
+    settles the other storey's ramp as well, mirrored. Floor indices order
+    storeys bottom-up, which is how "the other storey" is placed.
+    """
+    if anchor is None:
+        return None
+    this_index = int(record["index"])
+    rc = np.argwhere(stairs).astype(float)
+    if rc.shape[0] < 2:
+        return None
+    centred = rc - rc.mean(axis=0)
+    _, _, vt = np.linalg.svd(centred, full_matrices=False)
+    axis = vt[0]
+    best = None
+    for other in blob.get("floors", []):
+        key = other["prefix"] + "traj_ep"
+        traj = blob["_arrays"].get(key)
+        if traj is None or np.size(traj) < 2 * min_poses:
+            continue
+        ep = np.asarray(traj, dtype=float).reshape(-1, 2)
+        world = np.array([anchor.to_world(p) for p in ep])
+        world[:, 1] *= -1.0                                  # ASCENT (x, -z) -> OSG PLANE
+        grid = np.array([costmap.world_to_grid(w) for w in world], dtype=float)
+        win = grid - np.array([r0, c0], dtype=float)
+        # poses on or beside the flight, in time order
+        d = np.min(np.linalg.norm(win[:, None, :] - rc[None, :, :], axis=2), axis=1)
+        on = win[d <= near_m / float(costmap.resolution)]
+        if on.shape[0] < min_poses:
+            continue
+        if best is None or on.shape[0] > best[1].shape[0]:
+            best = (int(other["index"]), on)
+    if best is None:
+        return None
+    walker, on = best
+    k = max(2, on.shape[0] // 4)
+    entry, exit_ = on[:k].mean(axis=0), on[-k:].mean(axis=0)
+    # collapse both onto the flight's own axis so a wandering track cannot
+    # put an "end" beside the treads
+    t_entry, t_exit = float((entry - rc.mean(axis=0)) @ axis), float((exit_ - rc.mean(axis=0)) @ axis)
+    if abs(t_exit - t_entry) < 2.0:                          # walked across, not along
+        return None
+    lo_end = rc[int(np.argmin(centred @ axis))]
+    hi_end = rc[int(np.argmax(centred @ axis))]
+    walker_near, walker_far = (lo_end, hi_end) if t_entry < t_exit else (hi_end, lo_end)
+    if walker == this_index:
+        return walker_near, walker_far
+    return walker_far, walker_near
 
 
 def _stair_base_rc(arrays, record, costmap, size, epo, ppm, anchor,
@@ -452,10 +579,11 @@ def _stair_base_rc(arrays, record, costmap, size, epo, ppm, anchor,
     agree -- measured on 00800, floor 1's `_up_stair_start` and floor 2's
     `_down_stair_end` are the SAME pixel, as are the other two.
 
-    THE CONVENTION IS (x, y) = (col, row), not (row, col), which is the
-    opposite of the masks beside it. Read the wrong way round on 00800 these
-    points land 10 m from the mask they belong to; read this way they sit
-    within 0.4 m of its ends.
+    The endpoints are `robot_px`, i.e. `_xy_to_px` output: GEOMETRIC (row,
+    col), the same frame `_px_to_world` takes. They were once read as (col,
+    row) because that made them sit on the stair MASK -- but the mask was the
+    thing that was transposed (`_to_geometric_layout`); read as (row, col)
+    they land on the navmesh staircase and on ASCENT's own climb.
     """
     prefix = record["prefix"]
     ascending = (
@@ -469,7 +597,7 @@ def _stair_base_rc(arrays, record, costmap, size, epo, ppm, anchor,
         if point is None or np.size(point) < 2:
             return None
         px = np.asarray(point, dtype=float).ravel()
-        world = _px_to_world(px[1], px[0], size, epo, ppm, anchor)  # (col, row)
+        world = _px_to_world(px[0], px[1], size, epo, ppm, anchor)  # geometric (row, col)
         rc = costmap.world_to_grid(world)
         out.append(np.array([float(rc[0]) - r0, float(rc[1]) - c0], dtype=float))
     return out[0], out[1]
@@ -531,11 +659,120 @@ def _ramp_stair_heights(costmap, stairs, r0, c0, floor_y, next_floor_y,
     if span <= 0:
         return
     frac = (t - t.min()) / span
-    # Keep the ends strictly inside the two storeys: `find_flights` excludes
-    # cells within `margin_m` of either, and a tread exactly AT floor level is
-    # indistinguishable from the floor.
-    heights = lo + (hi - lo) * (0.12 + 0.76 * frac)
-    costmap.height[rc[:, 0] + r0, rc[:, 1] + c0] = heights.astype(np.float32)
+    keep = np.ones(len(frac), dtype=bool)
+    if RAMP_CLIP_TO_ENDPOINTS and near_rc is not None and axis is not None:
+        # The ramp spans between ASCENT'S OWN RECORDED STAIR ENDS, not between
+        # the extremes of the mask. The mask is a BLOB over the stairwell and
+        # takes in the landing at the top: ramping across all of it hands the
+        # flat floor a synthetic height and the waypoint climber then walks
+        # onto floor that the map says is a tread.
+        #
+        # Measured on 00821's descent (the pasted union): over the 615 flight
+        # cells that snap to the navmesh, the ramp spanned 3.17 m where the
+        # true surface under them spans 1.34 m -- stretched 2.4x -- the
+        # correlation with true height was only +0.70, and the flight's lowest
+        # and highest cells came out 0.27 m apart in the plane for a 3.18 m
+        # flight. The climb gained 0.00 m in 52 steps, turning 30 times against
+        # 21 forwards.
+        #
+        # Cells beyond the endpoints keep whatever height they had (NaN for an
+        # unseen cell), because inventing a height for them is the defect.
+        base = (np.asarray(near_rc[0], float) - pts.mean(axis=0)) @ axis
+        top = (np.asarray(near_rc[1], float) - pts.mean(axis=0)) @ axis
+        lo_t, hi_t = (base, top) if base <= top else (top, base)
+        if hi_t - lo_t > 1e-6:
+            frac = (t - lo_t) / (hi_t - lo_t)
+            keep = (frac >= -RAMP_ENDPOINT_SLACK) & (frac <= 1.0 + RAMP_ENDPOINT_SLACK)
+            frac = np.clip(frac, 0.0, 1.0)
+    if not keep.any():
+        return
+    rows = rc[keep, 0] + r0
+    cols = rc[keep, 1] + c0
+    if RAMP_FIRST_WRITER_WINS:
+        # SYNTHETIC RAMPS DO NOT COMPOSE. Under `ycb.obstacle_map_union` a
+        # scene is pasted from one snapshot per mapping episode, and each one
+        # stamps its own ramp over the same costmap from its own recorded stair
+        # ends -- measured on 00821, NINE ramp writes with nine different
+        # endpoint pairs, several running in opposite directions. Whatever
+        # wrote last won, and the result was an incoherent height field: over
+        # the 615 flight cells that snap to the navmesh the correlation with
+        # true height was +0.70, the ramp spanned 3.17 m where the true surface
+        # spans 1.34, and the flight's lowest and highest cells came out 0.27 m
+        # apart for a 3.18 m flight. The waypoint climber followed it onto flat
+        # floor and gained 0.00 m.
+        #
+        # So a cell keeps the first ramp written over it. That is one snapshot's
+        # coherent run rather than a blend of several, which is what
+        # `find_flights` needs -- it asks for monotonic and spanning, and a
+        # blend is neither. Occupancy still unions normally; only the height
+        # plane is first-writer-wins.
+        fresh = ~np.isfinite(costmap.height[rows, cols])
+        if not fresh.any():
+            return
+        rows, cols, frac = rows[fresh], cols[fresh], frac[keep][fresh]
+        costmap.height[rows, cols] = ramp_heights(frac, lo, hi).astype(np.float32)
+        return
+    costmap.height[rows, cols] = ramp_heights(frac[keep], lo, hi).astype(np.float32)
+    # Mark them invented, so the agent's own depth replaces them on sight
+    # rather than losing a running minimum to a ramp that reads too low.
+    synthetic = getattr(costmap, "height_synthetic", None)
+    if synthetic is not None:
+        synthetic[rows, cols] = True
+
+
+# ZERO. The ramp must start AT this storey's height, because `_flight_carrot`
+# aims at the nearest cell 0.35-1.0 m above where the agent STANDS, and any
+# lift at the foot end pulls that cell toward the agent's own feet. Measured
+# with scripts/probe_climb_osg.py on 00800's true flight, same cells each
+# time, only the heights swapped:
+#
+#     true heights                       +1.87 m in 40 steps   climbed
+#     ramp, margin 0.12 * span (0.36 m)   0.00 m in 200        goal 0.02-0.18 m away
+#     ramp, margin 0.25 m                 0.47 m in 200        goal 0.02-0.18 m away
+#     ramp, margin 0                     +1.87 m in 48 steps   climbed, goal 0.2-0.8 m
+#
+# `find_flights` excludes cells within 0.2 m of the floor from the flight's
+# component, which trims the bottom two treads off the Flight and moves its
+# foot 0.4 m up the run; that is harmless, and it does not need the ramp
+# lifted to happen.
+RAMP_MARGIN_M = 0.0
+
+# Ramp only BETWEEN the recorded stair ends, not across the whole mask.
+# See `_ramp_stair_heights`. The slack is a fraction of the run, so a tread
+# just outside the recorded ends is still given a height and the flight is not
+# trimmed to nothing on a scene whose endpoints sit slightly inside the run.
+# BOTH OFF, and both kept as MEASURED NEGATIVES. The pasted ramp on 00821's
+# descent correlates only +0.70 with the true surface under its own cells and
+# spans 3.17 m where that surface spans 1.34 -- stretched 2.4x -- and two
+# attempts to improve it did not:
+#
+#   clip the ramp to ASCENT's recorded stair ends, instead of the whole mask
+#     -> 1027 cells become 1026, correlation +0.701 -> +0.702. The recorded
+#        ends already span the mask, so there is nothing outside them to trim.
+#
+#   first writer wins, so a union of snapshots stops blending nine ramps
+#     -> correlation +0.70 -> +0.10, WORSE. Nine synthetic ramps averaged over
+#        a cell are closer to the truth than any one of them alone; taking the
+#        first is taking one episode's guess instead of their consensus.
+#
+# What is left is the real constraint: ASCENT's map is 2D, the heights are
+# invented, and no rearrangement of an invented field makes it a staircase.
+RAMP_CLIP_TO_ENDPOINTS = False
+RAMP_FIRST_WRITER_WINS = False
+RAMP_ENDPOINT_SLACK = 0.15
+
+
+def ramp_heights(frac: np.ndarray, lo: float, hi: float,
+                 margin_m: float = RAMP_MARGIN_M) -> np.ndarray:
+    """Tread heights along a flight, `frac` in [0, 1] from this storey's end.
+
+    Linear from `lo + margin` to `hi - margin`, the margin taken TOWARD the
+    other storey so it is a fixed distance whichever way the flight goes.
+    The default margin is zero; see RAMP_MARGIN_M for why it must be.
+    """
+    s = 1.0 if float(hi) >= float(lo) else -1.0
+    start, end = float(lo) + s * margin_m, float(hi) - s * margin_m
+    return start + (end - start) * np.asarray(frac, dtype=float)
 
 
 def _px_to_world(row, col, size, epo, ppm, anchor) -> np.ndarray:
@@ -555,6 +792,15 @@ def apply_obstacle_maps(agent, blob: Dict[str, Any]) -> int:
     agent's own kernels rather than read from the file, so the reloaded map
     obeys the radius THIS run is configured with.
     """
+    _to_vlfm_layout(blob)
+    try:
+        return _apply_obstacle_maps_vlfm(agent, blob)
+    finally:
+        _to_geometric_layout(blob)
+
+
+def _apply_obstacle_maps_vlfm(agent, blob: Dict[str, Any]) -> int:
+    """`apply_obstacle_maps` with the grids already in vlfm's [col, row]."""
     arrays = blob.get("_arrays")
     if arrays is None:
         raise ObstacleStoreError("blob was not produced by load_obstacle_maps")

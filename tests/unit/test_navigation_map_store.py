@@ -50,6 +50,19 @@ def _world_to_px(om, anchor, world_xz):
     return om._xy_to_px(np.atleast_2d(ep))[0]
 
 
+def _mark(grid, px, half: int = 1) -> None:
+    """Write a block at `px` THE WAY vlfm DOES: `_map[px[:, 1], px[:, 0]]`.
+
+    `_xy_to_px` returns geometric (row, col); the grids are indexed [col, row].
+    An earlier version of these tests wrote `grid[row, col]`, which vlfm never
+    does, and so pinned the point transform while the array layout was
+    transposed underneath it -- the paste landed 8-9 m from the truth on a
+    real scene and every test here was green (`_to_geometric_layout`).
+    """
+    a, b = int(px[0]), int(px[1])
+    grid[b - half:b + half + 1, a - half:a + half + 1] = True
+
+
 @pytest.mark.parametrize("heading", [0.0, 0.7, -2.3, np.pi / 2])
 def test_marked_cell_lands_at_its_world_coordinate(tmp_path, heading):
     """A pixel set occupied at world P reads back occupied at world P.
@@ -62,12 +75,12 @@ def test_marked_cell_lands_at_its_world_coordinate(tmp_path, heading):
     om = _obstacle_map()
     targets = [np.array([4.0, -1.0]), np.array([1.25, 0.5]), np.array([6.0, -4.5])]
     for world_xz in targets:
-        row, col = _world_to_px(om, anchor, world_xz)
+        px = _world_to_px(om, anchor, world_xz)
         # A 3x3 block, not a single pixel: at equal resolution a rotation
         # resamples one lattice onto another, and a one-pixel feature can be
         # sampled by no destination cell at all. Real obstacles are walls.
-        om._map[row - 1:row + 2, col - 1:col + 2] = True
-        om.explored_area[row - 1:row + 2, col - 1:col + 2] = True
+        _mark(om._map, px)
+        _mark(om.explored_area, px)
     # A witnessed free patch, so the floor has some known area around them.
     om.explored_area[SIZE // 2 - 40:SIZE // 2 + 40,
                      SIZE // 2 - 40:SIZE // 2 + 40] = True
@@ -273,8 +286,12 @@ def test_a_pasted_staircase_becomes_a_flight_osg_can_climb(tmp_path):
     ramped = np.isfinite(costmap.height)
     assert ramped.any(), "treads left at NaN: find_flights would see nothing"
     h = costmap.height[ramped]
-    # Strictly between the two storeys, and spanning enough to be a flight.
-    assert h.min() > 0.0 and h.max() < 3.0
+    # The ramp starts AT this storey and ends AT the next. It used to be lifted
+    # off the floor by a fraction of the span, and that lift is what made the
+    # climber turn in place: `_flight_carrot` aims at the nearest cell
+    # 0.35-1.0 m above where the agent stands, and a foot tread reading 0.36 m
+    # "above" the agent standing on it is that cell (RAMP_MARGIN_M).
+    assert h.min() == 0.0 and h.max() == 3.0
     assert (h.max() - h.min()) > 1.0
 
     flights = find_flights(costmap, floor_y=0.0, new_level_m=3.4,
@@ -300,3 +317,98 @@ def test_no_storey_heights_means_no_ramp_and_no_crash(tmp_path):
 
     assert apply_to_costmap(blob, 0, costmap) > 0
     assert not np.isfinite(costmap.height).any(), "heights invented without storeys"
+
+
+# ------------------------------------------- ramp orientation by trajectory
+
+def _walked_flight(tmp_path, walker_index: int, n_floors: int = 2):
+    """Two storeys sharing one stair blob; the WALKER's trajectory runs along
+    the blob's long axis in time order, entering at one end.
+
+    Grids are written vlfm's way (`.T[...]`, i.e. [col, row]) so they land in
+    the same place the loader's normalisation puts a real file's; the poses
+    are episodic xy, as `_camera_positions` holds them, made from geometric
+    pixels along the blob.
+    """
+    anchor = EpisodeAnchor(np.array([0.0, 0.0]), 0.0)
+    floors = []
+    for i in range(n_floors):
+        om = _obstacle_map()
+        om.explored_area.T[150:260, 150:260] = True
+        om._up_stair_map.T[190:230, 198:206] = True
+        if i == walker_index:
+            # ALONG the blob. The blob is written .T[190:230, 198:206], i.e.
+            # vlfm rows 198..206 x cols 190..230; the loader transposes it to
+            # geometric rows 190..230, and the paste's axis swap lays it along
+            # COLUMNS of the costmap. Geometric poses along ROWS 188..232 take
+            # the same swap and land along the flight. (A walk along columns
+            # here crosses it and rightly yields no opinion -- measured.)
+            px = np.stack([np.linspace(188, 232, 12), np.full(12, 202.0)], axis=1)
+            om._camera_positions = [np.asarray(om._px_to_xy(np.atleast_2d(p))[0]) for p in px]
+        floors.append({"obstacle": om})
+    path = save_obstacle_maps(tmp_path / "s.json", _Agent(floors, anchor))
+    return load_obstacle_maps(path)
+
+
+def _ramp_ends_and_walk(blob, index, floor_y, next_floor_y, walker_index=0):
+    """The ramp's lowest and highest cells, and the walker's first and last
+    pose, all in the same costmap grid -- so the claim can be made without
+    knowing which way any axis ended up pointing."""
+    from navigation.mapping.map_store import _anchor_from
+
+    costmap = Costmap2D(resolution=1.0 / PPM, size_m=20.0, track_height=True)
+    apply_to_costmap(blob, index, costmap, floor_y=floor_y, next_floor_y=next_floor_y)
+    rc = np.argwhere(np.isfinite(costmap.height))
+    h = costmap.height[rc[:, 0], rc[:, 1]]
+    low, high = rc[int(np.argmin(h))].astype(float), rc[int(np.argmax(h))].astype(float)
+    anchor = _anchor_from(blob)
+    traj = np.asarray(blob["_arrays"][f"floor_{walker_index}_traj_ep"], float).reshape(-1, 2)
+    def to_grid(ep):
+        w = anchor.to_world(ep); return np.asarray(costmap.world_to_grid(np.array([w[0], -w[1]])), float)
+    return low, high, to_grid(traj[0]), to_grid(traj[-1])
+
+
+def test_the_walker_storey_ramps_up_from_where_it_entered(tmp_path):
+    """The lower storey walked the flight: where it ENTERED is its own end,
+    so its ascending ramp must be lowest there."""
+    blob = _walked_flight(tmp_path, walker_index=0)
+    low, high, first, last = _ramp_ends_and_walk(blob, 0, floor_y=0.0, next_floor_y=3.0)
+    assert np.linalg.norm(low - first) < np.linalg.norm(low - last), "ramp low end is not the entry end"
+    assert np.linalg.norm(high - last) < np.linalg.norm(high - first)
+
+
+def test_the_other_storey_gets_the_mirror(tmp_path):
+    """Same staircase from the upper storey: its own end is where the walker
+    LEFT toward, so its descending ramp is highest there."""
+    blob = _walked_flight(tmp_path, walker_index=0)
+    low, high, first, last = _ramp_ends_and_walk(blob, 1, floor_y=3.0, next_floor_y=0.0)
+    assert np.linalg.norm(high - last) < np.linalg.norm(high - first), "upper storey's end must be the walker's exit"
+    assert np.linalg.norm(low - first) < np.linalg.norm(low - last)
+
+
+def test_no_trajectory_on_the_flight_falls_back_to_the_endpoints(tmp_path):
+    from navigation.mapping.map_store import _stair_ends_from_trajectory
+
+    blob = _walked_flight(tmp_path, walker_index=99)             # nobody walked it
+    record = next(f for f in blob["floors"] if int(f["index"]) == 0)
+    costmap = Costmap2D(resolution=1.0 / PPM, size_m=20.0, track_height=True)
+    stairs = np.zeros((40, 8), dtype=bool); stairs[:, :] = True
+    from navigation.mapping.map_store import _anchor_from
+    assert _stair_ends_from_trajectory(blob, record, stairs, 0, 0, costmap, _anchor_from(blob)) is None
+
+
+def test_a_track_that_only_crosses_the_flight_gives_no_opinion(tmp_path):
+    """Walking ACROSS the treads is not walking along them."""
+    from navigation.mapping.map_store import _anchor_from, _stair_ends_from_trajectory
+
+    anchor = EpisodeAnchor(np.array([0.0, 0.0]), 0.0)
+    om = _obstacle_map()
+    om.explored_area.T[150:260, 150:260] = True
+    om._up_stair_map.T[190:230, 198:206] = True
+    px = np.stack([np.full(12, 210.0), np.linspace(196, 208, 12)], axis=1)   # across, not along
+    om._camera_positions = [np.asarray(om._px_to_xy(np.atleast_2d(p))[0]) for p in px]
+    blob = load_obstacle_maps(save_obstacle_maps(tmp_path / "s.json", _Agent([{"obstacle": om}], anchor)))
+    record = blob["floors"][0]
+    costmap = Costmap2D(resolution=1.0 / PPM, size_m=20.0, track_height=True)
+    apply_to_costmap(blob, 0, costmap, floor_y=0.0, next_floor_y=3.0)   # must not raise
+    assert np.isfinite(costmap.height).any(), "a ramp is still written, by the fallback"

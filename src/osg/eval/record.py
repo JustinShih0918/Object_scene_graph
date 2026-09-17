@@ -202,6 +202,14 @@ def build_episode_record(
         ),
         "habitat_spl": None if metrics.get("habitat_spl") is None else float(metrics["habitat_spl"]),
         "spl": float(metrics.get("spl", 0.0)),
+        # The object-rule numbers SPL is built from. Without them a recorded
+        # SPL cannot be checked from episodes.jsonl at all -- every episode of
+        # outputs/mf5_pass2_final carried shortest_path_to_object_m=None because
+        # nothing copied it here, which is how an SPL of 0.0 on a SUCCESSFUL
+        # episode went unnoticed.
+        "shortest_path_to_object_m": metrics.get("shortest_path_to_object_m"),
+        "travelled_m": metrics.get("travelled_m"),
+        "attempt_count": metrics.get("attempt_count"),
         "distance_to_goal": float(metrics.get("distance_to_goal", -1.0)),
         "steps": outcome.steps,
         "wall_time_s": outcome.wall_time_s,
@@ -223,6 +231,10 @@ def build_episode_record(
         # Per-step trace, only when debug frames are on: ~20 numbers a step,
         # which would bloat every normal run's episodes.jsonl. It is what the
         # S49/S50 detector-recall and framing measurements were built from.
+        # Where the climb's steps went (agent/nav_agent._traced_climb).
+        **({"climb_trace": agent._climb_trace}
+           if (cfg.eval.debug_frames or getattr(cfg.eval, "behaviour_log", False))
+           and getattr(agent, "_climb_trace", None) else {}),
         **({"step_trace": agent.step_trace}
            if (cfg.eval.debug_frames or getattr(cfg.eval, "behaviour_log", False))
            and hasattr(agent, "step_trace") else {}),

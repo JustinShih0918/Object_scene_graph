@@ -160,3 +160,107 @@ def test_the_height_rule_is_untouched_when_the_flag_is_off():
     agent._goal_xy = np.array([1.0, 1.0])
     agent._start_climb(SimpleNamespace(camera_position=np.array([0.0, 1.5, 0.0])))
     assert agent._climb_direction == -1, "the shipped tie-goes-down behaviour"
+
+
+# ---------------------------------------------- carrot: never underfoot
+
+def _climbing_agent(**over):
+    from .test_nav_agent import make_agent, make_cfg
+    # `make_cfg` ships `climb_flight_carrot: False`, under which `_flight_carrot`
+    # returns None before looking at a single cell.
+    agent = make_agent(make_cfg(climb_enabled=True, climb_flight_carrot=True, **over))
+    agent._climb_direction = 1
+    return agent
+
+
+def _flight_at(agent, offsets_m, heights):
+    """A flight whose cells sit at these horizontal offsets from the origin."""
+    rc = np.asarray([agent.costmap.world_to_grid(np.array([d, 0.0])) for d in offsets_m])
+    return SimpleNamespace(kind="up", cells_rc=rc, heights=np.asarray(heights, float),
+                           n_cells=len(rc), foot_xy=np.zeros(2))
+
+
+def test_shipped_carrot_takes_the_nearest_in_band_cell_even_underfoot():
+    """The measured failure: a ramp says the cell at the agent's feet is
+    0.4 m up, so it is the nearest in-band cell and the goal is 0 m away."""
+    agent = _climbing_agent()
+    agent.floors.pursuit_flight = _flight_at(agent, [0.05, 0.6, 1.2], [0.4, 0.7, 1.0])
+    frame = SimpleNamespace(camera_position=np.array([0.0, 0.88, 0.0]))
+    goal = agent._flight_carrot(frame, np.zeros(2))
+    assert float(np.linalg.norm(goal)) < 0.1
+
+
+def test_min_ahead_skips_the_underfoot_cell_for_the_next_one():
+    agent = _climbing_agent(climb_carrot_min_ahead_m=0.4)
+    agent.floors.pursuit_flight = _flight_at(agent, [0.05, 0.6, 1.2], [0.4, 0.7, 1.0])
+    frame = SimpleNamespace(camera_position=np.array([0.0, 0.88, 0.0]))
+    goal = agent._flight_carrot(frame, np.zeros(2))
+    assert 0.5 < float(np.linalg.norm(goal)) < 0.7, "the 0.6 m cell, not the one underfoot"
+
+
+def test_min_ahead_is_a_no_op_when_the_band_is_already_ahead():
+    """With true heights the nearest in-band cell was 0.66-1.01 m ahead in
+    every probe step; the flag must not change that choice."""
+    a = _climbing_agent()
+    b = _climbing_agent(climb_carrot_min_ahead_m=0.4)
+    for agent in (a, b):
+        agent.floors.pursuit_flight = _flight_at(agent, [0.7, 1.2, 1.8], [0.5, 0.8, 1.2])
+    frame = SimpleNamespace(camera_position=np.array([0.0, 0.88, 0.0]))
+    ga, gb = a._flight_carrot(frame, np.zeros(2)), b._flight_carrot(frame, np.zeros(2))
+    assert np.allclose(ga, gb)
+
+
+def test_when_every_in_band_cell_is_underfoot_the_carrot_aims_further_up():
+    agent = _climbing_agent(climb_carrot_min_ahead_m=0.4)
+    agent.floors.pursuit_flight = _flight_at(agent, [0.05, 0.1, 1.5], [0.4, 0.5, 1.6])
+    frame = SimpleNamespace(camera_position=np.array([0.0, 0.88, 0.0]))
+    goal = agent._flight_carrot(frame, np.zeros(2))
+    assert float(np.linalg.norm(goal)) > 1.0, "the far cell, via the fall-through"
+    assert agent.stats["climb_carrot_underfoot"] == 1
+
+
+# ------------------------------------------- climb: close the KNOWN gap
+
+def _climb_in_progress(agent, dy: float):
+    """A climb from a 0.0 m storey toward a 3.0 m one, `dy` metres up."""
+    from osg.agent.nav_agent import State
+    agent.floors.estimator._levels = {0: 0.0, 1: 3.0}
+    agent.floors.estimator.current = 0
+    agent.floors.stack.layer(0, step=0).floor_y = 0.0
+    agent.floors.stack.layer(1, step=0).floor_y = 3.0
+    agent.floors.stack.current_id = 0
+    agent.cfg.floor.no_level_on_flight = True
+    agent.cfg.floor.new_level_m = 1.8
+    agent.floors.pursuit_flight = SimpleNamespace(kind="up", n_cells=0, cells_rc=np.zeros((0, 2), int),
+                                                  heights=np.zeros(0), foot_xy=np.zeros(2))
+    agent._goal_xy = np.array([1.0, 1.0]); agent._goal_floor_y_cache = 3.0
+    agent._start_climb(SimpleNamespace(camera_position=np.array([0.0, 0.88, 0.0])))
+    agent.floors.pursuing = True
+    frame = SimpleNamespace(camera_position=np.array([0.0, 0.88 + dy, 0.0]), depth=np.zeros((4, 4)),
+                            T_wc=np.eye(4), intrinsics=SimpleNamespace(width=4, fx=2.0, cx=2.0))
+    return frame, State
+
+
+def test_shipped_rule_declares_a_storey_at_new_level_m():
+    agent = _climbing_agent()
+    frame, State = _climb_in_progress(agent, dy=1.85)
+    agent._do_climb(frame)
+    assert agent.state is not State.CLIMB, "1.85 >= new_level_m 1.8: the shipped rule ends the climb"
+    assert agent.stats.get("climb_ok") == 1
+
+
+def test_with_a_known_gap_the_climb_continues_past_new_level_m():
+    """v11 ep2: +1.83 m on a 3.0 m storey was called a storey. With the gap
+    known it is 1.2 m short and the climb goes on."""
+    agent = _climbing_agent(climb_to_target_storey_tol_m=0.3)
+    frame, State = _climb_in_progress(agent, dy=1.85)
+    agent._do_climb(frame)
+    assert agent.state is State.CLIMB
+
+
+def test_with_a_known_gap_the_climb_ends_within_tolerance_of_it():
+    agent = _climbing_agent(climb_to_target_storey_tol_m=0.3)
+    frame, State = _climb_in_progress(agent, dy=2.75)
+    agent._do_climb(frame)
+    assert agent.state is not State.CLIMB
+    assert agent.stats.get("climb_ok") == 1

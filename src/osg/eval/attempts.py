@@ -91,11 +91,15 @@ def rearm_after_failed_attempt(agent, cfg) -> None:
     that it stays a belief: one later detection is worth +2.5 and puts the track
     back above the bar, which is the whole difference from a blacklist.
     """
-    track = (
-        agent.object_layer.get(agent._candidate_id)
-        if agent._candidate_id is not None else None
-    )
-    presence = getattr(agent.object_layer, "presence_filter", None)
+    # Not every policy has OSG's object layer. The ASCENT transcription has no
+    # `object_layer` and no `_candidate_id`, and reaching for them raises
+    # AttributeError mid-episode -- which is how the ASCENT arm on DualMap's
+    # protocol died before writing a single episode. There is simply no belief
+    # to demote in that case; the re-arm below still applies.
+    layer = getattr(agent, "object_layer", None)
+    candidate = getattr(agent, "_candidate_id", None)
+    track = layer.get(candidate) if (layer is not None and candidate is not None) else None
+    presence = getattr(layer, "presence_filter", None) if layer is not None else None
     if track is not None and presence is not None:
         vc = cfg.verification
         presence.apply_reading(
@@ -109,11 +113,11 @@ def rearm_after_failed_attempt(agent, cfg) -> None:
         # is over, near enough that one sighting undoes it.
         under_the_bar = math.log(bar / (1.0 - bar)) - 0.87
         track.presence.log_odds = min(float(track.presence.log_odds), under_the_bar)
-    elif track is not None:
+    elif track is not None and layer is not None:
         # No presence filter running (the C1-off ablation): without a belief to
         # lower there is nothing else that stops the next attempt repeating this
         # candidate, so the blacklist stays as the fallback.
-        agent.object_layer.blacklist(track.id)
+        layer.blacklist(track.id)
     if track is not None and bool(getattr(cfg.verification, "failed_attempt_disables_place", False)):
         # The place was wrong, whichever fragment of it the commit named: every
         # track of the label within the layer's false-positive radius of the
@@ -143,4 +147,10 @@ def rearm_after_failed_attempt(agent, cfg) -> None:
         # restores the belief the clamp just lowered.
         track.identity_rejections += 1
         track.failed_attempts = int(getattr(track, "failed_attempts", 0)) + 1
-    agent.rearm(cfg.agent.max_steps)
+    # `rearm` is OSG's FSM reset. A policy that does not have one simply keeps
+    # navigating with everything it has learned, which is what this function is
+    # for -- the ASCENT transcription has no `rearm` and raised AttributeError
+    # here, killing the arm before it wrote a single episode.
+    rearm = getattr(agent, "rearm", None)
+    if callable(rearm):
+        rearm(cfg.agent.max_steps)

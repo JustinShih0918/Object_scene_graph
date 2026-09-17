@@ -163,6 +163,8 @@ class ExplorationStrategy:
         # the same reason as the blacklist.
         self._last_giveup_pt: Optional[tuple] = None
         self._last_select_step = -100
+        self.forced_floor = None
+        self._floor_arrived_step, self._floor_seen = 0, None
         # What has already been searched, and how well (C3). A visit multiplies
         # a surface's belief by (1 - d) rather than zeroing it, so a place
         # glanced at from four metres stays plausible and one inspected closely
@@ -201,6 +203,21 @@ class ExplorationStrategy:
         # planner; this field hands the other-floor decision to FloorPolicy.
         self.requested_floor: Optional[int] = None
         self.selected_search_floor: Optional[int] = None
+        # A storey the AGENT has decided on -- after failed attempts disproved
+        # the one it is on -- as opposed to one the posterior argmax chose.
+        # Overrides the mass rule and the anchor hold in `_select_surface`,
+        # because both are answers to "where might it be" and this is an
+        # answer to "where it is not". Cleared on arrival.
+        self.forced_floor: Optional[int] = None
+        # Storeys the agent's own failed attempts have disproved (nav_agent
+        # shares its set). The mass rule may not send the agent back to one:
+        # measured (outputs/mf5_pass2_v12 ep1), the agent disproved the upper
+        # storey, climbed down, and at the next round the posterior selected
+        # the upper storey again -- it climbed back up and ended where it
+        # started.
+        self.disproved_floors: set = set()
+        self._floor_arrived_step: int = 0
+        self._floor_seen: Optional[int] = None
 
     def force_select_next(self) -> None:
         """Drop the rate limit so the next `select` really runs.
@@ -250,6 +267,11 @@ class ExplorationStrategy:
         ):
             return None
         self._last_select_step = world.step
+        if self._floor_seen is None or int(world.floor_id) != int(self._floor_seen):
+            self._floor_seen, self._floor_arrived_step = int(world.floor_id), int(world.step)
+        if self.forced_floor is not None and int(self.forced_floor) == int(world.floor_id):
+            self.forced_floor = None       # arrived: the directive is spent
+            self.requested_floor = None
         # A surface is only searched once the agent has actually got there.
         # Marking it on the next selection round instead -- which fires every 5
         # steps -- spent belief on places the agent had merely set off towards,
@@ -600,6 +622,31 @@ class ExplorationStrategy:
             score = {k: v / max(floor_n.get(k, 1), 1) for k, v in floor_mass.items()}
         else:
             score = dict(floor_mass)
+        eligible = {k: v for k, v in score.items()
+                    if int(k) not in self.disproved_floors or int(k) == int(world.floor_id)}
+        if eligible != score:
+            self.stats["floor_posterior_disproved_excluded"] = (
+                self.stats.get("floor_posterior_disproved_excluded", 0) + 1)
+        if not eligible:
+            # Every storey with any mass is disproved: there is nowhere the
+            # posterior may send the agent. Stay and explore.
+            eligible = {int(world.floor_id): 0.0}
+        score = eligible
+        settle = int(getattr(self.cfg, "empty_storey_settle_steps", 0) or 0)
+        if (
+            int(world.floor_id) not in score
+            and settle > 0
+            and int(world.step) - int(self._floor_arrived_step) < settle
+        ):
+            # THIS storey has no containers and the agent only just got here.
+            # That is "unmapped", not "the target is not here": containers are
+            # rebuilt from tracks at keyframes, and none has happened yet.
+            # Outside the window the shipped rule stands -- with nothing here,
+            # anywhere else is better (test_floor_anchor_order). See the
+            # config comment for the measurement.
+            self.stats["floor_posterior_empty_here"] = (
+                self.stats.get("floor_posterior_empty_here", 0) + 1)
+            score = {int(world.floor_id): 0.0}
         selected_floor = max(score, key=lambda key: (score[key], -int(key)))
         margin = float(getattr(self.cfg, "floor_mass_margin", 0.0))
         if (
@@ -624,6 +671,16 @@ class ExplorationStrategy:
                 self.stats.get("cross_floor_request_held", 0) + 1
             )
             selected_floor = int(world.floor_id)
+        forced = getattr(self, "forced_floor", None)
+        if forced is not None and int(forced) != int(world.floor_id):
+            # Failed attempts have disproved this storey (agent.rearm). That
+            # outranks a posterior that abstains by design (`mean` + margin)
+            # and an anchor hold whose anchor has, by definition, been tested.
+            selected_floor = int(forced)
+            self.selected_search_floor = int(forced)
+            self.stats["selected_search_floor"] = int(forced)
+            self.stats["floor_forced_by_failed_attempts"] = (
+                self.stats.get("floor_forced_by_failed_attempts", 0) + 1)
         if int(selected_floor) != int(world.floor_id) and not stay_on_floor:
             self.requested_floor = int(selected_floor)
             self.stats["cross_floor_search_requests"] = (

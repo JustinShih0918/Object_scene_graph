@@ -299,6 +299,8 @@ class DFineDetector(Detector):
         vocabulary: List[str] | None = None,
         class_conf: Optional[Dict[str, float]] = None,
         strict: bool = False,
+        gdino_url: str = "",
+        gdino_conf: float = 0.35,
         **_ignored: object,
     ) -> None:
         self.url = url
@@ -311,6 +313,17 @@ class DFineDetector(Detector):
         self.class_conf = {self._normalize(k): float(v)
                            for k, v in (class_conf or {}).items()}
         self._wanted: Optional[set] = None
+        # ASCENT's own non-COCO branch (`map_controller.py:715-719`): when the
+        # query is not a COCO class, it asks GroundingDINO by name instead of
+        # D-FINE. The reference run never reached it because HM3D ObjectNav
+        # targets are all COCO -- YCB targets are not, and without this branch
+        # the arm detected its target 0 times in 91 in-view frames and never
+        # issued a STOP (0/25 on the multi-floor set). Porting it COMPLETES the
+        # transcription rather than departing from it.
+        self.gdino_url = str(gdino_url or "")
+        self.gdino_conf = float(gdino_conf)
+        self._open_vocab: List[str] = []
+        self.n_gdino_calls = 0
         self.n_calls = 0
         self.n_errors = 0
         self.n_sam_errors = 0
@@ -326,6 +339,12 @@ class DFineDetector(Detector):
                    if self._normalize(v) in wanted}
         keep = {c for c in COCO_TO_HM3D if c in wanted}
         self._wanted = keep or None
+        # Whatever COCO cannot name is asked of GroundingDINO by name, which is
+        # what ASCENT does for a non-COCO query.
+        nameable = {self._normalize(v) for v in COCO_TO_HM3D.values()}
+        self._open_vocab = sorted(
+            self._normalize(c) for c in classes
+            if self._normalize(c) not in nameable)
 
     def _post(self, url: str, payload: dict) -> Optional[dict]:
         import json as _json
@@ -419,6 +438,41 @@ class DFineDetector(Detector):
                             mask=self._mask_for(rgb, box_px, img))
             det.crop_from(rgb)
             out.append(det)
+        out.extend(self._open_vocab_detections(rgb, img))
+        return out
+
+    def _open_vocab_detections(self, rgb: np.ndarray, img: str) -> List[Detection]:
+        """GroundingDINO boxes for the targets COCO has no word for.
+
+        ASCENT's non-COCO branch, asked one caption per target name in the
+        "<name> ." form GroundingDINO expects and that the stair detector
+        already uses. Masked with MobileSAM exactly like a D-FINE box, because
+        the mask is what decides where the object is projected to.
+        """
+        if not self.gdino_url or not self._open_vocab:
+            return []
+        h, w = rgb.shape[:2]
+        out: List[Detection] = []
+        for name in self._open_vocab:
+            resp = self._post(self.gdino_url,
+                              {"image": img, "caption": f"{name} ."})
+            if resp is None or "boxes" not in resp:
+                continue
+            self.n_gdino_calls += 1
+            for box, logit, phrase in zip(resp["boxes"], resp["logits"],
+                                          resp.get("phrases", [])):
+                if float(logit) < self.gdino_conf:
+                    continue
+                # GroundingDINO returns the matched span; accept it when the
+                # target's words are in it, so "cracker" matches "cracker box".
+                text = self._normalize(phrase)
+                if not text or not any(tok in text for tok in name.split()):
+                    continue
+                box_px = np.asarray(box, float) * np.array([w, h, w, h], float)
+                det = Detection(label=name, score=float(logit), bbox_xyxy=box_px,
+                                mask=self._mask_for(rgb, box_px, img))
+                det.crop_from(rgb)
+                out.append(det)
         return out
 
 

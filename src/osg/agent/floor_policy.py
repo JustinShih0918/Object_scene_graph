@@ -31,7 +31,8 @@ from ..mapping.costmap import PLANE, Costmap2D
 from ..mapping.floor_stack import FloorStack
 from ..mapping.floors import FloorEstimator
 from ..mapping.portals import FloorSwitchPolicy, find_portals
-from ..mapping.stairs import StairRegion, apply_stair_mask, detect_stairs, find_flights, stair_tracks
+from ..mapping.stairs import (StairRegion, apply_stair_mask, detect_stairs,
+                             find_flights, mouth_xy, stair_tracks)
 from ..planning.voronoi_planner import HybridVoronoiPlanner
 
 
@@ -55,6 +56,13 @@ class FloorPolicy:
     def __init__(self, cfg, stats: dict, value_map_factory=None) -> None:
         self.cfg = cfg
         self.stats = stats
+        # Storeys the agent's own failed attempts have disproved. `NavAgent`
+        # rebinds this to the SAME set it shares with `ExplorationStrategy`, so
+        # the verdict reaches every channel that acts on it -- the floor LLM,
+        # the candidate channel, the storey posterior and, since the 00800 toy
+        # airplane returned to a disproved storey 51 steps after arriving,
+        # the flight choice (`_drop_disproved`).
+        self.disproved_floors: set = set()
         fcfg = cfg.floor
         self._stairs_on = bool(fcfg.stairs)
         self._cross_floor_on = bool(fcfg.cross_floor)
@@ -294,6 +302,70 @@ class FloorPolicy:
         cols = np.clip(rc[:, 1], 0, mask.shape[1] - 1)
         return bool(mask[rows, cols].any())
 
+    def _destination_key(self, kind: str, floor_y: float):
+        """The storey a flight of this kind would arrive at, or None.
+
+        Nearest known level in the direction of travel -- the same rule the
+        undirected branch of `try_switch` uses to pick `target_y`.
+        """
+        others = [(k, h) for k, h in self.known_levels().items()
+                  if int(k) != int(self.stack.current_id)]
+        if kind == "up":
+            above = [(k, h) for k, h in others if h > float(floor_y)]
+            return min(above, key=lambda kh: kh[1])[0] if above else None
+        below = [(k, h) for k, h in others if h < float(floor_y)]
+        return max(below, key=lambda kh: kh[1])[0] if below else None
+
+    def _drop_disproved(self, usable: list, floor_y: float) -> list:
+        """Flights back to a storey the agent's own failed attempts disproved.
+
+        `agent.floor_disproved_after_failed_attempts` makes a storey's failed
+        attempts a verdict on the STOREY, and that verdict was honoured by the
+        floor LLM, the candidate channel and the storey posterior -- but not
+        here, which is where it decides where to walk.
+
+        Measured, 00800 toy airplane: two attempts failed upstairs, storey 0
+        was disproved, the agent descended and ARRIVED on storey 1 at step 455
+        -- then chose a `flight_up` at step 506, 51 steps later, and was back on
+        the disproved storey by 699, where it spent its last attempt on a false
+        positive and ended 21.5 m from a target that was downstairs all along.
+
+        Never returns empty: a verdict may not make progress impossible, which
+        is the same rule `_rank_flights` and `ExplorationStrategy` already keep.
+        """
+        if not self.disproved_floors:
+            return usable
+        kept = [f for f in usable
+                if self._destination_key(f.kind, floor_y) not in self.disproved_floors]
+        dropped = len(usable) - len(kept)
+        if dropped and kept:
+            self.stats["flights_skipped_disproved"] = (
+                self.stats.get("flights_skipped_disproved", 0) + dropped)
+        return kept or usable
+
+    def known_levels(self) -> dict:
+        """`{key: height}` over every storey this agent knows about.
+
+        The ONLINE estimator's levels UNION the stack's layers, because a
+        storey can be known without having been stood on: `_seed_storeys`
+        creates a layer for every storey the prior obstacle map clusters, and
+        `apply_map` restores the scene graph's. The estimator only ever learns
+        a level by standing at that height.
+
+        Reading the estimator alone deadlocked 00821. The agent starts at 0.13,
+        the lower storey is -3.47, and `_rank_flights` discarded every
+        `flight_down` because the estimator knew no level below -- so it could
+        not descend to learn the level it needed in order to be allowed to
+        descend. Measured: 3, 3 and 4 flights dropped in the three episodes
+        that never changed storey, against 0 in the one that did (which got
+        down only via a phantom mid-staircase level the estimator happened to
+        commit).
+        """
+        levels = {int(k): float(h) for k, h in self.estimator.levels.items()}
+        for key, layer in getattr(self.stack, "_layers", {}).items():
+            levels.setdefault(int(key), float(getattr(layer, "floor_y", 0.0)))
+        return levels
+
     def _rank_flights(self, usable: list, floor_y: float) -> list:
         """Drop flights that lead where no storey is, keep the rest.
 
@@ -301,7 +373,7 @@ class FloorPolicy:
         costmap the estimator knows one level and every flight would look
         impossible, which would take away the only way up.
         """
-        levels = [float(h) for h in self.estimator.levels.values()]
+        levels = [float(h) for h in self.known_levels().values()]
         if len(levels) < 2:
             return usable
         gap = float(self.cfg.floor.new_level_m) * 0.5
@@ -327,7 +399,7 @@ class FloorPolicy:
         else:
             self.stats["flight_pick_uncorroborated"] = (
                 self.stats.get("flight_pick_uncorroborated", 0) + 1)
-        return min(pool, key=lambda f: float(np.linalg.norm(f.foot_xy - agent_xy)))
+        return min(pool, key=lambda f: float(np.linalg.norm(mouth_xy(f) - agent_xy)))
 
     def pursuit_ok(self, frame, step: int, deadline: int) -> bool:
         """Should the agent keep driving to its portal instead of re-exploring?
@@ -380,6 +452,27 @@ class FloorPolicy:
         return any(
             float(np.linalg.norm(here - bad)) <= radius for bad in self._failed_portals
         )
+
+    def flight_span_m(self, floor_y: float) -> float:
+        """How tall a flight from `floor_y` may be, for `find_flights`.
+
+        The gap to the nearest other known level when the storeys are known
+        (config: floor.flight_span_from_levels), else `new_level_m`. Never
+        smaller than `new_level_m`: a level a few centimetres off the current
+        one -- the estimator offers those -- must not shrink the band to
+        nothing.
+        """
+        span = float(self.cfg.floor.new_level_m)
+        if not bool(getattr(self.cfg.floor, "flight_span_from_levels", False)):
+            return span
+        gaps = [
+            abs(float(h) - float(floor_y))
+            for h in self.estimator.levels.values()
+            if abs(float(h) - float(floor_y)) > span * 0.5
+        ]
+        if not gaps:
+            return span
+        return max(span, min(gaps))
 
     def on_flight_cells(self, agent_xy) -> bool:
         """Is the agent standing on a staircase?
@@ -529,20 +622,28 @@ class FloorPolicy:
                 new_level_m=float(self.cfg.floor.new_level_m),
                 min_span_m=float(getattr(self.cfg.floor, "flight_min_span_m", 1.0)),
                 min_cells=int(getattr(self.cfg.floor, "flight_min_cells", 150)),
+                wide_span_m=self.flight_span_m(float(floor_y)),
+                wide_mask=getattr(self.costmap, "stair_mask", None),
+                order_path=bool(getattr(self.cfg.agent,
+                    "climb_carrot_follow_path", False)),
             )
             self.stats["flights_seen"] = max(self.stats.get("flights_seen", 0), len(flights))
             agent_xy = frame.camera_position[list(PLANE)]
             usable = [
                 f for f in flights
-                if (want is None or f.kind == want) and not self._portal_failed_here(f.foot_xy)
+                if (want is None or f.kind == want) and not self._portal_failed_here(mouth_xy(f))
             ]
             rank = bool(getattr(self.cfg.floor, "flights_prefer_stair_mask", False))
             if usable and rank:
                 usable = self._rank_flights(usable, float(floor_y))
+            # A DIRECTED switch already names its storey; an undirected one is
+            # free to pick, and must not pick a storey already disproved.
+            if usable and not directed:
+                usable = self._drop_disproved(usable, float(floor_y))
             if usable:
                 flight = (
                     self._best_flight(usable, agent_xy) if rank
-                    else min(usable, key=lambda f: float(np.linalg.norm(f.foot_xy - agent_xy)))
+                    else min(usable, key=lambda f: float(np.linalg.norm(mouth_xy(f) - agent_xy)))
                 )
                 # Make the treads traversable on this floor's grid, so the planner
                 # and the frontier extractor stop reading the flight as a wall.
@@ -551,11 +652,15 @@ class FloorPolicy:
                     n_cells=flight.n_cells, mean_dh=0.0,
                     low_y=float(flight.heights.min()), high_y=float(flight.heights.max()),
                 )], max_area_frac=float(self.cfg.floor.stair_max_area_frac))
-                goal_xy = np.asarray(flight.foot_xy, dtype=float)
+                # The mouth on THIS storey -- the top of a descent, the foot of an
+                # ascent. See `stairs.mouth_xy`: using the foot for both walked a
+                # descending agent toward the bottom of the staircase.
+                goal_xy = mouth_xy(flight)
                 if want is not None:
                     target_y = float(self.stack.by_key(int(target_floor)).floor_y)
                 else:
-                    others = [h for k, h in self.estimator.levels.items() if k != self.stack.current_id]
+                    others = [h for k, h in self.known_levels().items()
+                              if k != self.stack.current_id]
                     if flight.kind == "up":
                         above = [h for h in others if h > float(floor_y)]
                         target_y = min(above) if above else float(floor_y) + float(self.cfg.floor.new_level_m)

@@ -15,6 +15,7 @@ module.
 """
 from __future__ import annotations
 
+import pytest
 import ast
 import inspect
 import types
@@ -47,6 +48,10 @@ EXPECTED_KEYS = {
     "llm_last_error", "n_floors_seen", "n_stair_tracks", "portal_log", "floor_llm_log",
     "presence_events", "prior_map", "prior_obstacle_map",
     "scene", "search_log_events", "spl",
+    # SPL's inputs, so a recorded SPL can be audited from the file it lives
+    # in. Their absence is how an SPL of 0.0 on a SUCCESSFUL episode survived
+    # a whole run unnoticed (outputs/mf5_pass2_final, 00862/50001).
+    "shortest_path_to_object_m", "travelled_m", "attempt_count",
     "stair_tracks", "start_y", "state_log", "steps", "success", "target",
     "target_obj_xy", "target_tracks", "traj_y_range", "verify_calls",
     "verify_errors", "wall_time_s", "start_floor", "goal_floor", "prior_floor",
@@ -231,3 +236,66 @@ def test_debug_video_keeps_the_file_when_compression_is_off(tmp_path):
          "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(vid._path)],
         capture_output=True, text=True, check=True).stdout.strip()
     assert codec != "h264", "crf=0 should have skipped the re-encode"
+
+
+def test_a_successful_episode_never_reports_spl_zero_for_want_of_a_path():
+    """SPL 0.0 on a SUCCESS is a bookkeeping failure, not a result.
+
+    `_shortest_to_object` samples rings around the object for a navigable point
+    inside the success radius; when every sample fails to snap or to path, it
+    returns None and `summary` used to fall straight through to spl = 0.0 --
+    for an episode that HAD stopped within the radius. Measured on
+    outputs/mf5_pass2_final 00862/50001: success=1, spl=0.000, dragging the
+    reported mean SPL below the truth.
+
+    The winning stop is inside the radius by construction, so the geodesic to
+    it is a valid numerator; the rule holds no simulator, so the env injects it.
+    """
+    from osg.sim.ycb_env import ObjectDistanceRule
+    import numpy as np
+
+    rule = ObjectDistanceRule(enabled=True, threshold_m=1.0)
+    rule.shortest_m = None                      # the sampling found nothing
+    rule._travelled = 12.0
+    target = np.array([1.0, 0.0, 0.0])
+    rule.record_stop(40, np.array([0.5, 0.0, 0.0]), target)   # 0.5 m -> success
+    assert rule.attempts[-1]["success"]
+
+    # Without a fallback the success still reports SPL 0.0 ...
+    assert rule.summary(np.array([0.5, 0.0, 0.0]), target)["spl"] == 0.0
+
+    # ... and with one it reports the real ratio.
+    rule.shortest_fallback = lambda attempts: 6.0
+    out = rule.summary(np.array([0.5, 0.0, 0.0]), target)
+    assert out["success"] == 1
+    assert out["spl"] == pytest.approx(6.0 / 12.0)
+
+
+def test_the_fallback_is_not_consulted_when_the_sampling_worked():
+    """A measured shortest path always wins; the fallback is a last resort."""
+    from osg.sim.ycb_env import ObjectDistanceRule
+    import numpy as np
+
+    rule = ObjectDistanceRule(enabled=True, threshold_m=1.0)
+    rule.shortest_m = 4.0
+    rule._travelled = 8.0
+    rule.shortest_fallback = lambda attempts: 999.0      # must be ignored
+    target = np.array([1.0, 0.0, 0.0])
+    rule.record_stop(10, np.array([0.5, 0.0, 0.0]), target)
+    assert rule.summary(np.array([0.5, 0.0, 0.0]), target)["spl"] == pytest.approx(0.5)
+
+
+def test_a_failed_episode_still_reports_spl_zero():
+    """No success, no SPL -- the fallback must not invent one."""
+    from osg.sim.ycb_env import ObjectDistanceRule
+    import numpy as np
+
+    rule = ObjectDistanceRule(enabled=True, threshold_m=1.0)
+    rule.shortest_m = None
+    rule._travelled = 30.0
+    rule.shortest_fallback = lambda attempts: 5.0
+    target = np.array([10.0, 0.0, 0.0])
+    rule.record_stop(50, np.array([0.0, 0.0, 0.0]), target)   # 10 m -> failure
+    out = rule.summary(np.array([0.0, 0.0, 0.0]), target)
+    assert out["success"] == 0
+    assert out["spl"] == 0.0

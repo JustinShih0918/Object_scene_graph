@@ -129,6 +129,26 @@ def rgb_panel(rgb: np.ndarray, dets, target: str) -> np.ndarray:
     return img
 
 
+def _climb_label(agent) -> str:
+    """The climb fields, or nothing if they are not there.
+
+    A debug PANEL must never end a run. `reached` / `reached_centroid` were
+    renamed to `reach_stair` / `reach_stair_centroid` at some point and this
+    label was not, so every ASCENT episode with `eval.debug_frames=true` died
+    with AttributeError as soon as a climb began -- all five scenes of the
+    baseline, none of them for a navigation reason.
+    """
+    climb = getattr(agent, "climb", None)
+    if climb is None or not getattr(climb, "climbing", False):
+        return ""
+    try:
+        return (f"   climb dir={climb.direction}"
+                f" reached={int(climb.reach_stair)}"
+                f" centroid={int(climb.reach_stair_centroid)}")
+    except AttributeError:
+        return "   climb (fields unavailable)"
+
+
 def debug_panel(agent, frame, target: str, robot_xy, heading, dets=None,
                 size: int = 480) -> np.ndarray:
     """One video frame. Fixed output size so the writer never has to resize."""
@@ -150,8 +170,11 @@ def debug_panel(agent, frame, target: str, robot_xy, heading, dets=None,
     _label(panel, f"{target}   step {agent.step_count}   state={state}", 20)
     _label(panel, f"frontiers={n_f}"
                   + (f"   selected=({sel[0]:.1f}, {sel[1]:.1f})" if sel is not None else "")
-                  + (f"   climb dir={agent.climb.direction} reached={int(agent.climb.reached)}"
-                     f" centroid={int(agent.climb.reached_centroid)}" if agent.climb.climbing else ""),
+                  # `reach_stair` / `reach_stair_centroid` are the attribute names
+                  # StairController actually carries; `reached` / `reached_centroid`
+                  # never existed, so every debug_frames run of the ASCENT arm died
+                  # here with AttributeError the moment a climb began.
+                  + _climb_label(agent),
                  40)
     _label(panel, "RGB + detections", size - 7, (200, 200, 200), 0.45)
     _label(panel, "maps: +x up, +y left", 60, (180, 180, 180), 0.42)

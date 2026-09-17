@@ -62,13 +62,19 @@ class _Cfg:
         obstacle_map_in = ""
         obstacle_map_out = ""
         obstacle_map_overwrite = False
+        obstacle_map_union = False
+        seed_storeys_from_obstacle_map = False
+        storey_seed_tol_m = 1.0
 
 
-def _cfg(map_in: str, overwrite: bool = False):
+def _cfg(map_in: str, overwrite: bool = False, union: bool = False):
     cfg = _Cfg()
     cfg.ycb.obstacle_map_in = str(map_in)
     cfg.ycb.obstacle_map_out = ""
     cfg.ycb.obstacle_map_overwrite = overwrite
+    cfg.ycb.obstacle_map_union = union
+    cfg.ycb.seed_storeys_from_obstacle_map = False
+    cfg.ycb.storey_seed_tol_m = 1.0
     return cfg
 
 
@@ -327,3 +333,255 @@ def test_a_wide_one_storey_map_beats_a_tiny_multi_storey_one(tmp_path):
             if f["explored_cells"] > 0]
     assert sum(f["explored_cells"] for f in kept) == 300 * 300, (
         "the tiny four-storey map displaced the one that mapped the building")
+
+
+# ------------------------------------------------------ the union of a scene
+
+def _two_storey_agent(explored_lower, explored_upper):
+    anchor = EpisodeAnchor(np.array([0.0, 0.0]), 0.0)
+    return _SaveAgent([_om(explored=explored_lower), _om(explored=explored_upper)],
+                      anchor)
+
+
+def _save_episode(tmp_path, tag, agent, union=True):
+    from osg.eval.prior_map import save_obstacle_map_for_scene
+
+    class _Episode:
+        episode_id = tag
+        scene_id = "data/scene_datasets/hm3d/val/00800-TEEsavR23oF/x.basis.glb"
+
+    cfg = _cfg("", union=union)
+    cfg.ycb.obstacle_map_out = str(tmp_path)
+    return save_obstacle_map_for_scene(cfg, agent, _Episode())
+
+
+def test_with_the_union_on_every_episode_keeps_its_own_snapshot(tmp_path):
+    """The protocol runs one mapping episode per authored object and the
+    writer keeps only the best. Five of six explorations are thrown away, and
+    on 00800 the one kept leaves the episode-1 target 5.1 m outside the map."""
+    _save_episode(tmp_path, "ep_a", _two_storey_agent((100, 200, 100, 200), (150, 200, 150, 200)))
+    _save_episode(tmp_path, "ep_b", _two_storey_agent((200, 300, 200, 300), (200, 260, 200, 260)))
+    assert len(list(tmp_path.glob("*.json"))) == 2, "an episode's map was discarded"
+
+
+def test_the_union_pastes_every_snapshot_into_one_costmap(tmp_path):
+    """Two explorations that saw DIFFERENT rooms must add up."""
+    _save_episode(tmp_path, "ep_a", _two_storey_agent((100, 200, 100, 200), (150, 200, 150, 200)))
+    _save_episode(tmp_path, "ep_b", _two_storey_agent((260, 340, 260, 340), (200, 260, 200, 260)))
+
+    lower = Costmap2D(resolution=1.0 / PPM, size_m=40.0)
+    upper = Costmap2D(resolution=1.0 / PPM, size_m=40.0)
+    agent = _LoadAgent({0: _Layer(0.0, lower), 1: _Layer(3.1, upper)})
+    note = load_obstacle_map(_cfg(tmp_path, union=True), agent, "scene")
+
+    assert len(note["union_snapshots"]) == 2, note
+    assert not note["union_skipped"]
+    per_snapshot = {}
+    for m in note["matched_floors"]:
+        per_snapshot[m["from"]] = per_snapshot.get(m["from"], 0) + m["cells"]
+    assert len(per_snapshot) == 2 and all(v > 0 for v in per_snapshot.values())
+    known = int((lower.grid != -1).sum())
+    assert known > max(per_snapshot.values()) * 0.9, "the second map overwrote the first"
+    assert known > min(per_snapshot.values()) * 1.5, f"the union added nothing: {known}"
+
+
+def test_a_snapshot_with_a_different_storey_count_is_skipped_not_guessed(tmp_path):
+    """`ObstacleMap` records no world height and floors are matched BY ORDER,
+    so a one-storey snapshot pasted onto a two-storey stack would land a whole
+    floor on the wrong storey."""
+    _save_episode(tmp_path, "ep_a", _two_storey_agent((100, 200, 100, 200), (150, 200, 150, 200)))
+    anchor = EpisodeAnchor(np.array([0.0, 0.0]), 0.0)
+    _save_episode(tmp_path, "ep_one", _SaveAgent([_om(explored=(260, 340, 260, 340))], anchor))
+
+    lower = Costmap2D(resolution=1.0 / PPM, size_m=40.0)
+    upper = Costmap2D(resolution=1.0 / PPM, size_m=40.0)
+    agent = _LoadAgent({0: _Layer(0.0, lower), 1: _Layer(3.1, upper)})
+    note = load_obstacle_map(_cfg(tmp_path, union=True), agent, "scene")
+
+    assert len(note["union_snapshots"]) == 1
+    assert [s["mapped_floors"] for s in note["union_skipped"]] == [1]
+    assert note["union_skipped"][0]["why"] == "order-mismatch"
+
+
+def test_without_the_flag_nothing_changes(tmp_path):
+    """The union is opt-in: the best-of file is still what pass 2 reads."""
+    maps = _four_floors(tmp_path)
+    costmap = Costmap2D(resolution=1.0 / PPM, size_m=20.0)
+    agent = _LoadAgent({0: _Layer(0.0, costmap)})
+    note = load_obstacle_map(_cfg(maps), agent, "00800-TEEsavR23oF")
+    assert note["union_snapshots"] == []
+    assert note["cells_written"] > 0
+
+
+def test_a_one_storey_snapshot_is_usable_once_it_records_its_height(tmp_path):
+    """The reason `floor_y` exists: four of the six mapping episodes on 00800
+    mapped a single storey each, and order-matching cannot place them."""
+    anchor = EpisodeAnchor(np.array([0.0, 0.0]), 0.0)
+    upper_only = _SaveAgent([_om(explored=(260, 340, 260, 340))], anchor)
+    upper_only._floors[0].update(standing_y_sum=3.1 * 20, standing_y_n=20)
+    both = _two_storey_agent((100, 200, 100, 200), (150, 200, 150, 200))
+    for floor, y in zip(both._floors, (0.0, 3.1)):
+        floor.update(standing_y_sum=y * 20, standing_y_n=20)
+    _save_episode(tmp_path, "ep_two", both)
+    _save_episode(tmp_path, "ep_upper", upper_only)
+
+    lower = Costmap2D(resolution=1.0 / PPM, size_m=40.0)
+    upper = Costmap2D(resolution=1.0 / PPM, size_m=40.0)
+    agent = _LoadAgent({0: _Layer(0.0, lower), 1: _Layer(3.1, upper)})
+    note = load_obstacle_map(_cfg(tmp_path, union=True), agent, "scene")
+
+    assert not note["union_skipped"], note["union_skipped"]
+    assert len(note["union_snapshots"]) == 2
+    assert note["matched_by"] == ["height"]
+    # the one-storey snapshot went to the UPPER layer, which is the whole point
+    from_upper = [m for m in note["matched_floors"] if "ep_upper" in m["from"]]
+    assert len(from_upper) == 1 and from_upper[0]["osg_floor"] == 1
+
+
+def test_a_floor_no_storey_matches_is_left_out(tmp_path):
+    """A snapshot floor 8 m off every known storey is not forced onto one."""
+    anchor = EpisodeAnchor(np.array([0.0, 0.0]), 0.0)
+    stray = _SaveAgent([_om(explored=(260, 340, 260, 340))], anchor)
+    stray._floors[0].update(standing_y_sum=9.0 * 20, standing_y_n=20)
+    _save_episode(tmp_path, "ep_stray", stray)
+
+    lower = Costmap2D(resolution=1.0 / PPM, size_m=40.0)
+    agent = _LoadAgent({0: _Layer(0.0, lower)})
+    note = load_obstacle_map(_cfg(tmp_path, union=True), agent, "scene")
+    assert note["cells_written"] == 0
+    assert note["union_skipped"] and note["union_skipped"][0]["why"] == "height"
+
+
+# ------------------------------------------- storeys the scene graph missed
+
+def test_a_storey_the_scene_graph_never_saw_is_seeded_from_the_snapshots():
+    """Measured on 00808: NO single mapping episode visited both storeys, so
+    the scene-graph prior's upper "floor" is the staircase itself at 1.03 m
+    when the storeys are 0.06 and 2.86. Pass 2 takes its storey heights from
+    that stack, so the upper floor's occupancy would land 1.8 m low."""
+    from osg.eval.prior_map import _seed_storeys
+
+    class _Stack:
+        def __init__(self, heights):
+            self._layers = {i: _Layer(h, None) for i, h in enumerate(heights)}
+
+        def set_height(self, key, floor_y):
+            self._layers.setdefault(key, _Layer(0.0, None)).floor_y = float(floor_y)
+
+    cfg = _cfg("")
+    cfg.ycb.seed_storeys_from_obstacle_map = True
+    cfg.ycb.storey_seed_tol_m = 1.0
+
+    stack = _Stack([0.06])
+    added, loose = _seed_storeys(cfg, stack, [])   # nothing to read
+    assert added == [] and loose == []
+
+    # what the snapshots say, without needing files: patch the reader
+    import osg.eval.prior_map as pm
+    import navigation.mapping.map_store as ms
+    real = ms.floor_summaries
+    ms.floor_summaries = lambda blob: [
+        {"explored_cells": 100, "floor_y": 0.06}, {"explored_cells": 100, "floor_y": 2.86}]
+    real_load = ms.load_obstacle_maps
+    ms.load_obstacle_maps = lambda path: {}
+    try:
+        added, loose = _seed_storeys(cfg, stack, ["one.json"])
+    finally:
+        ms.floor_summaries, ms.load_obstacle_maps = real, real_load
+
+    assert added == [2.86], f"the missing storey was not added: {added}"
+    assert sorted(round(l.floor_y, 2) for l in stack._layers.values()) == [0.06, 2.86]
+
+
+def test_seeding_never_moves_a_storey_the_scene_graph_did_map():
+    """A mapped storey carries rooms, containers and tracks built at ITS
+    height; the snapshot's number must not overwrite that."""
+    from osg.eval.prior_map import _seed_storeys
+    import navigation.mapping.map_store as ms
+
+    class _Stack:
+        def __init__(self, heights):
+            self._layers = {i: _Layer(h, None) for i, h in enumerate(heights)}
+
+        def set_height(self, key, floor_y):
+            self._layers.setdefault(key, _Layer(0.0, None)).floor_y = float(floor_y)
+
+    cfg = _cfg("")
+    cfg.ycb.seed_storeys_from_obstacle_map = True
+    cfg.ycb.storey_seed_tol_m = 1.0
+    stack = _Stack([0.16, 3.16])
+    real, real_load = ms.floor_summaries, ms.load_obstacle_maps
+    ms.floor_summaries = lambda blob: [
+        {"explored_cells": 100, "floor_y": 0.06}, {"explored_cells": 100, "floor_y": 3.0}]
+    ms.load_obstacle_maps = lambda path: {}
+    try:
+        assert _seed_storeys(cfg, stack, ["one.json"])[0] == []
+    finally:
+        ms.floor_summaries, ms.load_obstacle_maps = real, real_load
+    assert sorted(round(l.floor_y, 2) for l in stack._layers.values()) == [0.16, 3.16]
+
+
+def test_off_by_default():
+    from osg.eval.prior_map import _seed_storeys
+    cfg = _cfg("")
+    assert _seed_storeys(cfg, None, ["one.json"]) == ([], [])
+
+
+def test_one_storey_read_as_several_is_clustered_back_together():
+    """ASCENT allocates a floor per staircase it notices, so one storey
+    arrives as several: on 00808 the upper one appears at 2.86, 3.07, 3.11 and
+    3.26 across eight snapshots, with a landing at 0.86 besides."""
+    import navigation.mapping.map_store as ms
+    from osg.eval.prior_map import storeys_from_snapshots
+
+    real, real_load = ms.floor_summaries, ms.load_obstacle_maps
+    ms.load_obstacle_maps = lambda path: {}
+    ms.floor_summaries = lambda blob: [
+        {"explored_cells": 17289, "floor_y": 0.06},
+        {"explored_cells": 10261, "floor_y": 0.86},
+        {"explored_cells": 15201, "floor_y": 3.07},
+        {"explored_cells": 11617, "floor_y": 2.86},
+        {"explored_cells": 9062, "floor_y": 3.26},
+        {"explored_cells": 14909, "floor_y": 3.11},
+    ]
+    try:
+        storeys = storeys_from_snapshots(["one.json"])
+    finally:
+        ms.floor_summaries, ms.load_obstacle_maps = real, real_load
+
+    assert len(storeys) == 2, f"expected two storeys, got {storeys}"
+    assert 0.3 < storeys[0] < 0.5, storeys          # 0.06 and 0.86, area-weighted
+    assert 3.0 < storeys[1] < 3.15, storeys
+
+
+def test_a_storey_nothing_backs_is_left_out_of_the_paste():
+    """The scene graph's mid-staircase 'storey' must not receive a floor:
+    with it in the set, the lower storey's ramp is written 0.06 -> 1.03 and
+    the climb tops out a metre up (7 climbs on 00808, none over 0.40 m)."""
+    import navigation.mapping.map_store as ms
+    from osg.eval.prior_map import _seed_storeys
+
+    class _Stack:
+        def __init__(self, heights):
+            self._layers = {i: _Layer(h, None) for i, h in enumerate(heights)}
+
+        def set_height(self, key, floor_y):
+            self._layers.setdefault(key, _Layer(0.0, None)).floor_y = float(floor_y)
+
+    cfg = _cfg("")
+    cfg.ycb.seed_storeys_from_obstacle_map = True
+    cfg.ycb.storey_seed_tol_m = 0.75
+    stack = _Stack([0.06, 1.03])                    # what 00808's scene graph kept
+    real, real_load = ms.floor_summaries, ms.load_obstacle_maps
+    ms.load_obstacle_maps = lambda path: {}
+    ms.floor_summaries = lambda blob: [
+        {"explored_cells": 25000, "floor_y": 0.06},
+        {"explored_cells": 15000, "floor_y": 3.07},
+    ]
+    try:
+        added, loose = _seed_storeys(cfg, stack, ["one.json"])
+    finally:
+        ms.floor_summaries, ms.load_obstacle_maps = real, real_load
+
+    assert added and 3.0 < added[0] < 3.15, added
+    assert loose == [1], f"the mid-staircase storey was kept: {loose}"

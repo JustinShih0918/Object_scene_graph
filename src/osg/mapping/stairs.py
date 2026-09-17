@@ -163,10 +163,37 @@ class Flight:
     foot_xy: np.ndarray
     top_xy: np.ndarray
     span_m: float
+    #: Walking distance in metres from the MOUTH to each cell, measured THROUGH
+    #: the flight's own cells rather than straight across it. A staircase that
+    #: doubles back has no usable straight axis -- measured on 00873, 28 of its
+    #: 57 densified ground-truth steps run BACKWARDS along the foot->top chord
+    #: -- so a carrot chosen by height band or by euclidean distance aims
+    #: across the banister at the turn. This gives the run an ORDER instead.
+    #: None when the ordering was not requested or could not be built.
+    path_m: Optional[np.ndarray] = None
 
     @property
     def n_cells(self) -> int:
         return int(self.cells_rc.shape[0])
+
+
+def mouth_xy(flight) -> np.ndarray:
+    """Where the agent steps ON to this flight, from its OWN storey.
+
+    `Flight.foot_xy` is the lowest tread and `top_xy` the highest, which makes
+    the foot the mouth of an ASCENT and the top the mouth of a DESCENT. Using
+    the foot for both sends a descending agent to the bottom of the staircase
+    -- a point on the storey it has not reached yet, typically several metres
+    away and under the treads.
+
+    Measured on 00821 (scripts/probe_climb_osg.py, the `pasted` variant): the
+    goal handed to the mover was 1.73 m from the true descent entrance and
+    3.92 m from the flight's own bottom, the agent circled at the top for 52
+    steps turning 30 times against 21 forwards, and the climb ended `stalled`
+    with dy 0.00 m.
+    """
+    return np.asarray(
+        flight.foot_xy if flight.kind == "up" else flight.top_xy, dtype=float)
 
 
 def find_flights(
@@ -177,6 +204,9 @@ def find_flights(
     min_cells: int = 150,
     max_cells: int = 4000,
     margin_m: float = 0.2,
+    wide_span_m: Optional[float] = None,
+    wide_mask: Optional[np.ndarray] = None,
+    order_path: bool = False,
 ) -> List[Flight]:
     """Staircases as connected runs of INTERMEDIATE-height cells.
 
@@ -202,11 +232,33 @@ def find_flights(
     rel = costmap.height - float(floor_y)
     seen = np.isfinite(rel)
     lo, hi = float(margin_m), float(new_level_m) - float(margin_m)
+    # A taller band, for cells the stair map vouches for. `new_level_m` is a
+    # constant and a real storey can be taller: on 00800 it is 3.0 m, and the
+    # ramp pasted from the ASCENT map spans all of it, so a 1.8 m band cut the
+    # flight at 1.6 m and the climb lost its waypoints half-way up. Widening
+    # the band for EVERY cell is not the fix -- from the upper storey the
+    # agent sees the lower one over the banister, and those cells are
+    # intermediate-height too, so they join the staircase into one blob whose
+    # mouth is somewhere else entirely (measured, outputs/mf5_pass2_v14 ep1:
+    # a 1460-cell "flight_down" whose goal was 3 m from the real top mouth,
+    # pursued for 392 steps, never climbed). Only cells the stair map marks
+    # may go beyond the constant.
+    wide = None
+    if wide_span_m is not None and wide_mask is not None:
+        hi_wide = float(wide_span_m) - float(margin_m)
+        if hi_wide > hi:
+            wide = np.asarray(wide_mask, dtype=bool)
     out: List[Flight] = []
-    for kind, mask in (
+    bands = (
         ("up", seen & (rel > lo) & (rel < hi)),
         ("down", seen & (rel < -lo) & (rel > -hi)),
-    ):
+    )
+    if wide is not None:
+        bands = (
+            ("up", seen & (rel > lo) & ((rel < hi) | (wide & (rel < hi_wide)))),
+            ("down", seen & (rel < -lo) & ((rel > -hi) | (wide & (rel > -hi_wide)))),
+        )
+    for kind, mask in bands:
         if not mask.any():
             continue
         labels, n = ndimage.label(mask, structure=np.ones((3, 3)))
@@ -229,8 +281,56 @@ def find_flights(
                 foot_xy=costmap.grid_to_world(foot.astype(float)),
                 top_xy=costmap.grid_to_world(top.astype(float)),
                 span_m=span,
+                path_m=(_path_from(rc, foot, float(costmap.resolution))
+                        if order_path else None),
             ))
     return out
+
+
+def _path_from(cells_rc: np.ndarray, source_rc: np.ndarray, resolution: float):
+    """Walking distance from `source_rc` to every cell, THROUGH the component.
+
+    A plain BFS over the flight's own cells, 8-connected, with a diagonal
+    costing sqrt(2). That is all the ordering a staircase needs: the treads are
+    contiguous by construction (`find_flights` builds the component by
+    connectivity), so distance-through-the-cells runs along the staircase and
+    keeps increasing around a switchback, where distance-across it does not.
+
+    Returns metres, or None when the component is empty. Cells the BFS cannot
+    reach (it should reach all of them -- they are one connected component)
+    keep `inf`, and callers must treat that as "no ordering here".
+    """
+    from collections import deque
+
+    if cells_rc.shape[0] == 0:
+        return None
+    lookup = {(int(r), int(c)): i for i, (r, c) in enumerate(cells_rc)}
+    start = lookup.get((int(source_rc[0]), int(source_rc[1])))
+    if start is None:
+        return None
+    dist = np.full(cells_rc.shape[0], np.inf, dtype=float)
+    dist[start] = 0.0
+    # Dial's algorithm would be exact for two edge weights; a deque BFS with a
+    # relaxation pass is close enough for an ordering and much shorter. The
+    # carrot only needs monotonicity along the run, not a metric.
+    queue = deque([start])
+    step = float(resolution)
+    diag = step * float(np.sqrt(2.0))
+    while queue:
+        i = queue.popleft()
+        r, c = int(cells_rc[i][0]), int(cells_rc[i][1])
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                j = lookup.get((r + dr, c + dc))
+                if j is None:
+                    continue
+                w = diag if (dr and dc) else step
+                if dist[i] + w < dist[j] - 1e-9:
+                    dist[j] = dist[i] + w
+                    queue.append(j)
+    return dist
 
 
 def apply_stair_mask(

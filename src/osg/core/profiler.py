@@ -13,15 +13,38 @@ from typing import Dict, List
 
 
 class Profiler:
-    def __init__(self) -> None:
+    def __init__(self, sync: bool = False) -> None:
         self._samples: Dict[str, List[float]] = defaultdict(list)
+        # Charge queued CUDA work to the section that queued it.
+        #
+        # Without this the timings are wall-clock around an ASYNCHRONOUS
+        # queue: the detector returns as soon as its kernels are submitted,
+        # and the stall lands on whichever later call happens to synchronise
+        # -- usually the mover, which is not wrapped at all. Measured on
+        # outputs/mf5_pass2_v17: 39% of the run sat inside the control loop
+        # and outside every section. Off by default because synchronising
+        # every section costs real time; turn it on to attribute, not to run.
+        self._sync = bool(sync)
+
+    def _synchronise(self) -> None:
+        if not self._sync:
+            return
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+        except Exception:  # noqa: BLE001 - timing must never break a run
+            self._sync = False
 
     @contextmanager
     def timeit(self, name: str):
+        self._synchronise()
         t0 = time.perf_counter()
         try:
             yield
         finally:
+            self._synchronise()
             self._samples[name].append(time.perf_counter() - t0)
 
     def add(self, name: str, seconds: float) -> None:

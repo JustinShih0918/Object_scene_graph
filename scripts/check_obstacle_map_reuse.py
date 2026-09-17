@@ -37,6 +37,7 @@ from navigation.mapping.map_store import (
     floor_summaries,
     load_obstacle_maps,
 )
+from osg.eval.prior_map import _scene_map_paths
 from osg.eval.record import safe_tag
 from osg.mapping.costmap import Costmap2D
 
@@ -133,45 +134,67 @@ def main() -> None:
     checked_nothing = False
     any_outside = False
     for scene, eps in sorted(by_scene.items()):
-        path = maps_dir / f"{safe_tag(scene)}.json"
-        if not path.exists():
-            print(f"{scene}: NO SNAPSHOT at {path}")
+        # Every snapshot for the scene: the best-of file, and the per-episode
+        # ones `ycb.obstacle_map_union` writes. Reading only `<scene>.json`
+        # made this print "NO SNAPSHOT" for a whole union directory, because
+        # union mode never writes that file (osg/eval/prior_map.py).
+        paths = _scene_map_paths(str(maps_dir), scene)
+        if not paths:
+            print(f"{scene}: NO SNAPSHOT under {maps_dir}")
             continue
-        blob = load_obstacle_maps(path)
-        floors = floor_summaries(blob)
-        print(f"\n{scene}  ({path.name})")
-        print(f"  stored floors: {len(floors)}")
-        for f in floors:
-            print(f"    floor {f['index']}: explored {f['explored_cells']:>8} cells, "
-                  f"obstacle {f['obstacle_cells']:>7}, steps {f['steps']:>4}, "
-                  f"up={f['has_up_stair']} down={f['has_down_stair']}")
+        print(f"\n{scene}  ({len(paths)} snapshot(s))")
+        floors = []
+        for path in paths:
+            blob = load_obstacle_maps(path)
+            summaries = floor_summaries(blob)
+            floors.extend(summaries)
+            print(f"  {Path(path).name}: {len(summaries)} stored floors")
+            for f in summaries:
+                print(f"    floor {f['index']}: explored {f['explored_cells']:>8} cells, "
+                      f"obstacle {f['obstacle_cells']:>7}, steps {f['steps']:>4}, "
+                      f"floor_y={f['floor_y']}, "
+                      f"up={f['has_up_stair']} down={f['has_down_stair']}")
 
-        # Merge every storey into one costmap: the trajectory crosses floors and
-        # this check is about the FRAME, not about which storey a pose was on.
-        costmap = Costmap2D(resolution=float(floors[0]["resolution"]), size_m=20.0)
-        for f in floors:
-            apply_to_costmap(blob, f["index"], costmap, overwrite=False)
+        # Merge every storey of every snapshot into ONE costmap: the trajectory
+        # crosses floors and this check is about the FRAME, not about which
+        # storey a pose was on. Heights are all zero for the same reason --
+        # the stair ramp is irrelevant here and a single plane keeps every
+        # snapshot's floors landing on the one grid.
+        mapped = [f for f in floors if f["explored_cells"] > 0]
+        if not mapped:
+            print("  NO MAPPED FLOOR in any snapshot")
+            checked_nothing = True
+            continue
+        costmap = Costmap2D(resolution=float(mapped[0]["resolution"]), size_m=20.0)
+        for path in paths:
+            blob = load_obstacle_maps(path)
+            for f in floor_summaries(blob):
+                if f["explored_cells"] > 0:
+                    apply_to_costmap(blob, f["index"], costmap, overwrite=False)
 
-        # ONE episode's map, checked against THAT episode's poses. The
-        # protocol keeps whichever episode explored most, and a different
-        # episode starts elsewhere and legitimately walks where this map was
-        # never built -- scoring it against all of them measures the protocol,
-        # not the frame. `episode_id` is recorded in the snapshot for exactly
-        # this; older snapshots without it fall back to the best-matching
-        # episode, which is the same choice made empirically.
-        want = str(blob.get("episode_id") or "")
-        mine = [e for e in eps if _episode_id(e) == want] if want else []
-        if mine:
-            print(f"  snapshot written by episode: {want}")
+        # ONE episode's map, checked against THAT episode's poses -- unless the
+        # snapshots ARE per episode, in which case every pose in the run was
+        # walked onto some snapshot in this union and all of them count. With a
+        # single best-of file a different episode starts elsewhere and
+        # legitimately walks where that map was never built, so scoring it
+        # against all of them would measure the protocol, not the frame.
+        ids = {str(load_obstacle_maps(p).get("episode_id") or "") for p in paths}
+        if len(paths) > 1:
+            print(f"  union of {len(paths)} episodes; checking every pose in the run")
         else:
-            if want:
-                print(f"  snapshot names episode {want}, not in this run; "
-                      "falling back to the best-matching episode")
+            want = next(iter(ids))
+            mine = [e for e in eps if _episode_id(e) == want] if want else []
+            if mine:
+                print(f"  snapshot written by episode: {want}")
             else:
-                print("  snapshot predates episode provenance; "
-                      "using the best-matching episode")
-            mine = eps
-        eps = mine
+                if want:
+                    print(f"  snapshot names episode {want}, not in this run; "
+                          "falling back to the best-matching episode")
+                else:
+                    print("  snapshot predates episode provenance; "
+                          "using the best-matching episode")
+                mine = eps
+            eps = mine
 
         if len(eps) > 1:
             best, best_near = None, -1.0

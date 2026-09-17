@@ -76,6 +76,11 @@ def build_detector(cfg):
             use_sam=bool(getattr(cfg.detector, "use_sam", True)),
             timeout_s=float(getattr(cfg.detector, "timeout_s", 15.0)),
             strict=bool(getattr(cfg.detector, "strict", False)),
+            # ASCENT's non-COCO branch. Empty by default, so the HM3D arms this
+            # detector was measured on are byte-identical; the benchmarks whose
+            # targets COCO cannot name switch it on.
+            gdino_url=str(getattr(cfg.detector, "gdino_target_url", "")),
+            gdino_conf=float(getattr(cfg.detector, "gdino_target_conf", 0.35)),
         )
     if cfg.detector.name == "stub":
         from ..perception.detector import StubDetector

@@ -31,11 +31,15 @@ from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from pathlib import Path  # noqa: E402
+
 from osg.eval.floors import (  # noqa: E402
     HEIGHT_AXIS,
     SAME_FLOOR_M,
     classify_episode,
+    load_pathfinder,
     navmesh_floor_heights,
+    navmesh_path_for,
 )
 from osg.core.paths import hm3d_scenes_dir  # noqa: E402
 
@@ -48,16 +52,18 @@ def navmesh_floors(scene, scenes_dir):
     signal: it sees floors that hold no goal objects. Optional because it needs
     habitat_sim and the (license-gated) scene download.
     """
-    try:
-        import habitat_sim
-    except ImportError:
-        return None
-    paths = glob.glob(os.path.join(scenes_dir, "*", f"*-{scene}", f"{scene}.basis.navmesh"))
-    if not paths:
-        return None
-    pf = habitat_sim.nav.PathFinder()
-    pf.load_nav_mesh(paths[0])
-    if not pf.is_loaded:
+    navmesh = navmesh_path_for(scene, scenes_dir)
+    if navmesh is None:
+        # `scene` may be the hash half alone (`TEEsavR23oF`) rather than the
+        # full directory name; the tree is keyed on the full name.
+        matches = sorted(Path(str(scenes_dir)).glob(f"hm3d/*/*-{scene}"))
+        if not matches:
+            return None
+        navmesh = navmesh_path_for(matches[0].name, scenes_dir)
+        if navmesh is None:
+            return None
+    pf = load_pathfinder(navmesh)
+    if pf is None:
         return None
     return navmesh_floor_heights(pf)
 

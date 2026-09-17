@@ -439,6 +439,18 @@ class NavAgent:
         self._stale_stop_pending = False
         self._relook = None  # (key, centre_xy, radius_m, exclude_xy, label)
         self._explore_hold_until = 0  # see `rearm`
+        self._climb_trace = []
+        self._flight_carrot_xy = None
+        self._climb_blocked_carrots = []
+        self._climb_turn_locked = False
+        self._climb_suppressed_run = 0
+        self._climb_last_xy = None
+        self._climb_aligned = False
+        self._climb_align_turns = 0
+        self._failed_switches_by_floor = {}
+        self._switch_banned_at = {}
+        self._failed_attempts_by_floor: dict = {}   # see `rearm`
+        self._disproved_floors: set = set()
         self.state_log = []
         self.approach.reset()
         self.candidates.reset()
@@ -446,6 +458,13 @@ class NavAgent:
         self.kf_selector.reset()
         self.controller.reset()
         self.exploration.reset()
+        # After the strategy's reset, which rebuilds its per-episode fields:
+        # the verdict is the agent's, and the strategy reads the same set.
+        self.exploration.disproved_floors = self._disproved_floors
+        # The SAME set, so a storey disproved here also stops the floor policy
+        # walking back to it. It gated three channels and not the one that
+        # chooses where to go (docs/CROSS_ANCHOR_STATUS.md).
+        self.floors.disproved_floors = self._disproved_floors
         self._escape = ActionHistoryEscape(int(self.cfg.agent.escape_window))
         self._progress_ref_step = 0
         self._progress_ref_xy = np.zeros(2)
@@ -477,6 +496,17 @@ class NavAgent:
         self._climb_max_dy = 0.0
         self._climb_pitched = False
         self._climb_blocked_run = 0
+        self._flight_carrot_xy = None
+        self._flight_carrot_h = 0.0
+        self._climb_blocked_carrots: list = []
+        self._climb_turn_locked = False
+        self._climb_suppressed_run = 0
+        self._climb_last_xy = None
+        self._climb_aligned = False
+        self._climb_align_turns = 0
+        self._failed_switches_by_floor: dict = {}
+        self._switch_banned_at: dict = {}
+        self._climb_trace: list = []
         self._pitch_ticks = 0
         self._last_down_look_step = -(10 ** 9)
         if self.commit_state is not None:
@@ -545,6 +575,7 @@ class NavAgent:
         # limited to one per `exploration.select_every` steps -- never happens.
         # Hold the commit open long enough for one, and make that one run now
         # rather than at the rate limit's convenience.
+        self._note_failed_attempt_on_storey()
         hold = int(getattr(self.cfg.agent, "explore_after_failed_attempt_steps", 0))
         if hold > 0:
             self._explore_hold_until = self.step_count + hold
@@ -553,6 +584,85 @@ class NavAgent:
                 force()
 
     # ------------------------------------------------------------------- act
+
+    # ------------------------------------------------- storeys disproved
+
+    def _note_failed_attempt_on_storey(self) -> None:
+        """A failed attempt is evidence about the STOREY, not just the track.
+
+        Counted per storey; at `floor_disproved_after_failed_attempts` the
+        storey is disproved: its target-labelled tracks stop carrying the
+        _TARGET_PRESENT veto (`_presence_for_floor_evidence`) and the nearest
+        other known storey is requested outright, ahead of a posterior that
+        abstains by design. See the config comment for the measurement.
+        """
+        threshold = int(getattr(self.cfg.agent, "floor_disproved_after_failed_attempts", 0))
+        if threshold <= 0:
+            return
+        floor = int(self.floors.current_id)
+        n = self._failed_attempts_by_floor.get(floor, 0) + 1
+        self._failed_attempts_by_floor[floor] = n
+        if n < threshold or floor in self._disproved_floors:
+            return
+        self._disproved_floors.add(floor)
+        self.stats["floors_disproved"] = self.stats.get("floors_disproved", 0) + 1
+        levels = {int(k): float(v) for k, v in self.floors.estimator.levels.items()}
+        here = levels.get(floor)
+        others = [k for k in levels if k != floor and k not in self._disproved_floors]
+        if here is None or not others:
+            self.stats["floor_disproved_no_other"] = (
+                self.stats.get("floor_disproved_no_other", 0) + 1)
+            return
+        other = min(others, key=lambda k: abs(levels[k] - here))
+        self.exploration.forced_floor = int(other)
+        self.exploration.requested_floor = int(other)
+        self.stats["floor_disproved_requests"] = (
+            self.stats.get("floor_disproved_requests", 0) + 1)
+        self.stats["floor_disproved_to"] = int(other)
+
+    def _storey_disproved(self, floor_id) -> bool:
+        return int(floor_id) in self._disproved_floors
+
+    def _presence_for_floor_evidence(self):
+        """The `presence_of` handed to `floor_target_evidence` for the current
+        storey: None or the belief test as configured -- unless this storey is
+        disproved, in which case every target-labelled track on it is treated
+        as not believed, so the _TARGET_PRESENT veto is lifted."""
+        believed = (
+            self._track_still_believed
+            if bool(getattr(self.cfg.exploration, "floor_evidence_by_presence", False))
+            else None
+        )
+        if not self._storey_disproved(self.floors.current_id):
+            return believed
+        self.stats["floor_veto_lifted"] = self.stats.get("floor_veto_lifted", 0) + 1
+        return lambda _track_id: False
+
+    def _may_preempt_pursuit(self, track) -> bool:
+        """While a floor switch is being walked, only a candidate seen live,
+        close, and confidently may interrupt it (config: protect_floor_switch)."""
+        if self._storey_disproved(self.floors.current_id):
+            # Candidates are filtered to the CURRENT storey, and this storey
+            # has been disproved by the agent's own failed attempts. Measured
+            # (outputs/mf5_pass2_v7 ep1): with only the live/close/confident
+            # test, the ceiling-fixture false positive at score 0.82 passed it
+            # the moment the agent walked under it on the way to the stairs,
+            # and took the last attempt. A verdict from two walks beats one
+            # more confident look at the same storey.
+            self.stats["pursuit_preempt_blocked_disproved"] = (
+                self.stats.get("pursuit_preempt_blocked_disproved", 0) + 1)
+            return False
+        centre = np.asarray(self.object_layer.center_of(track), dtype=float)[list(PLANE)]
+        here = self._agent_xy if self._agent_xy is not None else centre
+        near = float(np.linalg.norm(centre - here)) <= float(
+            getattr(self.cfg.agent, "protect_floor_switch_range_m", 1.5))
+        strong = float(getattr(track, "best_score", 0.0)) >= float(
+            getattr(self.cfg.agent, "protect_floor_switch_min_score", 0.6))
+        live = bool(getattr(track, "seen_live", False))
+        ok = near and strong and live
+        key = "pursuit_preempt_allowed" if ok else "pursuit_preempt_blocked"
+        self.stats[key] = self.stats.get(key, 0) + 1
+        return ok
 
     def _schedule_relook(self) -> None:
         """A stale stop just failed: the object is probably still on that
@@ -609,7 +719,8 @@ class NavAgent:
         self._agent_xy = frame.camera_position[list(PLANE)].copy()
         if self.pointnav is not None:
             self.pointnav.observe(frame)
-        floor_y = self.floors.observe(frame, self.step_count)
+        with self.profiler.timeit("floors"):
+            floor_y = self.floors.observe(frame, self.step_count)
         # ExplorationStrategy is deliberately floor-agnostic; repoint its seam
         # whenever the active FloorLayer changes.
         self.exploration.planner = self.planner
@@ -676,8 +787,10 @@ class NavAgent:
                 # that cannot be seen in a counter cannot be judged at all.
                 self.stats.update(self.feature_memory.counters)
             if self.cfg.exploration.search_posterior:
-                self.exploration.glance(self._world(frame))
-            self.close_look.maybe_opportunistic(frame)
+                with self.profiler.timeit("glance"):
+                    self.exploration.glance(self._world(frame))
+            with self.profiler.timeit("close_look"):
+                self.close_look.maybe_opportunistic(frame)
 
         down_look = self._down_look(frame, self.floor_layer, off_map)
         if down_look is not None:
@@ -692,8 +805,25 @@ class NavAgent:
                 # exploration round can happen (`rearm`). A hold, not a ban.
                 self.stats["explore_hold_steps"] = (
                     self.stats.get("explore_hold_steps", 0) + 1)
+            elif self._storey_disproved(self.floors.current_id):
+                # Candidates are filtered to the current storey, and this
+                # storey's own failed attempts have disproved it -- pursuit or
+                # no pursuit. Measured (outputs/mf5_pass2_v11 ep1): the climb
+                # ended on its step budget at -1.51 m, `pursuing` went False,
+                # and three steps later the agent committed to an upper-storey
+                # fake at y=4.0 while standing on the stairs, spending its last
+                # attempt on the storey it had just left.
+                self.stats["candidates_skipped_disproved"] = (
+                    self.stats.get("candidates_skipped_disproved", 0) + 1)
             else:
-                self.candidates.check(frame.camera_position[list(PLANE)])
+                admit = None
+                if (
+                    bool(getattr(self.cfg.agent, "protect_floor_switch", False))
+                    and bool(getattr(self.floors, "pursuing", False))
+                ):
+                    admit = self._may_preempt_pursuit
+                with self.profiler.timeit("candidates"):
+                    self.candidates.check(frame.camera_position[list(PLANE)], admit=admit)
         if self.close_look.active and self.state is not State.CLOSE_LOOK:
             self.close_look.interrupted()  # a commit pre-empted the look
         if self.state == State.CLOSE_LOOK:
@@ -1080,6 +1210,16 @@ class NavAgent:
             return target_floor
         if not bool(getattr(self.cfg.exploration, "floor_llm", False)):
             return target_floor
+        if self._storey_disproved(self.floors.current_id):
+            # The model reads the scene graph, and on a disproved storey the
+            # graph's target entries are the very false positives the attempts
+            # just disproved. Measured (outputs/mf5_pass2_v7 ep1, step 158):
+            # asked, it answered "stay -- Floor 2 explicitly lists 'toy
+            # airplane' among its contained objects", vetoing a request the
+            # agent had earned by walking there twice.
+            self.stats["floor_llm_skipped_disproved"] = (
+                self.stats.get("floor_llm_skipped_disproved", 0) + 1)
+            return target_floor
         stack = self.floors.stack
         asked_before = int(getattr(self.floor_planner, "asks", 0))
         direction = self.floor_planner.decide(
@@ -1200,15 +1340,16 @@ class NavAgent:
                 self.stats.get("stair_tracks_offered", 0), n_sem)
             self.stats["stair_regions_offered"] = max(
                 self.stats.get("stair_regions_offered", 0), len(stair_xyz) - n_sem)
-        portal = self.floors.try_switch(
-            frame, self.step_count, best_path_cost,
-            self.scene_graph, self.target, self._reachable_fn,
-            target_floor=target_floor,
-            presence_of=self._track_still_believed
-            if bool(getattr(self.cfg.exploration, "floor_evidence_by_presence", False))
-            else None,
-            stair_xyz=stair_xyz,
-        )
+        if self._switches_exhausted_here():
+            return False
+        with self.profiler.timeit("floor_switch"):
+            portal = self.floors.try_switch(
+                frame, self.step_count, best_path_cost,
+                self.scene_graph, self.target, self._reachable_fn,
+                target_floor=target_floor,
+                presence_of=self._presence_for_floor_evidence(),
+                stair_xyz=stair_xyz,
+            )
         if portal is None:
             return False
         self._goal_xy = portal.goal_xy
@@ -1689,6 +1830,9 @@ class NavAgent:
         self._climb_pitched = False
         self._climb_blocked_run = 0
         self._climb_relink_step = -100
+        self._flight_carrot_xy = None
+        self._flight_carrot_h = 0.0
+        self._climb_blocked_carrots = []
         self._carrot_xy = None
         self._carrot_disable_end = False
         self._climb_last_dist = None
@@ -1727,8 +1871,46 @@ class NavAgent:
         self.stats["climb_flight_kind"] = (
             "none" if flight is None else str(getattr(flight, "kind", "?")))
 
+    def _switches_exhausted_here(self) -> bool:
+        """Has this storey refused to be left often enough to stop asking?
+
+        Banning the switch is not enough on its own: the search posterior and
+        the storey LLM keep raising the same request every round, so the
+        standing request is cleared with it (config:
+        agent.max_failed_switches_per_storey).
+        """
+        limit = int(getattr(self.cfg.agent, "max_failed_switches_per_storey", 0) or 0)
+        if limit <= 0:
+            return False
+        here = int(self.floors.current_id)
+        if self._failed_switches_by_floor.get(here, 0) < limit:
+            return False
+        ban_steps = int(getattr(self.cfg.agent, "switch_ban_steps", 0) or 0)
+        since = self.step_count - int(self._switch_banned_at.get(here, self.step_count))
+        if ban_steps > 0 and since >= ban_steps:
+            # Served. One more go, and the counter starts again from here.
+            self._failed_switches_by_floor[here] = 0
+            self._switch_banned_at.pop(here, None)
+            self.stats["floor_switch_ban_lifted"] = (
+                self.stats.get("floor_switch_ban_lifted", 0) + 1)
+            return False
+        self._switch_banned_at.setdefault(here, self.step_count)
+        self.stats["floor_switch_banned_after_failures"] = (
+            self.stats.get("floor_switch_banned_after_failures", 0) + 1)
+        self.exploration.forced_floor = None
+        self.exploration.requested_floor = None
+        return True
+
+    def _note_failed_switch(self) -> None:
+        """One more storey exit that did not happen."""
+        here = int(self.floors.current_id)
+        self._failed_switches_by_floor[here] = self._failed_switches_by_floor.get(here, 0) + 1
+        self.stats["failed_switches_here"] = self._failed_switches_by_floor[here]
+
     def _end_climb(self, ok: bool, why: str) -> None:
         self.floors.climbing = False
+        if not ok:
+            self._note_failed_switch()
         self.stats["climb_ok" if ok else "climb_fail"] = (
             self.stats.get("climb_ok" if ok else "climb_fail", 0) + 1
         )
@@ -1762,9 +1944,17 @@ class NavAgent:
         # height instead: a full `new_level_m` of gain is a storey however many
         # flights it took, and the estimator commits it on the next frame once
         # the climb releases the suppression.
+        needed = float(self.cfg.floor.new_level_m)
+        tol = float(getattr(self.cfg.agent, "climb_to_target_storey_tol_m", 0.0) or 0.0)
+        if tol > 0.0 and self._goal_floor_y_cache is not None:
+            # The gap to the storey being climbed to is KNOWN; a constant
+            # storey height ends the climb on the treads when the real one is
+            # taller (config: climb_to_target_storey_tol_m).
+            here = float(self.floors.estimator.height_of(self._climb_from_floor))
+            needed = max(needed, abs(float(self._goal_floor_y_cache) - here) - tol)
         if (
             bool(getattr(self.cfg.floor, "no_level_on_flight", False))
-            and dy >= float(self.cfg.floor.new_level_m)
+            and dy >= needed
         ):
             self._end_climb(True, "storey_of_height")
             return "look_up" if self._climb_pitched else TURN_ACTION
@@ -1790,15 +1980,49 @@ class NavAgent:
             self._climb_relink_step = self.step_count
             if self._relink_flight(frame, agent_xy):
                 self.stats["climb_relinked"] = self.stats.get("climb_relinked", 0) + 1
+                self._flight_carrot_xy = None       # a new flight, a new carrot
+                self._climb_blocked_carrots = []
                 self._carrot_xy = None
                 self._climb_last_dist = None
                 self._climb_paused_steps = 0
         # Descending: tilt the camera down once so the carrot sees the treads
         # below rather than the far wall (ASCENT's phase 2, `:1120-1127`).
+        align = self._climb_align_action(frame, agent_xy)
+        if align is not None:
+            return self._traced_climb(frame, agent_xy, align, standing=None, dy=dy)
         if self._climb_direction < 0 and not self._climb_pitched:
             self._climb_pitched = True
-            return "look_down"
-        return self._carrot_action(frame, agent_xy)
+            return self._traced_climb(frame, agent_xy, "look_down", standing=None, dy=dy)
+        return self._traced_climb(
+            frame, agent_xy, self._carrot_action(frame, agent_xy),
+            standing=cam_y - float(self.cfg.agent.camera_height), dy=dy)
+
+    def _traced_climb(self, frame: FrameData, agent_xy, action: str,
+                      *, standing, dy: float) -> str:
+        """Record what this climb step did, when the run asked for it.
+
+        The climb is the single largest consumer of the step budget -- 300 of
+        500 steps in outputs/mf5_pass2_v16 ep1, for 2.56 m -- and nothing in
+        `episodes.jsonl` says where those steps went: `eval.behaviour_log`
+        writes `step_trace` only for the ascentnav agent. Six numbers a climb
+        step, and only while climbing.
+        """
+        if not (self.cfg.eval.debug_frames
+                or bool(getattr(self.cfg.eval, "behaviour_log", False))):
+            return action
+        goal = self._flight_carrot_xy
+        self._climb_trace.append({
+            "step": int(self.step_count),
+            "xy": [round(float(v), 2) for v in agent_xy],
+            "standing": None if standing is None else round(float(standing), 3),
+            "dy": round(float(dy), 3),
+            "goal": None if goal is None else [round(float(v), 2) for v in goal],
+            "goal_dist": (None if goal is None
+                          else round(float(np.linalg.norm(goal - agent_xy)), 2)),
+            "action": str(action),
+            "resets": int(getattr(self.pointnav, "n_resets", 0) or 0),
+        })
+        return action
 
     def _carrot_goal(
         self, frame: FrameData, agent_xy: np.ndarray
@@ -1877,7 +2101,7 @@ class NavAgent:
         nearest flight going the same way whose foot is within a few metres --
         the next flight down from a half-landing. Returns whether one was found.
         """
-        from ..mapping.stairs import find_flights
+        from ..mapping.stairs import find_flights, mouth_xy
 
         floor_y = float(self.floors.height_of(self.floors.current_id))
         flights = find_flights(
@@ -1885,6 +2109,10 @@ class NavAgent:
             new_level_m=float(self.cfg.floor.new_level_m),
             min_span_m=float(getattr(self.cfg.floor, "flight_relink_span_m", 0.5)),
             min_cells=int(getattr(self.cfg.floor, "flight_min_cells", 150)),
+            wide_span_m=self.floors.flight_span_m(floor_y),
+            wide_mask=getattr(self.costmap, "stair_mask", None),
+            order_path=bool(getattr(self.cfg.agent,
+                "climb_carrot_follow_path", False)),
         )
         want = "up" if self._climb_direction >= 0 else "down"
         current = getattr(self.floors, "pursuit_flight", None)
@@ -1892,15 +2120,15 @@ class NavAgent:
         for f in flights:
             if f.kind != want:
                 continue
-            if float(np.linalg.norm(f.foot_xy - agent_xy)) > 4.0:
+            if float(np.linalg.norm(mouth_xy(f) - agent_xy)) > 4.0:
                 continue
-            if current is not None and float(np.linalg.norm(f.foot_xy - current.foot_xy)) < 0.5:
+            if current is not None and float(np.linalg.norm(mouth_xy(f) - mouth_xy(current))) < 0.5:
                 continue  # the flight just finished
             near.append(f)
         if not near:
             return False
         self.floors.pursuit_flight = min(
-            near, key=lambda f: float(np.linalg.norm(f.foot_xy - agent_xy)))
+            near, key=lambda f: float(np.linalg.norm(mouth_xy(f) - agent_xy)))
         return True
 
     def _flight_carrot(self, frame: FrameData, agent_xy: np.ndarray) -> Optional[np.ndarray]:
@@ -1921,17 +2149,132 @@ class NavAgent:
         xy = np.stack([self.costmap.grid_to_world(rc.astype(float)) for rc in flight.cells_rc])
         h = np.asarray(flight.heights, dtype=float)
         sign = 1.0 if self._climb_direction >= 0 else -1.0
+        # A carrot the agent is still walking to is not re-picked
+        # (config: climb_carrot_hold_m).
+        hold_m = float(getattr(self.cfg.agent, "climb_carrot_hold_m", 0.0) or 0.0)
+        held = self._flight_carrot_xy
+        blocked = self._climb_blocked_carrots if hold_m > 0.0 else []
+        if hold_m > 0.0 and held is not None:
+            reached = float(np.linalg.norm(held - agent_xy)) <= hold_m
+            passed = (float(self._flight_carrot_h) - standing) * sign <= 0.1
+            if not reached and not passed:
+                self.stats["climb_carrot_held"] = self.stats.get("climb_carrot_held", 0) + 1
+                return held
+            self.stats["climb_carrot_repick"] = self.stats.get("climb_carrot_repick", 0) + 1
         ahead = (h - standing) * sign
+        # A staircase that doubles back has no usable straight axis, so before
+        # any height-band rule, try following the run itself. `flight.path_m`
+        # is walking distance from the mouth THROUGH the flight's own cells, so
+        # it increases along the direction of travel even around a turn, where
+        # both "nearest in the plane" and "highest tread" aim across the
+        # banister. Measured on 00873 ep50005: 28 of the flight's 57
+        # ground-truth steps run BACKWARDS along its foot->top chord.
+        path = getattr(flight, "path_m", None)
+        spacing = float(getattr(self.cfg.agent, "climb_carrot_min_ahead_m", 0.0) or 0.0)
+        if (bool(getattr(self.cfg.agent, "climb_carrot_follow_path", False))
+                and path is not None and len(path) == len(h)):
+            finite = np.isfinite(path)
+            # ...but only once the agent is ON the flight. Following the run
+            # from an arbitrary entry point while still standing off it aims at
+            # a tread 0.5 m further ALONG THE STAIRCASE, which from the floor
+            # below is across the room: measured on 00808, the carrot opened at
+            # 2.96 m and grew to 4.45 m while the agent walked 180 steps and
+            # rose 0.00. Off the flight, the older carrots take over and head
+            # for the mouth, which is what gets it on.
+            on_flight = float(getattr(
+                self.cfg.agent, "climb_carrot_path_max_offset_m", 1.0) or 1.0)
+            near = (np.linalg.norm(xy - agent_xy, axis=1) <= on_flight) & finite
+            if near.any():
+                here = int(np.argmin(np.where(
+                    near, np.linalg.norm(xy - agent_xy, axis=1), np.inf)))
+                want_m = float(path[here]) + max(spacing, 0.5)
+                onward = finite & (path > float(path[here]) + 1e-6)
+                if onward.any():
+                    pick = int(np.argmin(np.where(
+                        onward, np.abs(path - want_m), np.inf)))
+                    self.stats["climb_carrot_path"] = (
+                        self.stats.get("climb_carrot_path", 0) + 1)
+                    return self._hold_flight_carrot(xy, h, pick)
         band = (ahead >= 0.35) & (ahead <= 1.0)
+        # Cells under or beside the agent are never the way up a staircase,
+        # whatever height the map gives them (config: climb_carrot_min_ahead_m).
+        min_ahead = float(getattr(self.cfg.agent, "climb_carrot_min_ahead_m", 0.0) or 0.0)
+        if min_ahead > 0.0:
+            far_enough = np.linalg.norm(xy - agent_xy, axis=1) >= min_ahead
+            if (band & far_enough).any():
+                band &= far_enough
+            elif band.any():
+                self.stats["climb_carrot_underfoot"] = self.stats.get("climb_carrot_underfoot", 0) + 1
+                band = np.zeros_like(band)         # fall through to the far end
+        # ...and AHEAD of the agent, not behind it. See the flag's comment:
+        # a ramped height field makes an iso-height contour a line across the
+        # flight, so the nearest in-band cell can be back the way it came.
+        if bool(getattr(self.cfg.agent, "climb_carrot_forward_only", False)) and band.any():
+            far = int(np.argmax(np.where(band, ahead, -np.inf)))
+            axis = xy[far] - agent_xy
+            norm = float(np.linalg.norm(axis))
+            if norm > 1e-6:
+                forward = ((xy - agent_xy) @ (axis / norm)) > 0.0
+                if (band & forward).any():
+                    band &= forward
+                else:
+                    self.stats["climb_carrot_none_ahead"] = (
+                        self.stats.get("climb_carrot_none_ahead", 0) + 1)
+        if len(blocked):
+            # A tread the mover has already refused to drive to is not offered
+            # again this climb: holding a goal means holding an UNREACHABLE one
+            # too, and the point-goal policy answers that by pressing into
+            # whatever is in the way. Measured (outputs/mf5_pass2_v17 ep1, the
+            # descent): 107 forced-forwards and 24 blocked turns in a climb
+            # where v16 had none of either, because the held tread was across
+            # the banister. Only while the band still offers something else.
+            reachable = np.min(np.linalg.norm(
+                xy[:, None, :] - np.asarray(blocked)[None, :, :], axis=2), axis=1) > 0.25
+            if (band & reachable).any():
+                band &= reachable
         if band.any():
             d = np.linalg.norm(xy[band] - agent_xy, axis=1)
             self.stats["climb_flight_carrot"] = self.stats.get("climb_flight_carrot", 0) + 1
-            return xy[band][int(np.argmin(d))]
+            return self._hold_flight_carrot(xy[band], h[band], int(np.argmin(d)))
         above = ahead > 0.1
+        if min_ahead > 0.0:
+            far_enough = np.linalg.norm(xy - agent_xy, axis=1) >= min_ahead
+            if (above & far_enough).any() or not bool(getattr(
+                    self.cfg.agent, "climb_carrot_relax_min_ahead", False)):
+                above &= far_enough
+            elif above.any():
+                # LAST RESORT, and it aims at the NEXT tread, not the highest.
+                #
+                # Two things are wrong without this. `min_ahead` exists because
+                # the point-goal mover circles a goal a step away, but applying
+                # it to the final fallback means that when every remaining
+                # tread is nearer than `min_ahead` the carrot is None, and
+                # `_carrot_action` walks plain FORWARD -- into the wall, at a
+                # turn. And the fallback below picks `argmax(ahead)`, the
+                # HIGHEST tread, which on a switchback lies across the banister
+                # rather than along the run, so the mover presses into the
+                # corner instead of turning.
+                #
+                # Measured on 00873 ep50005, the ascent that knows it must
+                # climb: it rises 1.80 m of 3.20 and then slides back to the
+                # bottom three times, with ~105 cells still in band. Aiming at
+                # the lowest tread still above the agent follows the staircase
+                # one step at a time, which is the only ordering `Flight` can
+                # give -- `cells_rc` is a set, not a polyline.
+                self.stats["climb_carrot_relaxed"] = (
+                    self.stats.get("climb_carrot_relaxed", 0) + 1)
+                pick = int(np.argmin(np.where(above, ahead, np.inf)))
+                return self._hold_flight_carrot(xy, h, pick)
         if above.any():
             self.stats["climb_flight_carrot_top"] = self.stats.get("climb_flight_carrot_top", 0) + 1
-            return xy[above][int(np.argmax(ahead[above]))]
+            return self._hold_flight_carrot(xy[above], h[above], int(np.argmax(ahead[above])))
         return None
+
+    def _hold_flight_carrot(self, xy, heights, pick: int) -> np.ndarray:
+        """Remember the tread just chosen, so the next step can keep it."""
+        self._flight_carrot_xy = np.asarray(xy[pick], dtype=float).copy()
+        self._flight_carrot_h = float(heights[pick])
+        return self._flight_carrot_xy
 
     def _carrot_action(self, frame: FrameData, agent_xy: np.ndarray) -> str:
         goal = self._flight_carrot(frame, agent_xy)
@@ -1942,7 +2285,8 @@ class NavAgent:
         if goal is None:
             return FORWARD_ACTION
         if self.pointnav is not None:
-            nav = self.pointnav.step(goal, stop_radius=0.0)
+            with self.profiler.timeit("mover"):
+                nav = self.pointnav.step(goal, stop_radius=0.0)
             if nav.action is None:
                 self.stats["climb_forced_forward"] = (
                     self.stats.get("climb_forced_forward", 0) + 1
@@ -1955,15 +2299,121 @@ class NavAgent:
                     # turn re-aims the carrot; pushing again does not.
                     self._climb_blocked_run = 0
                     self._carrot_xy = None
+                    if (float(getattr(self.cfg.agent, "climb_carrot_hold_m", 0.0) or 0.0) > 0.0
+                            and self._flight_carrot_xy is not None):
+                        # The held tread is what the mover is refusing; let go
+                        # of it and do not pick it again this climb.
+                        self._climb_blocked_carrots.append(
+                            np.asarray(self._flight_carrot_xy, dtype=float).copy())
+                        self._flight_carrot_xy = None
+                        self.stats["climb_carrot_blocked_release"] = (
+                            self.stats.get("climb_carrot_blocked_release", 0) + 1)
                     self.stats["climb_blocked_turn"] = (
                         self.stats.get("climb_blocked_turn", 0) + 1
                     )
                     return TURN_ACTION
                 return FORWARD_ACTION
             self._climb_blocked_run = 0
-            return nav.action
+            return self._climb_turn_lock(frame, agent_xy, goal, nav.action)
         action = self._follow_to(frame, goal)
         return action if action is not None else FORWARD_ACTION
+
+    def _climb_align_action(self, frame: FrameData, agent_xy: np.ndarray):
+        """Face the flight before stepping onto it, or None when already facing.
+
+        The probe climbs this flight in a third of the steps a run takes, and
+        the difference is its starting pose (config: climb_align_first_deg).
+        """
+        limit = float(getattr(self.cfg.agent, "climb_align_first_deg", 0.0) or 0.0)
+        if limit <= 0.0 or self._climb_aligned:
+            return None
+        # The flight's own axis, NOT the carrot: a tread 0.4 m away has a
+        # bearing that swings tens of degrees for a few centimetres of pose
+        # change, so aligning to it can spin a full revolution without ever
+        # landing inside the tolerance -- measured once in
+        # outputs/mf5_pass2_v21 (`climb_align_gave_up` 1).
+        flight = getattr(self.floors, "pursuit_flight", None)
+        axis = None
+        if flight is not None and getattr(flight, "n_cells", 0):
+            axis = np.asarray(flight.top_xy, dtype=float) - np.asarray(flight.foot_xy, dtype=float)
+            if self._climb_direction < 0:
+                axis = -axis
+            if float(np.linalg.norm(axis)) < 0.3:
+                axis = None
+        if axis is None:
+            goal = self._flight_carrot(frame, agent_xy)
+            if goal is None:
+                self._climb_aligned = True
+                return None
+            axis = np.asarray(goal, dtype=float) - np.asarray(agent_xy, dtype=float)
+        turns_allowed = int(round(360.0 / max(1.0, float(self.cfg.agent.turn_deg))))
+        if self._climb_align_turns >= turns_allowed:
+            self._climb_aligned = True          # a full revolution: get on with it
+            self.stats["climb_align_gave_up"] = self.stats.get("climb_align_gave_up", 0) + 1
+            return None
+        err = float(np.arctan2(axis[1], axis[0]) - agent_heading(frame.T_wc))
+        err = np.degrees((err + np.pi) % (2 * np.pi) - np.pi)
+        if abs(err) <= limit:
+            self._climb_aligned = True
+            self.stats["climb_align_turns"] = (
+                self.stats.get("climb_align_turns", 0) + self._climb_align_turns)
+            return None
+        self._climb_align_turns += 1
+        return "turn_left" if err > 0 else "turn_right"
+
+    def _climb_turn_lock(self, frame: FrameData, agent_xy: np.ndarray,
+                         goal: np.ndarray, action: str) -> str:
+        """Suppress a turn that would overshoot, and stay suppressed.
+
+        A turn is `turn_deg` (30 degrees). Correcting a 10-degree error with a
+        30-degree turn leaves a 20-degree error the other way, which the next
+        step corrects back: that is the oscillation on the stairs, and the
+        traces measure it as a quarter of turns on the descent and nearly half
+        on the ascent immediately reversing the previous one. So: within the
+        deadband, go forward; the lock then holds until the error exceeds the
+        release angle, so the agent does not chatter on the boundary.
+        """
+        deadband = float(getattr(self.cfg.agent, "climb_turn_deadband_deg", 0.0) or 0.0)
+        moved = (
+            float(np.linalg.norm(np.asarray(agent_xy, dtype=float) - self._climb_last_xy))
+            if self._climb_last_xy is not None else 1e9
+        )
+        self._climb_last_xy = np.asarray(agent_xy, dtype=float).copy()
+        if deadband <= 0.0 or not str(action).startswith("turn"):
+            if action == FORWARD_ACTION:
+                self._climb_turn_locked = True
+            return action
+        # Forward is not working: the mover's turn is how it gets around
+        # whatever is in the way, and suppressing it walks into the banister.
+        eps = float(getattr(self.cfg.agent, "climb_turn_stuck_eps_m", 0.0) or 0.0)
+        if eps > 0.0 and self._last_action == FORWARD_ACTION and moved < eps:
+            self._climb_turn_locked = False
+            self._climb_suppressed_run = 0
+            self.stats["climb_turn_yield_stuck"] = (
+                self.stats.get("climb_turn_yield_stuck", 0) + 1)
+            return action
+        cap = int(getattr(self.cfg.agent, "climb_turn_suppress_max", 0) or 0)
+        if cap > 0 and self._climb_suppressed_run >= cap:
+            self._climb_turn_locked = False
+            self._climb_suppressed_run = 0
+            self.stats["climb_turn_yield_run"] = (
+                self.stats.get("climb_turn_yield_run", 0) + 1)
+            return action
+        release = float(getattr(self.cfg.agent, "climb_turn_release_deg", 0.0) or 0.0)
+        if release <= 0.0:
+            release = float(self.cfg.agent.turn_deg)
+        delta = np.asarray(goal, dtype=float) - np.asarray(agent_xy, dtype=float)
+        err = float(np.arctan2(delta[1], delta[0]) - agent_heading(frame.T_wc))
+        err = abs(np.degrees((err + np.pi) % (2 * np.pi) - np.pi))
+        if err <= (release if self._climb_turn_locked else deadband):
+            self._climb_turn_locked = True
+            self._climb_suppressed_run += 1
+            self.stats["climb_turn_suppressed"] = (
+                self.stats.get("climb_turn_suppressed", 0) + 1)
+            return FORWARD_ACTION
+        self._climb_turn_locked = False
+        self._climb_suppressed_run = 0
+        return action
 
     def _carrot_stalled(self, agent_xy: np.ndarray) -> bool:
         ref = getattr(self, "_climb_centroid_xy", None)
@@ -2074,6 +2524,31 @@ class NavAgent:
                 frame, layer, None, self._seg_stair_mask(frame)
             )
 
+    def _down_look_here(self, frame: FrameData) -> bool:
+        """Is this a place worth pitching the camera down at?
+
+        Only asked when `agent.down_look_near_stairs_m` is set. The stair map
+        -- ASCENT's, pasted at episode start, plus anything this run's detector
+        has confirmed -- is the evidence; with no map there is nothing to
+        answer with and the look-down keeps its unconditional behaviour,
+        because discovering an unknown staircase is what it is for.
+        """
+        near_m = float(getattr(self.cfg.agent, "down_look_near_stairs_m", 0.0) or 0.0)
+        if near_m <= 0.0:
+            return True
+        mask = getattr(self.costmap, "stair_mask", None)
+        if mask is None or not mask.any():
+            return True
+        rc = self.costmap.world_to_grid(frame.camera_position[list(PLANE)])
+        radius = max(1, int(round(near_m / self.costmap.resolution)))
+        r0, r1 = max(0, rc[0] - radius), min(mask.shape[0], rc[0] + radius + 1)
+        c0, c1 = max(0, rc[1] - radius), min(mask.shape[1], rc[1] + radius + 1)
+        if r0 >= r1 or c0 >= c1:
+            return False
+        yy, xx = np.ogrid[r0:r1, c0:c1]
+        disk = (yy - rc[0]) ** 2 + (xx - rc[1]) ** 2 <= radius ** 2
+        return bool((mask[r0:r1, c0:c1] & disk).any())
+
     def _down_look(self, frame: FrameData, layer, off_map: bool) -> Optional[str]:
         if self._pitch_ticks > 0:
             if not off_map:
@@ -2096,6 +2571,10 @@ class NavAgent:
         if self.state not in (State.INIT, State.EXPLORE, State.GOTO_FRONTIER):
             return None
         if self.step_count - self._last_down_look_step < self._down_look_every:
+            return None
+        if not self._down_look_here(frame):
+            self.stats["down_look_skipped_far"] = (
+                self.stats.get("down_look_skipped_far", 0) + 1)
             return None
         self._last_down_look_step = self.step_count
         self._pitch_ticks += 1
@@ -2263,12 +2742,19 @@ class NavAgent:
             # REASON is the only way to tell "I am there" from "the network gave
             # up" from "I stopped closing", and an arm whose whole question is
             # why approaches do not terminate cannot be read without it.
-            step = self.pointnav.step(
-                goal_xy, creep_below=creep,
-                stop_radius=float(self.cfg.agent.pointnav_arrival_m),
-            )
+            with self.profiler.timeit("mover"):
+                step = self.pointnav.step(
+                    goal_xy, creep_below=creep,
+                    stop_radius=float(self.cfg.agent.pointnav_arrival_m),
+                )
             self.stats[f"pointnav_{step.reason}"] = (
                 self.stats.get(f"pointnav_{step.reason}", 0) + 1
             )
+            # How often the goal moved far enough to wipe the policy's
+            # recurrent state. Tracked by the driver since it was written and
+            # never written down, which is why the climb's slowness could only
+            # be guessed at (config: climb_carrot_hold_m).
+            self.stats["pointnav_resets"] = int(
+                getattr(self.pointnav, "n_resets", 0) or 0)
             return step.action
         return self.approach.follow_to(frame, goal_xy)

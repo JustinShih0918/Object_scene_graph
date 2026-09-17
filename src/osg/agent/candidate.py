@@ -37,7 +37,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..core.types import FrameData
-from ..mapping.costmap import PLANE
+from ..mapping.costmap import HEIGHT_AXIS, PLANE
 from ..planning.controller import TURN_LEFT, TURN_RIGHT, _wrap, agent_heading
 from .state import TURN_ACTION, State
 
@@ -73,7 +73,47 @@ class CandidatePolicy:
         # in two steps and leaves 350 unspent.
         self._unreachable_from: dict = {}
 
-    def check(self, agent_xy=None) -> None:
+    def _height_plausible(self, candidates: list) -> list:
+        """Hold back a one-shot track sitting far above the storey.
+
+        A target rests on the floor or on furniture; a detection whose centre
+        is metres above the storey the agent is standing on is usually a
+        mis-projected sliver -- a reflection, a ceiling fitting, or a box fitted
+        to a wall texture. Measured on 00800: the toy-airplane episode spent
+        both early attempts, by step 95, on single-observation tracks at y 5.64
+        and 5.09 above a 3.16 m storey, while the real object was at 0.96 on the
+        other one. Every wrong commit in v11-v13 was more than 0.8 m up.
+
+        This asks for CORROBORATION, never a strike-off: a real object can sit
+        high on a shelf, so at `commit_high_min_obs` observations the track
+        competes normally. And it never empties the list -- if every candidate
+        is high, the best of them is still offered, because refusing to commit
+        at all is how an agent ends an episode having done nothing.
+        """
+        limit = float(getattr(self.nav.cfg.verification,
+                              "commit_max_above_storey_m", 0.0) or 0.0)
+        if limit <= 0.0:
+            return candidates
+        min_obs = int(getattr(self.nav.cfg.verification, "commit_high_min_obs", 2))
+        try:
+            floor_y = float(self.nav.floors.height_of(self.nav.floors.current_id))
+        except Exception:
+            return candidates
+        kept = []
+        held = 0
+        for track in candidates:
+            centre = self.nav.object_layer.center_of(track)
+            above = float(centre[HEIGHT_AXIS]) - floor_y
+            if above > limit and int(getattr(track, "n_obs", 0)) < min_obs:
+                held += 1
+                continue
+            kept.append(track)
+        if held:
+            self.nav.stats["commit_held_high_track"] = (
+                self.nav.stats.get("commit_held_high_track", 0) + held)
+        return kept or candidates
+
+    def check(self, agent_xy=None, admit=None) -> None:
         candidates = self.nav.object_layer.candidates(
             self.nav.target,
             min_obs=self.nav.cfg.verification.min_obs,
@@ -88,6 +128,8 @@ class CandidatePolicy:
             step=self.nav.step_count,
             **self._proposal_gate(),
         )
+        if candidates:
+            candidates = self._height_plausible(candidates)
         if candidates and bool(self.nav.cfg.verification.retire_stale_twins_after_absence):
             candidates = self._without_stale_twins(candidates)
         if not candidates:
@@ -96,6 +138,12 @@ class CandidatePolicy:
                 return
             candidates = [picked]
         track = candidates[0]
+        if admit is not None and not admit(track):
+            # The caller has a reason not to be interrupted right now (a floor
+            # switch in flight) and this candidate is not strong enough to
+            # override it. Nothing is struck off: the track is still there
+            # next step, when the reason may be gone.
+            return
         self.nav._candidate_id = track.id
         self.center_turns = 0  # fresh centering budget for this candidate
         obj_center = self.nav.object_layer.center_of(track)

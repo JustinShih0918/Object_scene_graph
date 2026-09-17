@@ -38,6 +38,13 @@ class Costmap2D:
         # that exemption the next frame re-stamps them and the relabel is a
         # no-op, because OCCUPIED is never otherwise cleared.
         self.stair_mask: Optional[np.ndarray] = None
+        # Which height cells are INVENTED -- the linear ramp a pasted ASCENT
+        # map gets in place of the heights it never recorded. A real depth
+        # reading replaces one of these outright instead of being min'd against
+        # it (see `_record_heights`).
+        self.height_synthetic: Optional[np.ndarray] = (
+            np.zeros((n, n), dtype=bool) if track_height else None
+        )
         self._grow_listeners: List[Callable[[int, int, int, int], None]] = []
 
     def add_grow_listener(self, fn: Callable[[int, int, int, int], None]) -> None:
@@ -66,7 +73,8 @@ class Costmap2D:
         self.grid = new
         # Every parallel layer must grow with it or the shapes silently diverge
         for name, fill, dtype in (
-            ("height", np.nan, np.float32), ("stair_mask", False, bool)
+            ("height", np.nan, np.float32), ("stair_mask", False, bool),
+            ("height_synthetic", False, bool),
         ):
             old = getattr(self, name)
             if old is not None:
@@ -192,7 +200,18 @@ class Costmap2D:
         self.grid[end_rc[stamp, 0], end_rc[stamp, 1]] = OCCUPIED
 
     def _record_heights(self, pts: np.ndarray) -> None:
-        """Keep the lowest surface height seen in each cell."""
+        """Keep the lowest surface height seen in each cell.
+
+        EXCEPT where the height is SYNTHETIC. A pasted ASCENT map carries no
+        heights, so `map_store._ramp_stair_heights` invents a linear ramp over
+        the stair cells -- and the invention runs LOW: measured on 00821 it
+        spans 3.17 m where the true surface under the same cells spans 1.34,
+        reaching -3.26 where the truth is -1.21. Under a running minimum the
+        agent's own depth reading, which is higher and correct, can never
+        displace it, so the climber follows the fiction for the whole episode.
+        A first real observation therefore REPLACES a synthetic height and
+        clears the flag; from then on the cell behaves normally.
+        """
         if pts.shape[0] == 0:
             return
         rc = np.floor((pts[:, list(PLANE)] - self.origin) / self.resolution).astype(np.int64)
@@ -203,6 +222,19 @@ class Costmap2D:
             return
         flat = rc[:, 0] * w + rc[:, 1]
         cur = self.height.reshape(-1)
+        synthetic = getattr(self, "height_synthetic", None)
+        if synthetic is not None:
+            flags = synthetic.reshape(-1)
+            fake = flags[flat]
+            if fake.any():
+                # Last real reading wins over an invented one, then the cell is
+                # real and rejoins the running minimum below.
+                cur[flat[fake]] = ys[fake]
+                flags[flat[fake]] = False
+                keep = ~fake
+                flat, ys = flat[keep], ys[keep]
+                if flat.size == 0:
+                    return
         # np.fmin.at ignores NaN on the accumulator side, so first-write cells
         # take the value and later writes keep the running minimum.
         np.fmin.at(cur, flat, ys)
