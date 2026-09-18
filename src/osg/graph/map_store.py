@@ -393,6 +393,10 @@ def apply_map(
         stair_mask = get("stair_mask")
         if stair_mask is not None:
             costmap.stair_mask = np.array(stair_mask, dtype=bool)
+        # `grid` was just replaced at the snapshot's extent. Any parallel layer
+        # the snapshot did not carry is still the constructor's shape, and a
+        # restored height is a REAL reading, so nothing is synthetic here.
+        costmap.conform_layers()
         for name, dtype in (
             ("room_labels", np.int32), ("up_stair_hits", np.int16),
             ("down_stair_hits", np.int16), ("disabled_stair", bool),

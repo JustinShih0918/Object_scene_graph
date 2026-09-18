@@ -61,6 +61,30 @@ class Costmap2D:
     def in_bounds(self, rc: np.ndarray) -> bool:
         return 0 <= rc[0] < self.grid.shape[0] and 0 <= rc[1] < self.grid.shape[1]
 
+    # The parallel layers -- one entry per cell of `grid`, and meaningless if
+    # their shapes ever diverge from it.
+    _PARALLEL_LAYERS = (("height", np.nan, np.float32),
+                        ("stair_mask", False, bool),
+                        ("height_synthetic", False, bool))
+
+    def conform_layers(self) -> None:
+        """Re-shape every parallel layer to match `grid`, blanking what cannot
+        be carried over.
+
+        `ensure_contains` keeps them together when the map GROWS. Restoring a
+        snapshot is the other way a grid changes shape -- it is replaced
+        wholesale, at whatever extent the mapping pass had grown to -- and
+        nothing was keeping the layers with it. A 400x400 `height_synthetic`
+        behind a restored 576x576 grid indexes out of bounds on the first depth
+        frame (`_record_heights`), which is an IndexError on episode 1 of every
+        run that loads a prior map with occupancy.
+        """
+        shape = self.grid.shape
+        for name, fill, dtype in self._PARALLEL_LAYERS:
+            layer = getattr(self, name, None)
+            if layer is not None and layer.shape != shape:
+                setattr(self, name, np.full(shape, fill, dtype=dtype))
+
     def ensure_contains(self, xy: np.ndarray, margin_m: float = 2.0) -> None:
         rc = self.world_to_grid(xy)
         m = int(margin_m / self.resolution)
