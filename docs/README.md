@@ -31,6 +31,7 @@ Append-only. Large because they are complete, not because they are untidy.
 | [CROSS_ANCHOR_STATUS.md](CROSS_ANCHOR_STATUS.md) | The summary of the above: where it stands, what was found by layer, what is left. **Read this one first.** |
 | [OVERNIGHT_SR_ITERATION.md](OVERNIGHT_SR_ITERATION.md) | Written as it happened, on branch `experiment/sr-70-50`. |
 | [DUALMAP_OFFICIAL_RERUN.md](DUALMAP_OFFICIAL_RERUN.md) | DualMap rerun on its own released benchmark; the source of the 30.2% cross-anchor figure the paper compares against. |
+| [CROSS_ANCHOR_REPRODUCTION.md](CROSS_ANCHOR_REPRODUCTION.md) | 2026-09-20: why the paper's cross-anchor headline no longer re-derives, what was ruled out, and what is left. **Read before quoting Table I.** |
 
 ## Design notes
 

@@ -728,14 +728,22 @@ viewpoint rule.
 
 | paper row | expected | run directory | status |
 |---|---|---|---|
-| Table I, Ours, in-anchor 63.0% | 34 / 54 | `outputs/osg_v4_fuse_cls_full` | **reproduces** (part of 62/107) |
-| Table I, Ours, cross-anchor 52.8% | 28 / 53 | `outputs/osg_v4_fuse_cls_full` | **reproduces** (part of 62/107) |
+| Table I, Ours, in-anchor 63.0% | 34 / 54 | `outputs/osg_v4_fuse_cls_full` | the artifact holds it; **a re-run does not** — 30/54 on 2026-09-20 |
+| Table I, Ours, cross-anchor 52.8% | 28 / 53 | `outputs/osg_v4_fuse_cls_full` | the artifact holds it; **a re-run does not** — 20/53 on 2026-09-20 |
 | Table II, ASCENT 0% / 0 | 0 / 25 | `outputs/ascent_crossanchor` | **reproduces** |
 | Table I, Ours, static 64.6% | 51 / 79 | — | **not on this machine**: no 78- or 79-episode run exists under `outputs/` |
 | Table II, Ours 40.0% / 0.162 | 10 / 25 | — | **not reconciled**: the best multi-floor run here is `outputs/mf5_pass2_final` at 9/25 = 36.0%, SPL 0.1384 (2 + 7 + 7 + 3 + 6 episodes over the five scenes, no duplicate ids, agreeing with each scene's own `summary.json`) |
 | Table III, w/o presence revision 41.5% | 22 / 53 | — | **not on this machine**: no 53-episode run exists |
 | Table III, w/o surface scoring 35.8% | 19 / 53 | — | **not on this machine** |
 | Table III, w/o VLM verification 52.8% | 28 / 53 | — | **not on this machine** as a separate run |
+
+> **The single-floor dynamic rows no longer re-derive.** Re-run 2026-09-20: static
+> 51/79 = 64.6%, in-anchor 30/54 = 55.6%, cross-anchor 20/53 = 37.7%. The cause is
+> not the code — the tree that produced 62/107 (`74e0eab`) agrees with HEAD on 18 of
+> 18 trials when given the same prior map — but the prior map, which rebuilds
+> deterministically at 534 tracks against the 682 the locked run loaded.
+> [`CROSS_ANCHOR_REPRODUCTION.md`](CROSS_ANCHOR_REPRODUCTION.md) has the full audit.
+> Table II reproduces: 11/25 = 44.0%, SPL 0.196.
 
 The three ablations are re-runnable as one override each on the full arm:
 
