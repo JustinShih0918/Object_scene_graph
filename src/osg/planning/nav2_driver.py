@@ -50,7 +50,13 @@ class BackendStatus:
 
 
 class Nav2Driver:
-    """`goal_xy -> NavStep`, with the driving done by a Nav2-shaped backend."""
+    """`goal_xy -> NavStep`, with the driving done by a Nav2-shaped backend.
+
+    SAME STOREY ONLY. A goal carries no height: Nav2 navigates one 2D map, and
+    on the robot the storey is the operator's switch rather than a height at
+    all (`floor.source=external`). Reaching another floor is not something this
+    mover can do, which is why the robot presets turn the climb machinery off.
+    """
 
     def __init__(self, backend, *, stop_radius: float = 0.9,
                  goal_resend_m: float = 0.5) -> None:
@@ -106,17 +112,20 @@ class Nav2Driver:
             self._cancel_if_active()
             return NavStep(None, "arrived")
 
-        moved = (self._last_goal is None
-                 or float(np.linalg.norm(goal - self._last_goal)) > self.goal_resend_m)
+        first = self._last_goal is None
+        moved = first or float(np.linalg.norm(goal - self._last_goal)) > self.goal_resend_m
         if moved or not self.goal_active:
             # A moved goal preempts the old one inside Nav2; resending only on
             # a real move keeps a frontier goal that jitters by a cell from
             # restarting the global planner every step.
-            self.backend.send_goal(goal, self._floor_y)
+            self.backend.send_goal(goal)
             self._last_goal = goal.copy()
             self.goal_active = True
             self.n_goals_sent += 1
-            if moved and self._last_goal is not None:
+            if moved and not first:
+                # A pursuit that changed its mind, not one that started. Read
+                # back as `pointnav_resets`, where it prices how often the goal
+                # is moving out from under the navigator.
                 self.n_resets += 1
 
         status = self.backend.poll()
@@ -143,12 +152,6 @@ class Nav2Driver:
         return self.step(goal_xy, stop_radius=stop_radius, creep_below=creep_below).action
 
     # -------------------------------------------------------- goal ownership
-
-    _floor_y: Optional[float] = None
-
-    def set_floor_y(self, floor_y: Optional[float]) -> None:
-        """Which storey the goal is on, for a backend that can use it."""
-        self._floor_y = None if floor_y is None else float(floor_y)
 
     def consume_tick(self):
         """`(the driver acted this tick, a goal is outstanding)`, and clear.

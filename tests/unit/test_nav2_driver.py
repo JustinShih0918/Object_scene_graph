@@ -28,8 +28,8 @@ class FakeBackend:
     def observe(self, frame):
         self.seen = frame
 
-    def send_goal(self, goal_xy, floor_y=None):
-        self.goals.append((np.asarray(goal_xy, float).copy(), floor_y))
+    def send_goal(self, goal_xy):
+        self.goals.append((np.asarray(goal_xy, float).copy(), None))
 
     def cancel(self):
         self.cancels += 1
@@ -79,14 +79,6 @@ def test_a_goal_that_really_moves_is_re_posted():
     d.step(np.array([5.0, 0.0]))
     d.step(np.array([-4.0, 2.0]))
     assert len(b.goals) == 2 and np.allclose(b.goals[1][0], [-4.0, 2.0])
-
-
-def test_the_floor_the_goal_is_on_reaches_the_backend():
-    b = FakeBackend()
-    d = _at(_driver(b), (0.0, 0.0))
-    d.set_floor_y(3.2)
-    d.step(np.array([5.0, 0.0]))
-    assert b.goals[0][1] == 3.2
 
 
 # ------------------------------------------------- the navigator's verdicts
@@ -258,10 +250,9 @@ def test_cancelling_the_simulated_backend_stops_it_asking_the_follower():
     assert backend.poll().state == "idle" and env.asked == []
 
 
-def test_the_storey_a_cross_floor_goal_is_on_reaches_the_follower():
-    """`action_to_goal(goal, floor_y)` is how habitat is told the goal is on
-    another storey; dropping it snaps the goal onto the floor below."""
+def test_the_simulated_backend_asks_about_the_agents_own_storey():
+    """This mover is same-storey (see Nav2Driver): `None` tells habitat to use
+    the agent's own floor, which is what a same-storey goal wants."""
     backend, env = _sim("move_forward", (0.0, 0.0), (5.0, 0.0))
-    backend.send_goal(np.array([5.0, 0.0]), 3.2)
     backend.poll()
-    assert env.asked[-1][1] == 3.2
+    assert env.asked[-1][1] is None

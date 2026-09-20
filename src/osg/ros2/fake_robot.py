@@ -250,8 +250,6 @@ class FakeRobot:
             tf.transform.rotation.w = float(math.cos(angle / 2.0))
             self._tf.sendTransform(tf)
         # base_link -> camera_optical, as a fixed mount.
-        from .frames import quat_to_matrix  # noqa: F401  (kept symmetric)
-
         body_to_optical = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
         tf = TransformStamped()
         tf.header.stamp = stamp

@@ -33,15 +33,13 @@ class SimNav2Backend:
         self.env = env
         self.arrival_m = float(arrival_m)
         self._goal: Optional[np.ndarray] = None
-        self._floor_y: Optional[float] = None
         self._agent_xy = np.zeros(2)
 
     def observe(self, frame: FrameData) -> None:
         self._agent_xy = frame.camera_position[list(PLANE)].copy()
 
-    def send_goal(self, goal_xy, floor_y: Optional[float] = None) -> None:
+    def send_goal(self, goal_xy) -> None:
         self._goal = np.asarray(goal_xy, dtype=float).copy()
-        self._floor_y = floor_y
 
     def cancel(self) -> None:
         self._goal = None
@@ -49,7 +47,9 @@ class SimNav2Backend:
     def poll(self) -> BackendStatus:
         if self._goal is None:
             return BackendStatus("idle")
-        action = self.env.action_to_goal(self._goal, self._floor_y)
+        # No floor height: this mover is same-storey (see Nav2Driver). None
+        # means "the agent's own floor", which is what a same-storey goal wants.
+        action = self.env.action_to_goal(self._goal, None)
         rho = float(np.linalg.norm(self._goal - self._agent_xy))
         if action is not None:
             return BackendStatus("active", action=action, distance_remaining=rho)
@@ -80,11 +80,7 @@ class RosNav2Backend:
     def observe(self, frame: FrameData) -> None:
         self._agent_xy = frame.camera_position[list(PLANE)].copy()
 
-    def send_goal(self, goal_xy, floor_y: Optional[float] = None) -> None:
-        # `floor_y` is deliberately dropped: Nav2 navigates one 2D map, and on
-        # this robot the storey is the operator's switch, not a height
-        # (`floor.source=external`). Reaching another floor is not something
-        # the mover can do.
+    def send_goal(self, goal_xy) -> None:
         x, y = frames.pipeline_xy_to_ros(goal_xy)
         yaw = frames.goal_yaw_ros(self._agent_xy, goal_xy)
         frame_id = str(self.cfg.goal_frame)

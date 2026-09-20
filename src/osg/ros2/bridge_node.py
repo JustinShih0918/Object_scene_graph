@@ -81,6 +81,10 @@ class BridgeNode:
         self._goal_state = "idle"
         self._distance = float("nan")
         self.last_goal: Optional[dict] = None
+        # Where the head is pointing. look_up/look_down are relative, so the
+        # bridge has to remember; the Stretch reports it on /joint_states too,
+        # but only once the controller is up.
+        self._tilt = 0.0
 
         self.tf_buffer = Buffer()
         self._tf_listener = TransformListener(self.tf_buffer, self.node)
@@ -315,8 +319,6 @@ class BridgeNode:
         self._head.send_goal_async(goal)
         self._tilt = float(target)
         return {"tilt_deg": float(np.degrees(target))}
-
-    _tilt = 0.0
 
     def pop_floor_switch(self) -> dict:
         with self._lock:

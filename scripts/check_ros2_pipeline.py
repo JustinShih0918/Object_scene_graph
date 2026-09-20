@@ -144,7 +144,7 @@ def main(argv=None) -> int:
                  why=f"{sent['frame_id'] if sent else None!r} is not "
                      f"{cfg.ros2.goal_frame!r}")
 
-    arrived, frame = _drive_until_arrived(env, driver, goal_xy, timeout_s=30.0)
+    arrived, frame = _drive_until_arrived(env, driver, frame, goal_xy, timeout_s=30.0)
     checks.check("the navigator reported arriving", arrived,
                  why="the navigator never reported SUCCEEDED")
     reached = frame.camera_position[list(PLANE)]
@@ -222,9 +222,8 @@ def _wrap(angle: float) -> float:
     return float(np.arctan2(np.sin(angle), np.cos(angle)))
 
 
-def _drive_until_arrived(env, driver, goal_xy, timeout_s: float):
+def _drive_until_arrived(env, driver, frame, goal_xy, timeout_s: float):
     deadline = time.time() + timeout_s
-    frame = env._to_frame(env.transport.get_frame())
     while time.time() < deadline:
         driver.observe(frame)
         step = driver.step(goal_xy)
