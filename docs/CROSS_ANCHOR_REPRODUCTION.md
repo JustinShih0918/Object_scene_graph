@@ -86,6 +86,20 @@ most on the surface inventory -- the mapped pose is empty and the agent must
 search *other* surfaces -- and it is the condition that fell furthest
 (static ~0, in-anchor -4, cross-anchor -9).
 
+## The one tree not tested here
+
+`mf5arm/` — a second working copy on another machine — reportedly reaches **28/53**
+with `bundle code + dualmap_osg_unified` (`mf5arm/outputs/bundle_dualmap_186`), and a
+third run, `outputs/unified_dualmap_107`, reaches 27/53. Neither path exists on this
+machine, so neither was part of the audit above.
+
+That matters in both directions. It does not contradict the finding — `74e0eab` and
+HEAD agree on 18/18 trials **given the same prior map**, and those runs will have used
+the 682-track maps — but it does mean the 28/53 code has never been diffed against this
+tree. If it differs, it is the only copy. `.gitignore` now excludes `/mf5arm/` so a
+`git add -A` cannot sweep a working copy and its outputs into a commit; the rule carries
+a warning not to rely on it until that diff has been taken and committed as a branch.
+
 ## What would settle it
 
 Rebuild the prior maps under the pre-09-14 image. If they come back at 682 and

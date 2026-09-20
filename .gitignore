@@ -26,3 +26,15 @@ relative_work/
 docs/figures/
 # Ultralytics writes predict runs here.
 runs/
+
+# A second working copy of this repo, kept beside it to run one arm while the
+# main tree runs another. Its `outputs/` is already covered by the rule above;
+# this covers the rest of the checkout so `git add -A` cannot sweep it in.
+#
+# BEFORE RELYING ON THIS: mf5arm's source is not disposable. It is the tree that
+# scores 28/53 on DualMap cross-anchor -- the result docs/CROSS_ANCHOR_REPRODUCTION.md
+# could not reproduce from anything in this repository's history. Diff its src/
+# and configs/ against this tree and commit the difference as a branch first.
+# Once the directory is ignored, `git add` refuses it silently and the only copy
+# of that code is on one machine.
+/mf5arm/
