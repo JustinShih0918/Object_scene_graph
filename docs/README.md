@@ -1,6 +1,6 @@
 # Documentation index
 
-47 files, and they are not all the same kind of thing. Read the four in **Start here** and
+51 files, and they are not all the same kind of thing. Read the four in **Start here** and
 ignore the rest until you need them; everything below that line is either a frozen
 measurement or the reasoning behind one decision.
 
@@ -32,6 +32,12 @@ Append-only. Large because they are complete, not because they are untidy.
 | [OVERNIGHT_SR_ITERATION.md](OVERNIGHT_SR_ITERATION.md) | Written as it happened, on branch `experiment/sr-70-50`. |
 | [DUALMAP_OFFICIAL_RERUN.md](DUALMAP_OFFICIAL_RERUN.md) | DualMap rerun on its own released benchmark; the source of the 30.2% cross-anchor figure the paper compares against. |
 | [CROSS_ANCHOR_REPRODUCTION.md](CROSS_ANCHOR_REPRODUCTION.md) | 2026-09-20: why the paper's cross-anchor headline no longer re-derives, what was ruled out, and what is left. **Read before quoting Table I.** |
+
+## Running on a real robot
+
+| doc | what it is |
+|---|---|
+| [ROS2.md](ROS2.md) | The ROS 2 / Nav2 layer for the Stretch 3: why two interpreters, the frame conventions, who owns the base, the manual floor switch, the two-run protocol, and how to check all of it with no robot. |
 
 ## Design notes
 

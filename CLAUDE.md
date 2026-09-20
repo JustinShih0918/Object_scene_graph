@@ -64,13 +64,26 @@ Three orthogonal axes select what actually runs:
 
 | axis | flag | options |
 |---|---|---|
-| mover | `agent.navigation` | `costmap` (own A*/Voronoi planner), `pointnav` (frozen depth + point-goal policy), `navmesh` (Habitat `ShortestPathFollower`) |
+| mover | `agent.navigation` | `costmap` (own A*/Voronoi planner), `pointnav` (frozen depth + point-goal policy), `navmesh` (Habitat `ShortestPathFollower`), `nav2` (publish the goal, let a Nav2 stack drive) |
 | policy | `agent.policy` | `nav_agent` (OSG FSM + dynamic world model), `ascent`, `ascentnav` |
-| benchmark | `eval.mode` | `objectnav` (HM3D), `ycb_authored` (authored dynamic layouts), `dualmap_protocol` (DualMap's released benchmark and scoring rule) |
+| benchmark | `eval.mode` | `objectnav` (HM3D), `ycb_authored` (authored dynamic layouts), `dualmap_protocol` (DualMap's released benchmark and scoring rule), `ros2` (a real robot; see below) |
 
 **`navmesh` is privileged navigation** — it is the only mover given simulator geometry
 (`action_to_goal` / `is_reachable`). Its SR/SPL must never be compared against sensor-only methods
-(`costmap`, `pointnav`). `agent.use_habitat_navmesh` is a legacy alias for it.
+(`costmap`, `pointnav`). `agent.use_habitat_navmesh` is a legacy alias for it. **`nav2` is
+privileged too**, by both backends: in simulation it wraps that same follower, and on the robot
+Nav2 plans on a map the robot was given.
+
+### The real robot
+
+`docs/ROS2.md` is the whole of it. A Hello Robot Stretch 3 runs its own Nav2 stack, so the
+pipeline publishes the metric goal it already computes and stops steering; sensor data comes
+back the other way. Two facts shape that layer and neither is negotiable: Humble's `rclpy` is
+built for Python 3.10 while both conda envs here are 3.9, so the ROS node is a separate
+process reached over a socket (`src/osg/ros2/`, importable under both interpreters); and
+Nav2's `map` is 2D, so the storey is **declared by the operator** (`/osg/floor`,
+`floor.source=external`) rather than estimated from a height that does not exist. Check the
+whole path with no robot present: `bash scripts/ros2/check_pipeline.sh`.
 
 ### What the OSG pipeline is built for
 

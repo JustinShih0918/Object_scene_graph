@@ -26,6 +26,7 @@ BUILD_INPUTS = (
     "relative_work/ascent/third_party/habitat-lab/habitat-lab/setup.py",
     "docker/entrypoint.sh",
     "docker/modules/install_claude_code.sh",
+    "docker/modules/install_ros2_humble.sh",
     "docker/modules/install_x11_opengl_vulkan.sh",
 )
 # Directories that must never reach the daemon: together they are ~34 GB.

@@ -88,6 +88,13 @@ RUN pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 \
 # non-ROS requirements are included in the install above. ROS 2 is optional in
 # the collector and is intentionally not mixed into this Python 3.9 env:
 # Ubuntu 22.04's ROS Humble binaries, including rclpy, target Python 3.10.
+#
+# The Stretch 3 layer lives with that rather than fighting it. Humble IS
+# installed further down (install_ros2_humble.sh), against the system
+# python3.10, and the pipeline reaches it over a local socket instead of an
+# import -- `src/osg/ros2/` is written to run under both interpreters. Nothing
+# sources setup.bash into a login shell for the same reason this comment
+# exists: ROS's 3.10 site-packages must never precede this env's imports.
 
 # CLIP tokenizer for YOLOE's text prompts (otherwise ultralytics AutoUpdate
 # re-installs it in every ephemeral container).
@@ -251,6 +258,10 @@ RUN printf '\n# habitat env for `docker exec -it ... bash`\nif [ -z "$CONDA_DEFA
 COPY docker/modules/install_x11_opengl_vulkan.sh /tmp/install_x11_opengl_vulkan.sh
 RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
     /tmp/install_x11_opengl_vulkan.sh && rm /tmp/install_x11_opengl_vulkan.sh
+
+COPY docker/modules/install_ros2_humble.sh /tmp/install_ros2_humble.sh
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    /tmp/install_ros2_humble.sh && rm /tmp/install_ros2_humble.sh
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
