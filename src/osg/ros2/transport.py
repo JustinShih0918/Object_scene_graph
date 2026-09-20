@@ -71,8 +71,8 @@ class Transport:
     def ping(self) -> dict:
         return self._call("ping")
 
-    def get_frame(self, min_stamp: float = 0.0, timeout_s: float = 5.0) -> dict:
-        """The newest frame stamped at or after `min_stamp`.
+    def get_frame(self, after_seq: int = -1, timeout_s: float = 5.0) -> dict:
+        """The newest frame, waiting for one newer than `after_seq`.
 
         Latest-only, never a queue: the pipeline runs at whatever rate its
         perception allows and the camera at 30 Hz, so buffering would hand the
@@ -80,12 +80,12 @@ class Transport:
         a stale frame on timeout -- a frozen frame is the failure that looks
         like a bad planner.
         """
-        payload = self._call("get_frame", min_stamp=float(min_stamp),
+        payload = self._call("get_frame", after_seq=int(after_seq),
                              timeout_s=float(timeout_s))
         if payload is None:
             raise BridgeUnavailable(
-                f"no camera frame within {timeout_s:.1f}s of {min_stamp:.3f}. "
-                f"Check {self.cfg.rgb_topic} / {self.cfg.depth_topic} and the "
+                f"no camera frame within {timeout_s:.1f}s. Check "
+                f"{self.cfg.rgb_topic} / {self.cfg.depth_topic} and the "
                 f"{self.cfg.map_frame} -> camera TF."
             )
         return payload

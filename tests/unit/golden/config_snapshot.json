@@ -412,6 +412,7 @@
   "ros2.depth_scale": 0.001,
   "ros2.depth_topic": "/camera/aligned_depth_to_color/image_raw",
   "ros2.floor_topic": "/osg/floor",
+  "ros2.frame_timeout_s": 10.0,
   "ros2.goal_frame": "map",
   "ros2.goal_resend_m": 0.5,
   "ros2.head_tilt_joint": "joint_head_tilt",

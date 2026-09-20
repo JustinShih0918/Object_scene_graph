@@ -215,10 +215,14 @@ def build_nav2_driver(cfg, env):
     else:
         backend = SimNav2Backend(
             env, arrival_m=max(2.0 * float(cfg.agent.navmesh_goal_radius), 0.25))
+    # `nav_timeout_s` is a wall-clock patience, and the mover counts control
+    # ticks; `step_period_s` is what one tick costs while Nav2 drives.
+    period = max(float(cfg.ros2.step_period_s), 1e-3)
     return Nav2Driver(
         backend,
         stop_radius=float(cfg.agent.pointnav_stop_radius),
         goal_resend_m=float(cfg.ros2.goal_resend_m),
+        timeout_steps=int(round(float(cfg.ros2.nav_timeout_s) / period)),
     )
 
 

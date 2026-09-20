@@ -81,21 +81,21 @@ class LoopbackRobot:
         return {"node": "osg_bridge", "frames": self._seq, "ros_time": time.time(),
                 "has_camera_info": True, "loopback": True}
 
-    def get_frame(self, min_stamp: float = 0.0, timeout_s: float = 5.0):
-        deadline = time.time() + float(timeout_s)
-        while True:
-            self._advance()
-            self._maybe_switch_floor()
-            stamp = time.time()
-            if stamp >= float(min_stamp):
-                break
-            if stamp > deadline:
-                return None
-            time.sleep(float(self.args.tick_s))
+    def get_frame(self, after_seq: int = -1, timeout_s: float = 5.0):
+        """Render the room as it is now.
+
+        No waiting: this camera samples when it is asked rather than streaming,
+        so every frame already postdates every command that preceded the call
+        and `after_seq` is satisfied by construction. The real bridge has to
+        wait because its frames arrive on their own schedule.
+        """
+        self._advance()
+        self._maybe_switch_floor()
         with self._lock:
             T = self._camera_matrix()
             self._seq += 1
             seq = self._seq
+            stamp = time.time()
         depth = render_depth(self.width, self.height, self.K, T)
         return {
             "seq": seq, "stamp": stamp, "rgb": render_rgb(depth),
@@ -133,6 +133,11 @@ class LoopbackRobot:
             return {"cancelled": had}
 
     def execute(self, action: str, forward_m: float, turn_deg: float) -> dict:
+        # Driving the base by hand ends any goal, the way the real fake lets
+        # the navigator win while one is outstanding (fake_robot._integrate).
+        # Without this the two fakes disagree about who owns the wheels, which
+        # is the one property a second fake exists to cross-check.
+        self.cancel()
         with self._lock:
             if action == "move_forward":
                 self.pose[:2] += np.array([math.cos(self.pose[2]),

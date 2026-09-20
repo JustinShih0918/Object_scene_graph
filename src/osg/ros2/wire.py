@@ -26,7 +26,7 @@ import numpy as np
 # a typo'd op name should fail at the dispatch table, not silently no-op.
 OPS = (
     "ping",             # -> {"node": str, "frames": int, "ros_time": float}
-    "get_frame",        # (min_stamp, timeout_s) -> frame payload, or None on timeout
+    "get_frame",        # (after_seq, timeout_s) -> frame payload, or None on timeout
     "send_goal",        # (x, y, yaw, frame_id) -> {"goal_id": int}
     "nav_status",       # -> {"state": ..., "goal_id": int, "distance_remaining": float}
     "cancel",           # -> {"cancelled": bool}

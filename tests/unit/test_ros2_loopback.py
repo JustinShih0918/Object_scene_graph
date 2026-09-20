@@ -157,7 +157,8 @@ def test_the_floor_switch_travels_the_whole_way(robot_env):
     env.on_floor_switch = seen.append
     ground = frame.camera_position[HEIGHT_AXIS]
 
-    robot._floor = 1  # what `/osg/floor` sets on the real bridge
+    with robot._lock:
+        robot._floor = 1  # what `/osg/floor` sets on the real bridge
     frame = env.step("turn_left")
 
     assert seen == [1] and env.floor_key == 1

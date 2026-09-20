@@ -6,6 +6,9 @@ the base on a given tick, and what height the pose is reported at.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -22,16 +25,18 @@ class FakeTransport:
         self.cancels = 0
         self.pose = [float(xy[0]), float(xy[1]), float(camera_z)]
         self.stamp = 1000.0
+        self.seq = 0
 
     def ping(self):
         self.calls.append(("ping",))
         return {"node": "fake"}
 
-    def get_frame(self, min_stamp=0.0, timeout_s=5.0):
-        self.calls.append(("get_frame", min_stamp))
+    def get_frame(self, after_seq=-1, timeout_s=5.0):
+        self.calls.append(("get_frame", after_seq))
         self.stamp += 0.1
+        self.seq += 1
         return {
-            "seq": len(self.calls), "stamp": self.stamp,
+            "seq": self.seq, "stamp": self.stamp,
             "rgb": np.zeros((4, 6, 3), np.uint8),
             "depth": np.full((4, 6), 1500, np.uint16),
             "depth_encoding": "16UC1",
@@ -78,8 +83,12 @@ class FakeTransport:
 class FakeDriver:
     """`Nav2Driver`'s ownership surface, scripted."""
 
-    def __init__(self, stepped=False, goal_active=False):
+    def __init__(self, stepped=False, goal_active=False, last_action="move_forward"):
         self.stepped, self.goal_active = stepped, goal_active
+        # What the mover returned this tick. The env compares the action it is
+        # handed against this to tell the mover's own action from one the FSM
+        # substituted afterwards.
+        self.last_action = last_action
         self.cancelled = 0
 
     def consume_tick(self):
@@ -211,13 +220,33 @@ def test_stop_ends_the_run_and_releases_the_base():
 
 def test_a_fresh_frame_is_demanded_after_a_command():
     """Acting on the frame that was current before the base moved is the
-    failure that looks like a bad planner."""
+    failure that looks like a bad planner.
+
+    Freshness is a sequence number, not a timestamp: image stamps are ROS time
+    and the pipeline's clock is not, so under `use_sim_time` a wall-clock
+    threshold could never be satisfied.
+    """
     t = FakeTransport()
     env = _env(t)
     env.reset()
     env.step("move_forward")
-    stamps = [c[1] for c in t.calls if c[0] == "get_frame"]
-    assert stamps[-1] > 0.0, "the frame must postdate the command"
+    asked = [c[1] for c in t.calls if c[0] == "get_frame"]
+    assert asked[-1] == 1, "must wait for a frame newer than the one acted on"
+
+
+def test_an_action_the_fsm_substituted_takes_the_base_from_nav2():
+    """`NavAgent.act` rewrites the action AFTER the mover ran -- the escape
+    window turns a long run of forwards into a turn. That override is an FSM
+    action and must reach the wheels, not be mistaken for the placeholder."""
+    t = FakeTransport()
+    driver = FakeDriver(stepped=True, goal_active=True, last_action="move_forward")
+    env = _env(t, driver=driver)
+    env.reset()
+    env.step("turn_right")  # what ActionHistoryEscape substitutes
+    order = _kinds(t)
+    assert ("execute", "turn_right", env.cfg.agent.forward_m,
+            env.cfg.agent.turn_deg) in t.calls
+    assert order.index("cancel") < order.index("execute")
 
 
 # ------------------------------------------------------------ the floor switch
@@ -288,6 +317,19 @@ def test_reset_drains_a_switch_left_over_from_a_previous_run():
 # ------------------------------------------------------- the episode contract
 
 
+def test_a_second_run_starts_on_the_ground_floor():
+    """`reset` clears the storey as well as the log: a second run on the same
+    env must not inherit the floor the previous one ended on."""
+    t = FakeTransport()
+    env = _env(t, driver=FakeDriver())
+    env.reset()
+    t.floor_queue.append(1)
+    env.step("turn_left")
+    assert env.floor_key == 1
+    env.reset()
+    assert env.floor_key == 0 and env.floor_switches == []
+
+
 def test_the_run_ends_at_the_step_budget():
     env = _env()
     env.reset()
@@ -312,8 +354,25 @@ def test_nothing_is_scored_because_there_is_no_ground_truth():
     env = _env()
     env.reset()
     metrics = env.metrics()
+    # NaN in memory, because `eval/record.py` calls float() on all three; the
+    # runner writes them out as null (scripts/run_robot.py:_json_safe), since a
+    # bare NaN token is unreadable by any JSON parser outside Python.
     assert np.isnan(metrics["success"]) and np.isnan(metrics["spl"])
     assert env.attempt_scored(None, env.cfg) is False
+
+
+def test_the_unmeasured_metrics_survive_the_trip_to_disk_as_null():
+    from importlib.machinery import SourceFileLoader
+
+    root = Path(__file__).resolve().parents[2]
+    run_robot = SourceFileLoader(
+        "run_robot", str(root / "scripts" / "run_robot.py")).load_module()
+
+    env = _env()
+    env.reset()
+    text = json.dumps(run_robot._json_safe({"metrics": env.metrics(), "ok": [1.5]}))
+    assert "NaN" not in text
+    assert json.loads(text)["metrics"]["success"] is None
 
 
 def test_closing_releases_the_base_and_the_socket():

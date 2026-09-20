@@ -59,24 +59,38 @@ class Nav2Driver:
     """
 
     def __init__(self, backend, *, stop_radius: float = 0.9,
-                 goal_resend_m: float = 0.5) -> None:
+                 goal_resend_m: float = 0.5, timeout_steps: int = 0) -> None:
         self.backend = backend
         # Read by `nav_agent._frontier_reach_m` (:373) and the climb (:137) to
         # decide how close counts as having reached a frontier, so it has to
         # mean the same thing it means for PointNav.
         self.stop_radius = float(stop_radius)
         self.goal_resend_m = float(goal_resend_m)
-        self.n_goals_sent = 0
-        self.n_aborts = 0
-        self.n_resets = 0
-        self.last_rho = float("nan")
+        # Control ticks a single goal may stay `active` before it is treated as
+        # refused. Nav2's recovery behaviours can spin on an unreachable goal
+        # for a very long time without ever aborting, and a pursuit that never
+        # ends is a whole run spent on one frontier. 0 disables.
+        self.timeout_steps = int(timeout_steps)
         self.reset()
 
     def reset(self) -> None:
+        """Per EPISODE. The runner builds one mover for the whole run
+        (pipeline/components.py), so counters left standing here would make
+        every episode's record report the run total -- the same mistake
+        `scorer_before`/`verifier_before` exist to prevent in eval/record.py."""
         self._last_goal: Optional[np.ndarray] = None
         self._agent_xy: Optional[np.ndarray] = None
         self.goal_active = False
         self.stepped_this_tick = False
+        # What `step` last returned, so `sim/ros2_env.py` can tell the mover's
+        # own action from one the FSM substituted for it afterwards.
+        self.last_action: Optional[str] = None
+        self._ticks_on_goal = 0
+        self.n_goals_sent = 0
+        self.n_aborts = 0
+        self.n_resets = 0
+        self.n_timeouts = 0
+        self.last_rho = float("nan")
         self.backend.cancel()
 
     # ------------------------------------------------------------- per step
@@ -110,7 +124,7 @@ class Nav2Driver:
         # before the radius test swallows the arrival entirely.
         if radius > 0.0 and rho < radius:
             self._cancel_if_active()
-            return NavStep(None, "arrived")
+            return self._report(NavStep(None, "arrived"))
 
         first = self._last_goal is None
         moved = first or float(np.linalg.norm(goal - self._last_goal)) > self.goal_resend_m
@@ -121,6 +135,7 @@ class Nav2Driver:
             self.backend.send_goal(goal)
             self._last_goal = goal.copy()
             self.goal_active = True
+            self._ticks_on_goal = 0
             self.n_goals_sent += 1
             if moved and not first:
                 # A pursuit that changed its mind, not one that started. Read
@@ -130,10 +145,20 @@ class Nav2Driver:
 
         status = self.backend.poll()
         if status.state == "active":
-            return NavStep(status.action or DRIVING, "moving")
+            self._ticks_on_goal += 1
+            if 0 < self.timeout_steps <= self._ticks_on_goal:
+                # Still "active" long past any reasonable leg. Nav2 can spin in
+                # its recovery behaviours indefinitely without ever reporting
+                # ABORTED, and the pipeline has a frontier it could retire
+                # instead of spending the rest of the run here.
+                self._cancel_if_active()
+                self.n_timeouts += 1
+                self.n_aborts += 1
+                return self._report(NavStep(None, "policy_stop"))
+            return self._report(NavStep(status.action or DRIVING, "moving"))
         if status.state == "succeeded":
             self.goal_active = False
-            return NavStep(None, "arrived")
+            return self._report(NavStep(None, "arrived"))
         if status.state in ("aborted", "rejected"):
             # Nav2 has given up: no plan, or the recoveries ran out. That is a
             # statement about the goal, which is what `policy_stop` means to
@@ -141,11 +166,15 @@ class Nav2Driver:
             # frontier instead of pressing into it.
             self.goal_active = False
             self.n_aborts += 1
-            return NavStep(None, "policy_stop")
+            return self._report(NavStep(None, "policy_stop"))
         # idle or canceled: somebody else took the base (a discrete action the
         # FSM issued). Re-post on the next tick rather than reporting failure.
         self.goal_active = False
-        return NavStep(DRIVING, "moving")
+        return self._report(NavStep(DRIVING, "moving"))
+
+    def _report(self, step: NavStep) -> NavStep:
+        self.last_action = step.action
+        return step
 
     def __call__(self, goal_xy, *, stop_radius: Optional[float] = None,
                  creep_below: float = 0.0) -> Optional[str]:
@@ -178,3 +207,4 @@ class Nav2Driver:
         if self.goal_active:
             self.backend.cancel()
             self.goal_active = False
+            self._ticks_on_goal = 0

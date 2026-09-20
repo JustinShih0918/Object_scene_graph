@@ -15,7 +15,31 @@ ROS_SETUP="${ROS_SETUP:-/opt/ros/humble/setup.bash}"
 # shellcheck disable=SC1090
 source "$ROS_SETUP"
 
+# Topics, frames and speeds come from the `ros2` config group, so changing one
+# is a yaml edit rather than a code change -- but the bridge runs on the system
+# python, which has no hydra. The habitat env composes the config and prints
+# the flags; anything passed here is appended, so a command line still wins.
+#
+#   bash scripts/ros2/bridge.sh                             # the defaults
+#   bash scripts/ros2/bridge.sh +experiment=stretch3_map    # a preset's values
+#   bash scripts/ros2/bridge.sh -- --rgb-topic /other       # a one-off override
+HYDRA_ARGS=()
+PASSTHROUGH=()
+for arg in "$@"; do
+    if [ "$arg" = "--" ]; then shift $((${#HYDRA_ARGS[@]} + 1)); PASSTHROUGH=("$@"); break; fi
+    HYDRA_ARGS+=("$arg")
+done
+
+CONFIG_PYTHON="${CONFIG_PYTHON:-/opt/conda/envs/habitat/bin/python}"
+[ -x "$CONFIG_PYTHON" ] || CONFIG_PYTHON="$(command -v python)"
+BRIDGE_FLAGS="$("$CONFIG_PYTHON" scripts/ros2/bridge_args.py "${HYDRA_ARGS[@]}")" || {
+    echo "could not read the ros2 config group; is the habitat env on PATH?" >&2
+    exit 1
+}
+
 # `src` on the path, not the habitat env's site-packages: osg.ros2 is written
 # to import under both interpreters, and nothing else is imported here.
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
-exec /usr/bin/python3 -m osg.ros2.bridge_node "$@"
+# shellcheck disable=SC2086 -- bridge_args.py shell-quotes each token
+eval "set -- $BRIDGE_FLAGS"
+exec /usr/bin/python3 -m osg.ros2.bridge_node "$@" "${PASSTHROUGH[@]}"

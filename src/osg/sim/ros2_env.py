@@ -51,6 +51,7 @@ class Ros2Env:
         self.on_floor_switch: Optional[Callable[[int], None]] = None
         self.floor_key = 0
         self.floor_switches: list = []
+        self._last_seq = -1
         self._frame_id = 0
         self._steps = 0
         self._stopped = False
@@ -68,11 +69,15 @@ class Ros2Env:
         self._frame_id = 0
         self._steps = 0
         self._stopped = False
+        self._last_seq = -1
+        # A second run on the same env starts on the ground floor, not on the
+        # storey the previous one happened to end on.
+        self.floor_key = 0
         self.floor_switches = []
         # Drain a switch left over from before the run started, so run 2 does
         # not begin by switching to the floor run 1 ended on.
         self.transport.pop_floor_switch()
-        return self._next_frame(min_stamp=time.time())
+        return self._next_frame(fresh=True)
 
     def step(self, action: str) -> FrameData:
         """Execute one control decision on the robot.
@@ -83,29 +88,40 @@ class Ros2Env:
         self._steps += 1
         stepped, goal_active = (
             self.driver.consume_tick() if self.driver is not None else (False, False))
+        # `stepped` says the mover ran this tick; it does NOT say the action
+        # reaching here is the mover's. `NavAgent.act` post-processes after the
+        # mover returns -- the escape window rewrites a long run of forwards
+        # into a turn (agent/nav_agent.py:682) -- and an action the FSM
+        # substituted has to take the base like any other FSM action. Asking
+        # the driver what it actually returned is the only way to tell them
+        # apart, and getting it wrong drops the override silently.
+        driver_action = getattr(self.driver, "last_action", None)
+        mover_owns_tick = stepped and goal_active and action == driver_action
 
         if action == "stop":
             self._cancel()
             self._stopped = True
-            return self._next_frame(min_stamp=0.0)
+            return self._next_frame(fresh=False)
 
-        if stepped and goal_active:
+        if mover_owns_tick:
             # Nav2 is driving. The action is `Nav2Driver`'s placeholder and
             # executing it would fight the navigator for the wheels; the tick
             # is a pause to let the base make progress and look again.
             time.sleep(float(self.ros.step_period_s))
-            return self._next_frame(min_stamp=0.0)
+            return self._next_frame(fresh=False)
 
         # The FSM is steering. Take the base back first.
         if goal_active:
             self._cancel()
-        sent_at = time.time()
         if action in _LOOKS:
             self.transport.look(_LOOKS[action] * float(self.ros.look_step_deg))
         else:
             self.transport.execute(
                 action, float(self.cfg.agent.forward_m), float(self.cfg.agent.turn_deg))
-        return self._next_frame(min_stamp=sent_at)
+        # Strictly newer than the frame the decision was made on: acting on a
+        # view from before the base moved is the failure that looks like a bad
+        # planner.
+        return self._next_frame(fresh=True)
 
     @property
     def episode_over(self) -> bool:
@@ -126,7 +142,14 @@ class Ros2Env:
     def metrics(self) -> dict:
         """Nothing here is scored. A real deployment has no ground truth, and
         reporting a 0.0 SR as though it were measured would put a fabricated
-        number in `summary.json` beside the real ones."""
+        number in `summary.json` beside the real ones.
+
+        NaN rather than None, because `eval/record.py` calls `float()` on all
+        three and shared eval code should not grow a robot-only branch.
+        `scripts/run_robot.py` turns the non-finite values into JSON `null` on
+        the way to disk, where a bare `NaN` token would be unreadable by any
+        parser outside Python.
+        """
         return {"success": float("nan"), "spl": float("nan"),
                 "distance_to_goal": float("nan"), "steps": self._steps}
 
@@ -158,11 +181,12 @@ class Ros2Env:
         if self.driver is not None:
             self.driver.mark_cancelled()
 
-    def _next_frame(self, min_stamp: float) -> FrameData:
+    def _next_frame(self, fresh: bool) -> FrameData:
         payload = self.transport.get_frame(
-            min_stamp=min_stamp,
-            timeout_s=float(self.ros.step_period_s) + float(self.ros.nav_timeout_s),
+            after_seq=self._last_seq if fresh else -1,
+            timeout_s=float(self.ros.step_period_s) + float(self.ros.frame_timeout_s),
         )
+        self._last_seq = int(payload.get("seq", self._last_seq + 1))
         self._poll_floor_switch()
         return self._to_frame(payload)
 

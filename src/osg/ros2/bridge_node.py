@@ -168,12 +168,21 @@ class BridgeNode:
                 "ros_time": self.node.get_clock().now().nanoseconds * 1e-9,
                 "has_camera_info": self._info is not None}
 
-    def get_frame(self, min_stamp: float = 0.0, timeout_s: float = 5.0):
+    def get_frame(self, after_seq: int = -1, timeout_s: float = 5.0):
+        """The newest frame, optionally waiting for one newer than `after_seq`.
+
+        Sequence numbers rather than timestamps: the caller's clock and the
+        camera's are not the same clock. Image stamps are ROS time, which under
+        `use_sim_time` starts near zero, so a wall-clock threshold from the
+        pipeline could never be satisfied and every step would time out.
+        A sequence is the bridge's own count and needs no clock at all.
+        """
         deadline = time.time() + float(timeout_s)
+        after_seq = int(after_seq)
         with self._lock:
             while True:
                 frame = self._frame
-                if frame is not None and frame["stamp"] >= float(min_stamp):
+                if frame is not None and int(frame["seq"]) > after_seq:
                     return frame
                 remaining = deadline - time.time()
                 if remaining <= 0.0:
@@ -198,51 +207,111 @@ class BridgeNode:
         goal = self._NavigateToPose.Goal()
         goal.pose = pose
 
+        # Every callback below is stamped with the id of the goal that caused
+        # it and ignored once a newer goal exists. Without that, the ABORTED
+        # Nav2 reports for a PREEMPTED goal lands milliseconds after its
+        # replacement went active and overwrites the replacement's state -- so
+        # the pipeline reads `policy_stop` and retires the frontier the robot
+        # is at that moment driving to. The pipeline re-posts routinely (any
+        # goal that moves past `goal_resend_m`, and the approach's closing
+        # walk), so this is not a rare race.
         self._cancel_goal()
-        self._goal_id += 1
-        self._goal_state = "active"
-        self.last_goal = {"x": float(x), "y": float(y), "yaw": float(yaw),
-                          "frame_id": str(frame_id), "goal_id": self._goal_id}
-        future = self._nav.send_goal_async(goal, feedback_callback=self._on_feedback)
-        future.add_done_callback(self._on_goal_response)
-        return {"goal_id": self._goal_id}
+        with self._lock:
+            self._goal_id += 1
+            goal_id = self._goal_id
+            self._goal_state = "active"
+            self._distance = float("nan")
+            self.last_goal = {"x": float(x), "y": float(y), "yaw": float(yaw),
+                              "frame_id": str(frame_id), "goal_id": goal_id}
+        future = self._nav.send_goal_async(
+            goal, feedback_callback=lambda msg: self._on_feedback(goal_id, msg))
+        future.add_done_callback(lambda fut: self._on_goal_response(goal_id, fut))
+        return {"goal_id": goal_id}
 
-    def _on_feedback(self, msg) -> None:
-        self._distance = float(getattr(msg.feedback, "distance_remaining", float("nan")))
+    def _is_current(self, goal_id: int) -> bool:
+        """Is this callback about the goal the pipeline is waiting on?"""
+        return int(goal_id) == int(self._goal_id)
 
-    def _on_goal_response(self, future) -> None:
+    def _on_feedback(self, goal_id: int, msg) -> None:
+        with self._lock:
+            if not self._is_current(goal_id):
+                return
+            self._distance = float(
+                getattr(msg.feedback, "distance_remaining", float("nan")))
+
+    def _on_goal_response(self, goal_id: int, future) -> None:
         handle = future.result()
-        if not handle.accepted:
-            self._goal_state = "rejected"
+        with self._lock:
+            current = self._is_current(goal_id)
+            if current:
+                if not handle.accepted:
+                    self._goal_state = "rejected"
+                    return
+                self._goal_handle = handle
+        if not current:
+            # Superseded while still in flight. Cancel it rather than leave a
+            # goal Nav2 is driving with nothing tracking it.
+            if handle.accepted:
+                handle.cancel_goal_async()
             return
-        self._goal_handle = handle
-        handle.get_result_async().add_done_callback(self._on_result)
+        handle.get_result_async().add_done_callback(
+            lambda fut: self._on_result(goal_id, fut))
 
-    def _on_result(self, future) -> None:
+    def _on_result(self, goal_id: int, future) -> None:
         from action_msgs.msg import GoalStatus
 
         status = future.result().status
-        self._goal_state = {
-            GoalStatus.STATUS_SUCCEEDED: "succeeded",
-            GoalStatus.STATUS_ABORTED: "aborted",
-            GoalStatus.STATUS_CANCELED: "canceled",
-        }.get(status, "aborted")
-        self._goal_handle = None
+        with self._lock:
+            if not self._is_current(goal_id):
+                return
+            self._goal_state = {
+                GoalStatus.STATUS_SUCCEEDED: "succeeded",
+                GoalStatus.STATUS_ABORTED: "aborted",
+                GoalStatus.STATUS_CANCELED: "canceled",
+            }.get(status, "aborted")
+            self._goal_handle = None
 
     def nav_status(self) -> dict:
-        return {"state": self._goal_state, "goal_id": self._goal_id,
-                "distance_remaining": self._distance}
+        with self._lock:
+            state = self._goal_state
+            # `canceling` is an internal waiting state; to the pipeline a goal
+            # being taken away has already stopped being active.
+            return {"state": "canceled" if state == "canceling" else state,
+                    "goal_id": self._goal_id,
+                    "distance_remaining": self._distance}
 
     def cancel(self) -> dict:
         cancelled = self._cancel_goal()
         return {"cancelled": cancelled}
 
     def _cancel_goal(self) -> bool:
-        handle, self._goal_handle = self._goal_handle, None
+        """Take the base back from Nav2, and wait until it has let go.
+
+        The wait is the point. `cancel_goal_async` only ASKS; Nav2's controller
+        keeps publishing to cmd_vel at ~20 Hz until it processes the request,
+        so a single zero Twist here would be overwritten within 50 ms and the
+        metered move `Ros2Env` starts on the next line would drive against a
+        controller that has not yet stopped.
+        """
+        with self._lock:
+            handle, self._goal_handle = self._goal_handle, None
+            was_active = self._goal_state == "active"
+            if was_active:
+                self._goal_state = "canceling"
         if handle is not None:
             handle.cancel_goal_async()
-        if self._goal_state == "active":
-            self._goal_state = "canceled"
+        if was_active:
+            deadline = time.time() + float(self.args.cancel_settle_s)
+            while time.time() < deadline:
+                with self._lock:
+                    if self._goal_state != "canceling":
+                        break
+                time.sleep(0.02)
+            with self._lock:
+                if self._goal_state == "canceling":
+                    self._goal_state = "canceled"
+        # Zero the base AFTER Nav2 has stopped publishing, so this is the last
+        # command on the topic rather than the first of two.
         self._stop_base()
         return handle is not None
 
@@ -375,6 +444,7 @@ def parse_args(argv=None):
     p.add_argument("--linear-speed", type=float, default=0.15)
     p.add_argument("--angular-speed", type=float, default=0.5)
     p.add_argument("--move-timeout-s", type=float, default=10.0)
+    p.add_argument("--cancel-settle-s", type=float, default=1.0)
     p.add_argument("--head-traj-action",
                    default="/stretch_controller/follow_joint_trajectory")
     p.add_argument("--head-tilt-joint", default="joint_head_tilt")

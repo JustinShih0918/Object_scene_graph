@@ -56,6 +56,12 @@ agent:
   # Nothing climbs.
   climb_enabled: false
   down_look_every: 0
+  # The escape window watches the agent's OWN action history for a stall it
+  # should break out of. With Nav2 driving, that history is a placeholder
+  # repeated once per tick (planning/nav2_driver.py), so the window fires on a
+  # leg that is going perfectly well -- and Nav2 already owns stall recovery,
+  # with the robot's footprint and a local costmap this pipeline does not have.
+  escape_window: 0
 
 floor:
   source: external

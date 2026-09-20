@@ -74,18 +74,23 @@ def main(cfg: DictConfig) -> None:
     map_path = Path(cfg.ros2.map_dir) / f"{cfg.ros2.map_tag}.json"
 
     print(f"[robot] {map_mode} run, target={target!r}, map={map_path}")
-    frame = env.reset()
-    episode = env.current_episode
     profiler = Profiler()
+    # Built BEFORE the first frame, so the floor callback is in place before
+    # `reset()` can poll one: a switch landing in that window would set the
+    # env's storey (and the height of every pose after it) while the agent was
+    # still filing everything under storey 0.
     agent = build_agent(
         cfg, components, target,
-        keyframe_dir=str(out_dir / "keyframes" / episode_tag(episode))
+        keyframe_dir=str(out_dir / "keyframes" / f"{cfg.ros2.map_tag}")
         if cfg.eval.save_viz else None,
         profiler=profiler,
     )
     # The operator's floor switch, from the topic through to the map and the
     # scene graph (docs/ROS2.md). Needs floor.source=external to take effect.
     env.on_floor_switch = agent.floors.request_floor
+
+    frame = env.reset()
+    episode = env.current_episode
 
     if map_mode == "search":
         if not map_path.exists():
@@ -133,7 +138,7 @@ def main(cfg: DictConfig) -> None:
         verifier=verifier, verifier_before=(0, 0),
     )
     with open(out_dir / "episodes.jsonl", "a") as f:
-        f.write(json.dumps(rec) + "\n")
+        f.write(json.dumps(_json_safe(rec)) + "\n")
     if cfg.eval.save_viz:
         save_topdown(
             str(out_dir / "viz" / f"{episode_tag(episode)}.png"),
@@ -141,6 +146,24 @@ def main(cfg: DictConfig) -> None:
             title=f"{cfg.ros2.map_tag} target={target} steps={outcome.steps}",
         )
     print(f"[robot] {outcome.steps} steps, {outcome.wall_time_s}s -> {out_dir}")
+
+
+def _json_safe(value):
+    """Non-finite floats -> null, so the record is JSON anything can read.
+
+    A robot run has no ground truth, so `success`/`spl`/`distance_to_goal`
+    arrive as NaN -- honestly "not measured" in memory, but `json.dumps` writes
+    a bare `NaN` token that only Python accepts back.
+    """
+    import math
+
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 if __name__ == "__main__":

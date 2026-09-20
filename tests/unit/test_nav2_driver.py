@@ -256,3 +256,63 @@ def test_the_simulated_backend_asks_about_the_agents_own_storey():
     backend, env = _sim("move_forward", (0.0, 0.0), (5.0, 0.0))
     backend.poll()
     assert env.asked[-1][1] is None
+
+
+# ------------------------------------------------- a goal that never resolves
+
+
+def test_a_goal_nav2_never_finishes_is_eventually_treated_as_refused():
+    """Nav2's recovery behaviours can spin on an unreachable goal indefinitely
+    without ever reporting ABORTED. Waiting forever is a whole run spent on one
+    frontier, so `ros2.nav_timeout_s` converts patience into a verdict."""
+    b = FakeBackend(state="active")
+    d = _at(_driver(b, timeout_steps=3), (0.0, 0.0))
+    for _ in range(2):
+        assert d.step(np.array([5.0, 0.0])).reason == "moving"
+    step = d.step(np.array([5.0, 0.0]))
+    assert step == (None, "policy_stop")
+    assert d.n_timeouts == 1 and d.goal_active is False
+    assert b.cancels >= 1, "the base must be released, not left driving"
+
+
+def test_the_patience_restarts_when_the_goal_changes():
+    b = FakeBackend(state="active")
+    d = _at(_driver(b, timeout_steps=3), (0.0, 0.0))
+    d.step(np.array([5.0, 0.0]))
+    d.step(np.array([5.0, 0.0]))
+    d.step(np.array([-5.0, 2.0]))  # a new goal: a fresh allowance
+    assert d.step(np.array([-5.0, 2.0])).reason == "moving"
+    assert d.n_timeouts == 0
+
+
+def test_patience_can_be_switched_off():
+    b = FakeBackend(state="active")
+    d = _at(_driver(b, timeout_steps=0), (0.0, 0.0))
+    for _ in range(50):
+        assert d.step(np.array([5.0, 0.0])).reason == "moving"
+    assert d.n_timeouts == 0
+
+
+# ------------------------------------------------------- per-episode counters
+
+
+def test_reset_clears_the_counters_because_the_mover_outlives_the_episode():
+    """One mover is built per RUN (pipeline/components.py) and reused for every
+    episode, while `pointnav_resets` is written into each episode's record. A
+    counter left standing makes episode 3 report the run total."""
+    b = FakeBackend(state="aborted")
+    d = _at(_driver(b), (0.0, 0.0))
+    d.step(np.array([5.0, 0.0]))
+    assert (d.n_goals_sent, d.n_aborts) == (1, 1)
+    d.reset()
+    assert (d.n_goals_sent, d.n_aborts, d.n_resets, d.n_timeouts) == (0, 0, 0, 0)
+
+
+def test_the_driver_records_what_it_last_returned():
+    """`sim/ros2_env.py` compares the action it is handed against this to tell
+    the mover's own action from one the FSM substituted afterwards."""
+    d = _at(_driver(FakeBackend(state="active")), (0.0, 0.0))
+    assert d.step(np.array([5.0, 0.0])).action == d.last_action == DRIVING
+    d = _at(_driver(FakeBackend(state="succeeded")), (0.0, 0.0))
+    d.step(np.array([5.0, 0.0]))
+    assert d.last_action is None

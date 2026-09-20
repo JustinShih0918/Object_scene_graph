@@ -211,8 +211,17 @@ bridge.
 
 ## Verify on the robot
 
-Every item below is a config field, so settling one is a yaml edit. This list is
-`src/osg/core/config/ros2.py`.
+Every item below is a config field, so settling one is a yaml edit — `bridge.sh` composes the
+`ros2` group and passes it to the bridge (`scripts/ros2/bridge_args.py`), because the bridge's
+own interpreter has no Hydra:
+
+```bash
+bash scripts/ros2/bridge.sh +experiment=stretch3_map        # the preset's values
+bash scripts/ros2/bridge.sh ros2.depth_topic=/camera/depth/image_rect_raw
+bash scripts/ros2/bridge.sh -- --rgb-topic /one_off         # after --, straight to the node
+```
+
+This list is `src/osg/core/config/ros2.py`.
 
 | what to check | knob |
 |---|---|

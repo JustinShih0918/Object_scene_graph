@@ -62,9 +62,17 @@ class Ros2Config:
     # planner, so a small dead band keeps one pursuit continuous.
     goal_resend_m: float = 0.5
     # A goal Nav2 neither finishes nor refuses within this is treated as
-    # aborted. Nav2's default recovery behaviours can spin for a long time on
-    # an unreachable goal, and the pipeline has a frontier to retire.
+    # refused (`planning/nav2_driver.py`, converted to control ticks by
+    # `step_period_s`). Nav2's recovery behaviours can spin on an unreachable
+    # goal indefinitely without ever reporting ABORTED, and the pipeline has a
+    # frontier it could retire instead of spending the whole run there. 0
+    # waits forever.
     nav_timeout_s: float = 20.0
+    # How long a step may wait for a camera frame before the run is failed.
+    # Separate from nav_timeout_s, which is about the navigator: a missing
+    # frame means the camera or TF is gone, and continuing on a frozen view is
+    # the failure that looks like a bad planner.
+    frame_timeout_s: float = 10.0
     # The FSM's own discrete actions (the opening scan, the escape window, the
     # close look) are metered on velocity against odometry rather than sent
     # through the navigator -- a 0.25 m pose per step would invoke a global
