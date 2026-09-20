@@ -64,6 +64,28 @@ def render_depth(width, height, K, T_map_cam, max_m=10.0) -> np.ndarray:
     return depth.astype(np.float32)
 
 
+# ROS body axes (x forward, y left, z up) -> optical (x right, y down, z fwd).
+BODY_TO_OPTICAL = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
+
+
+def camera_matrix(pose, camera_height: float) -> np.ndarray:
+    """`map -> camera_optical` for a base at `pose` = (x, y, yaw).
+
+    Shared with `loopback.py` rather than written twice: the two fakes have to
+    agree on this exactly, or the ROS-free check passes on a convention the
+    real bridge does not use, which is the one failure a second fake is
+    supposed to rule out.
+    """
+    x, y, yaw = pose
+    Rz = np.array([[math.cos(yaw), -math.sin(yaw), 0.0],
+                   [math.sin(yaw), math.cos(yaw), 0.0],
+                   [0.0, 0.0, 1.0]])
+    T = np.eye(4)
+    T[:3, :3] = Rz @ BODY_TO_OPTICAL
+    T[:3, 3] = [x, y, float(camera_height)]
+    return T
+
+
 def render_rgb(depth: np.ndarray) -> np.ndarray:
     """Something with structure, so a saved frame is worth looking at."""
     d = depth.copy()
@@ -199,20 +221,9 @@ class FakeRobot:
                                     -ROOM_HALF_M + 0.3, ROOM_HALF_M - 0.3)
 
     def _camera_matrix(self) -> np.ndarray:
-        """`map -> camera_optical`: the base yaw, then body axes to optical."""
         with self._lock:
-            x, y, yaw = self.pose
-        Rz = np.array([[math.cos(yaw), -math.sin(yaw), 0.0],
-                       [math.sin(yaw), math.cos(yaw), 0.0],
-                       [0.0, 0.0, 1.0]])
-        # ROS body (x forward, y left, z up) -> optical (x right, y down, z fwd)
-        body_to_optical = np.array([[0.0, 0.0, 1.0],
-                                    [-1.0, 0.0, 0.0],
-                                    [0.0, -1.0, 0.0]])
-        T = np.eye(4)
-        T[:3, :3] = Rz @ body_to_optical
-        T[:3, 3] = [x, y, self.camera_height]
-        return T
+            pose = tuple(self.pose)
+        return camera_matrix(pose, self.camera_height)
 
     def _tick(self) -> None:
         now = time.time()
@@ -250,13 +261,12 @@ class FakeRobot:
             tf.transform.rotation.w = float(math.cos(angle / 2.0))
             self._tf.sendTransform(tf)
         # base_link -> camera_optical, as a fixed mount.
-        body_to_optical = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
         tf = TransformStamped()
         tf.header.stamp = stamp
         tf.header.frame_id = self.args.base_frame
         tf.child_frame_id = self.args.camera_frame
         tf.transform.translation.z = self.camera_height
-        qx, qy, qz, qw = _matrix_to_quat(body_to_optical)
+        qx, qy, qz, qw = _matrix_to_quat(BODY_TO_OPTICAL)
         tf.transform.rotation.x, tf.transform.rotation.y = qx, qy
         tf.transform.rotation.z, tf.transform.rotation.w = qz, qw
         self._tf.sendTransform(tf)

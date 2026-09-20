@@ -24,7 +24,7 @@ from typing import Optional
 
 import numpy as np
 
-from .fake_robot import ROOM_HALF_M, render_depth, render_rgb
+from .fake_robot import ROOM_HALF_M, camera_matrix, render_depth, render_rgb
 from .wire import parse_addr, serve_once
 
 
@@ -54,15 +54,7 @@ class LoopbackRobot:
     # -------------------------------------------------------------- the world
 
     def _camera_matrix(self) -> np.ndarray:
-        x, y, yaw = self.pose
-        Rz = np.array([[math.cos(yaw), -math.sin(yaw), 0.0],
-                       [math.sin(yaw), math.cos(yaw), 0.0],
-                       [0.0, 0.0, 1.0]])
-        body_to_optical = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])
-        T = np.eye(4)
-        T[:3, :3] = Rz @ body_to_optical
-        T[:3, 3] = [x, y, self.camera_height]
-        return T
+        return camera_matrix(tuple(self.pose), self.camera_height)
 
     def _advance(self) -> None:
         """Drive toward an outstanding goal, as the fake navigator does."""

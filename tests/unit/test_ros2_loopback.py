@@ -163,3 +163,33 @@ def test_the_floor_switch_travels_the_whole_way(robot_env):
     assert seen == [1] and env.floor_key == 1
     assert frame.camera_position[HEIGHT_AXIS] == pytest.approx(
         ground + env.cfg.floor.virtual_storey_m)
+
+
+# ------------------------------------------- the two fakes must not drift apart
+
+
+def test_both_fake_robots_share_one_camera_convention():
+    """The loopback exists to localise a fault to the ROS half. It can only do
+    that while the two agree on the world they simulate -- a private copy of
+    the camera mount here would let the ROS-free check pass on a convention the
+    bridge does not use."""
+    from osg.ros2 import fake_robot, loopback
+
+    assert loopback.camera_matrix is fake_robot.camera_matrix
+    assert loopback.render_depth is fake_robot.render_depth
+    assert loopback.ROOM_HALF_M is fake_robot.ROOM_HALF_M
+
+
+def test_the_fake_camera_agrees_with_the_repos_heading_convention():
+    """`turn_left` DECREASES `agent_heading` (planning/controller.py:82), and
+    ROS yaw increases counter-clockwise. If the mount got those backwards every
+    turn would mirror while still looking plausible."""
+    from osg.planning.controller import agent_heading
+    from osg.ros2.fake_robot import camera_matrix
+
+    ahead = frames.ros_pose_to_pipeline(camera_matrix((0.0, 0.0, 0.0), 1.3))
+    assert agent_heading(ahead) == pytest.approx(0.0)
+    assert np.allclose(ahead[:3, 2], [1.0, 0.0, 0.0]), "camera z is forward"
+
+    left = frames.ros_pose_to_pipeline(camera_matrix((0.0, 0.0, np.pi / 2), 1.3))
+    assert np.degrees(agent_heading(left)) == pytest.approx(-90.0)
