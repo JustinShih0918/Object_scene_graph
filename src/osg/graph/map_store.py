@@ -308,6 +308,7 @@ def apply_map(
     *,
     max_log_odds: float = 1.5,
     initial_floor_y: Optional[float] = None,
+    initial_floor_key: Optional[int] = None,
     restore_occupancy: bool = True,
 ) -> int:
     """Load a snapshot into a freshly constructed agent. Returns track count.
@@ -465,12 +466,24 @@ def apply_map(
             restore_grid(agent.costmap, str(floor_meta[0]["prefix"]), stack.current)
         # Select by the episode's first observed floor height, never by the
         # floor that happened to be active when the snapshot was written.
-        chosen = min(
-            floor_meta,
-            key=lambda f: abs(float(f["height_y"]) - float(
-                initial_floor_y if initial_floor_y is not None else 0.0
-            )),
-        ) if initial_floor_y is not None else min(floor_meta, key=lambda f: float(f["height_y"]))
+        #
+        # `initial_floor_key` overrides that, and exists for the robot: with
+        # `floor.source=external` the storey is declared, not measured, and the
+        # declaration must win over a height comparison made against a pose
+        # whose vertical is synthetic (sim/ros2_env.py). A key that is not in
+        # the snapshot falls through to the height rule rather than failing --
+        # starting run 2 on a storey run 1 never mapped is a legitimate thing
+        # to do, and it should begin with an empty map, not an exception.
+        by_key = {int(f["key"]): f for f in floor_meta}
+        if initial_floor_key is not None and int(initial_floor_key) in by_key:
+            chosen = by_key[int(initial_floor_key)]
+        elif initial_floor_y is not None:
+            chosen = min(
+                floor_meta,
+                key=lambda f: abs(float(f["height_y"]) - float(initial_floor_y)),
+            )
+        else:
+            chosen = min(floor_meta, key=lambda f: float(f["height_y"]))
         if hasattr(stack, "current_id"):
             stack.current_id = int(chosen["key"])
         if hasattr(stack, "stair_edges"):

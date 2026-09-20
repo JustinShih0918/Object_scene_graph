@@ -6,7 +6,8 @@ path. See `osg/agent/floor_policy.py`.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 
 
 @dataclass
@@ -15,6 +16,34 @@ class FloorConfig:
     current single-floor behaviour, so `floor.enabled=false` is a no-op path."""
 
     enabled: bool = False
+    # Where the current storey comes from.
+    #
+    #   estimator  the agent's own height trace (docs/MULTI_FLOOR.md). The only
+    #              source in habitat, and the default, so nothing below moves.
+    #   external   an authority outside the agent says which storey it is on:
+    #              the operator's `/osg/floor` topic on the robot, or
+    #              `external_schedule` in a simulated test. The estimator is
+    #              not consulted at all -- its primary signal is
+    #              `camera_position[1] - camera_height`, and a real robot on a
+    #              2D Nav2 map has no trustworthy vertical at all. A phantom
+    #              floor is strictly worse than no floor (docs/MULTI_FLOOR.md
+    #              "the landing problem"), which is the argument for taking an
+    #              authoritative id when one exists.
+    source: str = "estimator"  # estimator | external
+    # "step:key" pairs applying an external switch at a given step, so the
+    # external path is exercisable in habitat with no ROS in the room.
+    external_schedule: List[str] = field(default_factory=list)
+    # How far apart external storeys are placed in the world's vertical.
+    #
+    # The robot's `map` frame is 2D: every floor is reported at the same
+    # height, so two storeys would occupy one band of the costmap, one set of
+    # `floor_of_height` answers, and one position in the LLM prompt's
+    # height-ordered floor list. `sim/ros2_env.py` therefore lifts the pose by
+    # `key * virtual_storey_m` -- the switch IS the height sensor. Roughly a
+    # storey (HM3D measures 2.5-3.4 m) so the geometry the rest of the
+    # pipeline sees is the geometry it was calibrated on. 0 disables the lift,
+    # which collapses the storeys back into one band.
+    virtual_storey_m: float = 3.0
     # Log the estimated floor but keep using the latched floor_y. Lets the
     # estimator be validated against the per-scene navmesh ground truth from
     # scripts/scene_floors.py before any behaviour depends on it.

@@ -36,6 +36,22 @@ from ..mapping.stairs import (StairRegion, apply_stair_mask, detect_stairs,
 from ..planning.voronoi_planner import HybridVoronoiPlanner
 
 
+def _parse_schedule(entries) -> dict:
+    """`["120:1", "300:0"]` -> `{120: 1, 300: 0}`.
+
+    Strings rather than a dict because Hydra's structured configs take a
+    `List[str]` from the command line cleanly and an int-keyed dict does not.
+    """
+    schedule = {}
+    for entry in entries or []:
+        step, _, key = str(entry).partition(":")
+        if not _:
+            raise ValueError(
+                f"floor.external_schedule entry {entry!r} is not 'step:key'")
+        schedule[int(step)] = int(key)
+    return schedule
+
+
 @dataclass
 class PortalGoal:
     """A decision to leave this storey: where to drive, and at what height.
@@ -94,6 +110,12 @@ class FloorPolicy:
             min_dwell_steps=fcfg.min_dwell_steps,
             min_horizontal_run_m=fcfg.min_horizontal_run_m,
         )
+        # Where `current` comes from. In external mode the estimator is still
+        # CONSTRUCTED -- `_levels`, `height_of` and `floor_of_height` are read
+        # all over the pipeline -- but it is never asked to decide: it is
+        # written to by the switch instead. See FloorConfig.source.
+        self.external = str(getattr(fcfg, "source", "estimator")) == "external"
+        self._schedule = _parse_schedule(getattr(fcfg, "external_schedule", None))
         self.switch_policy = (
             FloorSwitchPolicy(
                 max_steps=cfg.agent.max_steps,
@@ -114,6 +136,11 @@ class FloorPolicy:
 
     def reset(self) -> None:
         self._floor_y: Optional[float] = None
+        # An external switch waiting to be applied. Queued rather than applied
+        # where it arrives, because it lands mid-step from the env and the
+        # costmap layer must not change underneath a control loop that has
+        # already read `self.costmap`.
+        self._requested_floor: Optional[int] = None
         # (step, floor_id, floor_height) on every committed floor change, plus
         # the first step. Surfaced per episode by eval/runner.py.
         self.floor_log: list = []
@@ -190,6 +217,68 @@ class FloorPolicy:
 
     # ---------------------------------------------------------- every step
 
+    def request_floor(self, key: int) -> None:
+        """Someone outside the agent says it is on storey `key`.
+
+        The operator's `/osg/floor` topic on the robot, or `external_schedule`
+        in a simulated test. Applied at the top of the next `observe`, so one
+        control step sees one storey.
+        """
+        self._requested_floor = int(key)
+
+    def _apply_external(self, frame, step: int) -> int:
+        """Make `key` the current storey, writing the same state a restored
+        snapshot does.
+
+        `graph/map_store.py:apply_map` already had to solve this exact problem
+        -- point the stack at a storey the agent did not walk to -- and the
+        answer is that the estimator and the stack are ONE state. Writing the
+        stack alone leaves the estimator bootstrapping floor 0 on the next
+        frame and silently detaching the key from the storey it names.
+        """
+        est = self.estimator
+        if not est._levels:
+            # Bootstrap, the same one `FloorEstimator.update` does on its first
+            # frame ("the starting floor is floor 0"): in external mode that
+            # method never runs, and every height consumer -- `height_of`, the
+            # costmap band, `floor_of_height` -- needs floor 0 to exist before
+            # the first switch arrives.
+            est._levels[est.current] = float(
+                frame.camera_position[1]) - float(self.cfg.agent.camera_height)
+            est._samples[est.current] = [est._levels[est.current]]
+            est._next_id = max(est._next_id, est.current + 1)
+        key = self._requested_floor
+        if key is None:
+            key = self._schedule.get(int(step))
+        self._requested_floor = None
+        if key is None:
+            return est.current
+        key = int(key)
+        if key not in est._levels:
+            # The height this storey is at. On the robot the pose arriving here
+            # is already lifted by `key * floor.virtual_storey_m`
+            # (sim/ros2_env.py), so distinct keys get distinct heights and
+            # everything keyed on height -- the costmap band, floor_of_height,
+            # the prompt's floor ordering -- keeps working.
+            height = float(frame.camera_position[1]) - float(self.cfg.agent.camera_height)
+            est._levels[key] = height
+            est._samples[key] = [height]
+            est._next_id = max(est._next_id, key + 1)
+        if key == est.current and key == self.stack.current_id:
+            return key
+        est.current = key
+        # The switch is an assertion about where the agent IS, so it is never
+        # mid-climb by definition.
+        est.on_stairs = False
+        self.stack.set_height(key, est._levels[key])
+        self.stack.set_current(
+            key, step=step, agent_xy=frame.camera_position[list(PLANE)])
+        self._floor_y = float(est._levels[key])
+        self.end_pursuit("external_switch")
+        self.stats["floor_switch_external"] = (
+            self.stats.get("floor_switch_external", 0) + 1)
+        return key
+
     def observe(self, frame, step: int) -> float:
         """Track the storey, and return the height to band the costmap at.
 
@@ -203,6 +292,12 @@ class FloorPolicy:
 
         prev_floor = self.estimator.current
         agent_xy = frame.camera_position[list(PLANE)]
+        if self.external:
+            # The estimator's own rule never runs: its primary signal is the
+            # height trace, and the authority that called `request_floor` knows
+            # better than any inference from it.
+            floor_id = self._apply_external(frame, step)
+            return self._floor_y_after(floor_id, prev_floor, frame, step)
         on_flight = bool(
             getattr(self.cfg.floor, "no_level_on_flight", False)
         ) and (self.climbing or self.on_flight_cells(agent_xy))
@@ -214,12 +309,22 @@ class FloorPolicy:
         )
         self.stats["levels_suppressed_on_flight"] = int(
             getattr(self.estimator, "suppressed_levels", 0))
+        return self._floor_y_after(floor_id, prev_floor, frame, step)
+
+    def _floor_y_after(self, floor_id: int, prev_floor: int, frame, step: int) -> float:
+        """Bookkeeping and the banding height, once the storey is decided.
+
+        Shared by both sources, so an external switch is logged, counted and
+        banded exactly like one the estimator committed -- `eval/record.py`
+        reads `floor_log` either way and cannot tell them apart.
+        """
         # Key is persistent; order is derived from these heights on demand.
         # Discovering a basement therefore changes order without renumbering
         # any track, room, cache entry, or portal edge.
         for key, height in self.estimator.levels.items():
             self.stack.set_height(key, height)
-        if floor_id != prev_floor:
+        if floor_id != prev_floor and not self.external:
+            # External switches end their own pursuit, with their own reason.
             self.end_pursuit("arrived")
         if floor_id != prev_floor or not self.floor_log:
             self.floor_log.append(
