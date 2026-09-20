@@ -38,6 +38,10 @@ def build_env(cfg):
         from ..sim.dualmap_env import DualMapProtocolEnv
 
         return DualMapProtocolEnv(cfg)
+    if mode == "ros2":
+        from ..sim.ros2_env import Ros2Env
+
+        return Ros2Env(cfg)
     raise ValueError(f"unknown eval.mode: {mode}")
 
 
@@ -152,8 +156,14 @@ def build_floor_planner(cfg):
     )
 
 
-def build_run_components(cfg) -> dict:
-    """Construct heavyweight, shareable components once per evaluation run."""
+def build_run_components(cfg, env=None) -> dict:
+    """Construct heavyweight, shareable components once per evaluation run.
+
+    `env` is needed only by the `nav2` mover, whose backend is either the
+    robot's navigator (reached through the env's bridge) or habitat's follower
+    (reached through the env itself). Every other component is built from the
+    config alone, which is why this stayed env-free for so long.
+    """
     from ..perception.image_text import build_image_text_scorer
     from ..perception.room_classifier import build_room_classifier
     from ..perception.stair_seg import build_stair_segmenter
@@ -164,6 +174,12 @@ def build_run_components(cfg) -> dict:
         from ..planning.pointnav_driver import build_pointnav
 
         pointnav = build_pointnav(cfg)
+    elif navigation == "nav2":
+        # Returned in the `pointnav` slot because that is the slot NavAgent
+        # drives a goal-shaped mover from (`nav_agent.py:1574`, `:2010`): both
+        # answer `step(goal_xy) -> NavStep`, so the FSM needs no branch of its
+        # own for this mover.
+        pointnav = build_nav2_driver(cfg, env)
     return {
         "navigation": navigation,
         "policy": resolve_policy(cfg.agent),
@@ -181,6 +197,29 @@ def build_run_components(cfg) -> dict:
         "region_proposer": build_region_proposer(cfg),
         "ram": build_ram_tagger(cfg),
     }
+
+
+def build_nav2_driver(cfg, env):
+    """The `nav2` mover, over whichever navigator this run has."""
+    from ..planning.nav2_backends import RosNav2Backend, SimNav2Backend
+    from ..planning.nav2_driver import Nav2Driver
+
+    if env is None:
+        raise ValueError(
+            "agent.navigation=nav2 needs the env: the goal is driven by a "
+            "navigator, not inferred from the frame. Pass build_run_components("
+            "cfg, env=env)."
+        )
+    if str(cfg.eval.mode) == "ros2":
+        backend = RosNav2Backend(env.transport, cfg.ros2)
+    else:
+        backend = SimNav2Backend(
+            env, arrival_m=max(2.0 * float(cfg.agent.navmesh_goal_radius), 0.25))
+    return Nav2Driver(
+        backend,
+        stop_radius=float(cfg.agent.pointnav_stop_radius),
+        goal_resend_m=float(cfg.ros2.goal_resend_m),
+    )
 
 
 def build_stair_detector(cfg):

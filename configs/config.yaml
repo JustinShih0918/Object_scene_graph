@@ -17,6 +17,7 @@ defaults:
   - llm: qwen_local
   - verification: s71
   - eval: scenes20_ep0to4
+  - ros2: stretch3
   - s71_defaults
   - _self_
 

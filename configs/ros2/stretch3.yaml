@@ -1,0 +1,9 @@
+# The Hello Robot Stretch 3, as this pipeline sees it.
+#
+# Every value here is the default in src/osg/core/config/ros2.py; the file
+# exists so the group is selectable (`ros2=stretch3`) and so a second robot is
+# a second file rather than a fork. The fields worth checking first on a real
+# robot are listed in docs/ROS2.md; `rotate_deg` and the depth topic are the
+# two that change what the pipeline sees rather than merely where it looks.
+defaults:
+  - base_stretch3

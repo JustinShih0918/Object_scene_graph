@@ -24,6 +24,11 @@ def test_explicit_navigation_wins_when_the_legacy_flag_is_off():
     assert resolve_navigation(AgentConfig(navigation="navmesh")) == "navmesh"
 
 
+def test_nav2_is_a_mover_like_the_others():
+    """The robot's navigator, and habitat's follower wearing its semantics."""
+    assert resolve_navigation(AgentConfig(navigation="nav2")) == "nav2"
+
+
 def test_navmesh_and_pointnav_together_is_rejected():
     """Silently picking one would mean a preset that reads 'sensor-only' could
     quietly run on the navmesh -- exactly the confusion S8 exists to remove."""

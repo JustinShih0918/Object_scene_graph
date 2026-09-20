@@ -119,7 +119,7 @@ def run_eval(cfg) -> dict:
 
     probe_served_models(cfg)
     env = build_env(cfg)
-    components = build_run_components(cfg)
+    components = build_run_components(cfg, env=env)
     algorithm_holder = {
         "algorithm": {
             # Explicit field inventory: the values are populated by the typed

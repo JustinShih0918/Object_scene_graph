@@ -27,6 +27,7 @@ from .floor import FloorConfig
 from .llm import LLMConfig
 from .mapping import MappingConfig
 from .region_proposal import RegionProposalConfig
+from .ros2 import Ros2Config
 from .scene_graph import PresenceConfig, SceneGraphConfig
 from .verification import VerificationConfig
 from .ycb import YCB_TARGET_LABELS, YCBAuthoredConfig
@@ -35,13 +36,18 @@ __all__ = [
     "AgentConfig", "DetectorConfig", "DualMapProtocolConfig", "EvalConfig",
     "ExplorationConfig", "FeatureMemoryConfig",
     "FloorConfig", "LLMConfig", "MappingConfig", "OSGConfig", "PresenceConfig",
-    "RegionProposalConfig",
+    "RegionProposalConfig", "Ros2Config",
     "SceneGraphConfig", "VerificationConfig", "YCBAuthoredConfig",
     "DEFAULT_VOCABULARY", "YCB_TARGET_LABELS", "NAVIGATION_MODES",
     "POLICY_MODES", "resolve_navigation", "resolve_policy", "register_configs",
 ]
 
-NAVIGATION_MODES = ("costmap", "navmesh", "pointnav")
+# `nav2` hands the metric goal to a Nav2 stack and lets it drive: the robot's
+# own navigator on the Stretch, habitat's navmesh follower wearing Nav2's
+# semantics in simulation (planning/nav2_backends.py). Like `navmesh` it is
+# PRIVILEGED -- the navigator plans on a map it was given -- so its SR/SPL is
+# not comparable with the sensor-only movers.
+NAVIGATION_MODES = ("costmap", "navmesh", "pointnav", "nav2")
 POLICY_MODES = ("nav_agent", "ascent", "ascentnav")
 
 
@@ -92,6 +98,7 @@ class OSGConfig:
     eval: EvalConfig = field(default_factory=EvalConfig)
     ycb: YCBAuthoredConfig = field(default_factory=YCBAuthoredConfig)
     dualmap: DualMapProtocolConfig = field(default_factory=DualMapProtocolConfig)
+    ros2: Ros2Config = field(default_factory=Ros2Config)
     seed: int = 42
     output_dir: str = "outputs/${now:%Y%m%d_%H%M%S}"
 
@@ -112,3 +119,4 @@ def register_configs() -> None:
     cs.store(group="eval", name="base_hm3d", node=EvalConfig)
     cs.store(group="ycb", name="base_authored", node=YCBAuthoredConfig)
     cs.store(group="dualmap", name="base_protocol", node=DualMapProtocolConfig)
+    cs.store(group="ros2", name="base_stretch3", node=Ros2Config)
