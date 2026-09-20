@@ -16,6 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = ROOT / "docker" / "Dockerfile"
 COMPOSE = ROOT / "docker" / "compose.yaml"
 DOCKERIGNORE = ROOT / ".dockerignore"
+# Every image built from this repo, each with the compose file that builds it.
+# The Jetson pair is a separate deployment, not an override of the x86 one:
+# different base, different architecture, no Habitat (docs/THOR.md).
+DOCKERFILES = {
+    "docker/Dockerfile": "docker/compose.yaml",
+    "docker/Dockerfile.thor": "docker/compose.thor.yaml",
+    "docker/Dockerfile.bridge": "docker/compose.thor.yaml",
+}
 
 # Everything the image needs at build time. Excluding any of these silently
 # breaks the build a long way in.
@@ -56,16 +64,22 @@ def ignored(rel: str) -> bool:
     return False
 
 
-def copy_sources() -> list:
+def copy_sources(dockerfile=None) -> list:
     # Join line continuations: `COPY --chown=x \<newline>  src dst` is one
     # instruction, and reading it line-wise captures the backslash.
-    text = DOCKERFILE.read_text().replace("\\\n", " ")
+    text = (dockerfile or DOCKERFILE).read_text().replace("\\\n", " ")
     out = []
     for line in text.splitlines():
         m = re.match(r"\s*COPY\s+(?!--from)(?:--chown=\S+\s+)?(\S+)", line)
         if m:
             out.append(m.group(1).lstrip("./"))
     return out
+
+
+def all_copy_sources() -> list:
+    """(dockerfile, source) for every COPY in every image."""
+    return [(name, src) for name in DOCKERFILES
+            for src in copy_sources(ROOT / name)]
 
 
 def test_compose_builds_from_the_repo_root():
@@ -79,15 +93,37 @@ def test_compose_builds_from_the_repo_root():
 
 
 def test_every_copy_source_exists():
-    missing = [s for s in copy_sources() if not (ROOT / s).exists()]
+    missing = [f"{f}: {s}" for f, s in all_copy_sources() if not (ROOT / s).exists()]
     assert not missing, f"COPY sources not in the tree: {missing}"
 
 
 def test_no_copy_source_is_excluded_by_dockerignore():
     """A path that exists but is ignored fails the build the same way a missing
     one does, and reads as a typo rather than an ignore rule."""
-    blocked = [s for s in copy_sources() if ignored(s)]
+    blocked = [f"{f}: {s}" for f, s in all_copy_sources() if ignored(s)]
     assert not blocked, f"COPY sources excluded by /.dockerignore: {blocked}"
+
+
+def test_every_dockerfile_is_built_from_the_repo_root():
+    """Same trap as the x86 image, once per deployment: a COPY path written
+    relative to the root and a context narrower than the root."""
+    for dockerfile, compose in DOCKERFILES.items():
+        text = (ROOT / compose).read_text()
+        assert re.search(r"context:\s*\.\.\s*$", text, re.M), \
+            f"{compose} must set `context: ..`"
+        assert f"dockerfile: {dockerfile}" in text, \
+            f"{compose} does not build {dockerfile}"
+
+
+def test_the_jetson_images_carry_no_habitat():
+    """There is no aarch64 build of habitat-sim, and the robot path does not
+    need one -- `eval.mode=ros2` never constructs a Habitat env. An image that
+    tried would fail late, after the expensive layers."""
+    for name in ("docker/Dockerfile.thor", "docker/Dockerfile.bridge"):
+        text = (ROOT / name).read_text()
+        installs = [l for l in text.splitlines()
+                    if re.match(r"\s*(RUN|ENV)\b", l) and "habitat-sim" in l]
+        assert not installs, f"{name} installs habitat-sim: {installs}"
 
 
 def test_the_build_inputs_survive_the_ignore_file():

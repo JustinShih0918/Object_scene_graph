@@ -1,0 +1,40 @@
+# The five perception servers, on aarch64 / JetPack.
+#
+# NOT docker/ascent-requirements.txt. That file is a `pip freeze` of the x86
+# environment: every version is pinned, including `torch==...+cu118`, which
+# does not exist for this platform at all. Here torch comes from NVIDIA's
+# Jetson index (installed in the image before this file is read, and inherited
+# through --system-site-packages), and everything below is what the five
+# servers import on top of it.
+#
+# Pinned only where a pin is load-bearing:
+#
+#   numpy<2      the opencv and torch builds on this platform are compiled
+#                against the 1.x ABI; 2.x gives `_ARRAY_API not found`.
+#   transformers ASCENT overrides lavis's `<4.27` pin with 4.37.0 so BLIP-2 and
+#                Qwen2.5 share one environment. Installed AFTER lavis in the
+#                Dockerfile, which is the order that override depends on.
+#
+# Everything else floats, because a pin taken from x86 is a pin that has no
+# aarch64 wheel. If a server fails to import on the device, pin it HERE and say
+# in a comment which server and which error -- do not reach for the x86 freeze.
+numpy<2
+flask
+gunicorn
+pillow
+opencv-python-headless
+timm
+addict
+yapf
+supervision
+pycocotools
+transformers
+tokenizers
+sentencepiece
+ftfy
+regex
+einops
+fairscale
+scipy
+huggingface_hub
+safetensors

@@ -18,6 +18,10 @@ other way.
              ◀──────  NavigateToPose  ◀─────────────────────  the metric goal
 ```
 
+On the real deployment those two halves are two containers on a Jetson AGX Thor, and the
+same split is what lets the bridge match the robot's Ubuntu exactly while the pipeline
+follows JetPack's. See [THOR.md](THOR.md).
+
 ## Why there are two processes
 
 `rclpy` in Humble is built against Ubuntu 22.04's Python 3.10. Both conda envs in this image

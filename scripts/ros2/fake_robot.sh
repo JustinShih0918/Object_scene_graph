@@ -8,10 +8,15 @@
 set -eo pipefail
 cd "$(dirname "$0")/../.."
 
+# Overridable because the two images put ROS in different places: the x86
+# development image installs it beside the pipeline, while on the Thor the
+# bridge has a container to itself (docker/Dockerfile.bridge) and sets both of
+# these in its environment.
 ROS_SETUP="${ROS_SETUP:-/opt/ros/humble/setup.bash}"
+ROS_PYTHON="${ROS_PYTHON:-/usr/bin/python3}"
 [ -f "$ROS_SETUP" ] || { echo "no ROS 2 at $ROS_SETUP (rebuild the image)" >&2; exit 1; }
 # shellcheck disable=SC1090
 source "$ROS_SETUP"
 
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
-exec /usr/bin/python3 -m osg.ros2.fake_robot "$@"
+exec "$ROS_PYTHON" -m osg.ros2.fake_robot "$@"

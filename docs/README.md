@@ -1,6 +1,6 @@
 # Documentation index
 
-51 files, and they are not all the same kind of thing. Read the four in **Start here** and
+52 files, and they are not all the same kind of thing. Read the four in **Start here** and
 ignore the rest until you need them; everything below that line is either a frozen
 measurement or the reasoning behind one decision.
 
@@ -38,6 +38,7 @@ Append-only. Large because they are complete, not because they are untidy.
 | doc | what it is |
 |---|---|
 | [ROS2.md](ROS2.md) | The ROS 2 / Nav2 layer for the Stretch 3: why two interpreters, the frame conventions, who owns the base, the manual floor switch, the two-run protocol, and how to check all of it with no robot. |
+| [THOR.md](THOR.md) | Where that layer runs: a Jetson AGX Thor beside the robot, two containers, and every knob that can only be settled on the device. |
 
 ## Design notes
 

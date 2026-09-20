@@ -1,0 +1,111 @@
+# The deployment: a Jetson AGX Thor beside a Hello Robot Stretch 3.
+#
+#   docker compose -f docker/compose.thor.yaml --env-file docker/.env build
+#   docker compose -f docker/compose.thor.yaml --env-file docker/.env up -d
+#   docker exec -it osg-thor bash
+#
+# A file of its own rather than an override of compose.yaml: nothing here is
+# shared with the x86 development stack. Different base image, different
+# architecture, no Habitat, no HM3D mounts, and two containers where that one
+# has one. See docs/THOR.md.
+#
+# WHAT RUNS WHERE
+#   thor    the pipeline, the perception models, the scene graph, ollama.
+#   bridge  rclpy, and nothing else: it relays frames in and goals out.
+#   robot   NOT HERE. The Stretch runs its own Nav2, its own drivers, and its
+#           own ROS graph; this stack never starts a navigator.
+#
+# Both containers take `network_mode: host`, for two different reasons: the
+# bridge needs the host's network to reach the robot's DDS (discovery is
+# multicast and the default bridge network cannot carry it), and the thor
+# container needs to share the host's loopback so it can reach the bridge's
+# socket at 127.0.0.1:18765. Host networking also takes the host's resolver, so
+# compose service names do not resolve and ollama is addressed by port.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: osg-ollama
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      # Host networking: this is the port the pipeline uses, not a mapping.
+      - OLLAMA_HOST=0.0.0.0:11435
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  thor:
+    container_name: osg-thor
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.thor
+      args:
+        # Set these to match the unit. `cat /etc/nv_tegra_release` on the
+        # device gives the L4T release; docs/THOR.md lists the rest.
+        L4T_BASE: ${L4T_BASE:-nvcr.io/nvidia/l4t-jetpack:r38.2.0}
+        CUDA_ARCH: ${CUDA_ARCH:-11.0}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://pypi.jetson-ai-lab.dev/jp7/cu130}
+        WITH_BLIP2: ${WITH_BLIP2:-1}
+        USER_UID: ${UID:?set UID in docker/.env (id -u)}
+        USER_GID: ${GID:?set GID in docker/.env (id -g)}
+    image: osg-thor:latest
+    runtime: nvidia
+    network_mode: host
+    ipc: host
+    user: "${UID:?}:${GID:?}"
+    group_add: ["27"]
+    stdin_open: true
+    tty: true
+    depends_on: [ollama, bridge]
+    environment:
+      - OLLAMA_HOST=http://localhost:11435
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HOME=/tmp
+      - YOLO_CONFIG_DIR=/tmp/Ultralytics
+      - UMASK=0002
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+    volumes:
+      - ..:/workspace
+      - weights-cache:/workspace/data/weights
+      - ../outputs:/workspace/outputs
+    command: ["bash"]
+
+  bridge:
+    container_name: osg-bridge
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bridge
+      args:
+        USER_UID: ${UID:?}
+        USER_GID: ${GID:?}
+    image: osg-bridge:latest
+    network_mode: host
+    ipc: host
+    user: "${UID:?}:${GID:?}"
+    restart: unless-stopped
+    environment:
+      # Must match the robot's. Anything sharing a domain shares topics.
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      # The robot is another machine on the network.
+      - ROS_LOCALHOST_ONLY=0
+      - HOME=/tmp
+      - UMASK=0002
+    volumes:
+      - ..:/workspace
+    # The topics, frames and speeds come from the `ros2` config group; pass the
+    # preset the run will use so both ends agree (scripts/ros2/bridge_args.py).
+    command: ["bash", "scripts/ros2/bridge.sh", "+experiment=stretch3_map"]
+
+volumes:
+  ollama-models:
+  weights-cache:

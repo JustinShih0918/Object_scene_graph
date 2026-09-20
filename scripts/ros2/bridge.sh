@@ -10,7 +10,12 @@
 set -eo pipefail
 cd "$(dirname "$0")/../.."
 
+# Overridable because the two images put ROS in different places: the x86
+# development image installs it beside the pipeline, while on the Thor the
+# bridge has a container to itself (docker/Dockerfile.bridge) and sets both of
+# these in its environment.
 ROS_SETUP="${ROS_SETUP:-/opt/ros/humble/setup.bash}"
+ROS_PYTHON="${ROS_PYTHON:-/usr/bin/python3}"
 [ -f "$ROS_SETUP" ] || { echo "no ROS 2 at $ROS_SETUP (rebuild the image)" >&2; exit 1; }
 # shellcheck disable=SC1090
 source "$ROS_SETUP"
@@ -30,8 +35,10 @@ for arg in "$@"; do
     HYDRA_ARGS+=("$arg")
 done
 
+# Whichever interpreter has hydra. On x86 that is the habitat env; in the
+# bridge container it is the image's own python3, which the image sets here.
 CONFIG_PYTHON="${CONFIG_PYTHON:-/opt/conda/envs/habitat/bin/python}"
-[ -x "$CONFIG_PYTHON" ] || CONFIG_PYTHON="$(command -v python)"
+[ -x "$CONFIG_PYTHON" ] || CONFIG_PYTHON="$(command -v python || command -v python3)"
 BRIDGE_FLAGS="$("$CONFIG_PYTHON" scripts/ros2/bridge_args.py "${HYDRA_ARGS[@]}")" || {
     echo "could not read the ros2 config group; is the habitat env on PATH?" >&2
     exit 1
@@ -42,4 +49,4 @@ BRIDGE_FLAGS="$("$CONFIG_PYTHON" scripts/ros2/bridge_args.py "${HYDRA_ARGS[@]}")
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 # shellcheck disable=SC2086 -- bridge_args.py shell-quotes each token
 eval "set -- $BRIDGE_FLAGS"
-exec /usr/bin/python3 -m osg.ros2.bridge_node "$@" "${PASSTHROUGH[@]}"
+exec "$ROS_PYTHON" -m osg.ros2.bridge_node "$@" "${PASSTHROUGH[@]}"

@@ -85,6 +85,13 @@ Nav2's `map` is 2D, so the storey is **declared by the operator** (`/osg/floor`,
 `floor.source=external`) rather than estimated from a height that does not exist. Check the
 whole path with no robot present: `bash scripts/ros2/check_pipeline.sh`.
 
+The deployment is a **Jetson AGX Thor** beside the robot, and it is a SECOND image pair, not
+an override of the x86 one: `docker/compose.thor.yaml` builds `Dockerfile.thor` (L4T, the
+pipeline and the models, **no Habitat** — there is no aarch64 habitat-sim, and `eval.mode=ros2`
+never needs one) and `Dockerfile.bridge` (`ros:humble-ros-base`, rclpy only, matching the
+Stretch's own distro). `docs/THOR.md` has the topology and every knob that can only be
+settled on the device.
+
 ### What the OSG pipeline is built for
 
 The premise is not an *incomplete* map but a map that is **actively wrong**: pass 1 explores a
