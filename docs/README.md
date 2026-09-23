@@ -39,6 +39,7 @@ Append-only. Large because they are complete, not because they are untidy.
 |---|---|
 | [ROS2.md](ROS2.md) | The ROS 2 / Nav2 layer for the Stretch 3: why two interpreters, the frame conventions, who owns the base, the manual floor switch, the two-run protocol, and how to check all of it with no robot. |
 | [THOR.md](THOR.md) | Where that layer runs: a Jetson AGX Thor beside the robot, two containers, and every knob that can only be settled on the device. |
+| [DEMO_FLOW.md](DEMO_FLOW.md) | The two-floor moved-object demo as a checklist of commands: bring-up, the two passes, the carry, the one-line floor switch. Just the order; the reasons are in the two rows above. |
 
 ## Design notes
 
