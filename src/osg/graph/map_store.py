@@ -109,6 +109,12 @@ def _track_record(track: ObjectTrack) -> Dict[str, Any]:
         # few KB.
         "best_crop_png": _encode_crop(track.best_crop),
         "evidence": float(track.evidence),
+        # The candidate gate's other inputs, so a snapshot can answer "why was
+        # this never approached" without the run: how many views, how many of
+        # them the proposal stage's alone, and its appearance similarity.
+        "n_obs": int(getattr(track, "n_obs", 0)),
+        "n_proposal_obs": int(getattr(track, "n_proposal_obs", 0)),
+        "proposal_sim": float(getattr(track, "proposal_sim", 0.0) or 0.0),
         "refined_at_obs": int(track.refined_at_obs),
         "linked_ids": sorted(int(i) for i in track.linked_ids),
         "presence": {

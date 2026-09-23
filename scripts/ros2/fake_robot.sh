@@ -19,4 +19,24 @@ ROS_PYTHON="${ROS_PYTHON:-/usr/bin/python3}"
 source "$ROS_SETUP"
 
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
-exec "$ROS_PYTHON" -m osg.ros2.fake_robot "$@"
+
+# The camera topic names come from the same config the bridge reads
+# (scripts/ros2/bridge_args.py), so a `.../compressed` name in
+# configs/ros2/stretch3.yaml makes this fake publish CompressedImage and the
+# bridge decode it -- the check exercises the transport a run will use.
+# Flags given on the command line still win (they come last).
+CONFIG_PYTHON="${CONFIG_PYTHON:-/opt/conda/envs/habitat/bin/python}"
+[ -x "$CONFIG_PYTHON" ] || CONFIG_PYTHON="$(command -v python || command -v python3)"
+USER_ARGS=("$@")
+TOPIC_FLAGS=()
+if FLAGS="$("$CONFIG_PYTHON" scripts/ros2/bridge_args.py 2>/dev/null)"; then
+    # shellcheck disable=SC2086 -- bridge_args.py shell-quotes each token
+    eval "set -- $FLAGS"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --rgb-topic|--depth-topic|--camera-info-topic) TOPIC_FLAGS+=("$1" "$2"); shift 2 ;;
+            *) shift ;;
+        esac
+    done
+fi
+exec "$ROS_PYTHON" -m osg.ros2.fake_robot "${TOPIC_FLAGS[@]}" "${USER_ARGS[@]}"

@@ -12,6 +12,7 @@ do it (rotation, depth scale, the virtual storey offset).
 from __future__ import annotations
 
 import time
+import numpy as np
 from typing import Optional
 
 from .wire import RemoteError, call, parse_addr
@@ -114,6 +115,24 @@ class Transport:
 
     def look(self, tilt_delta_deg: float) -> dict:
         return self._call("look", tilt_delta_deg=float(tilt_delta_deg))
+
+    def publish_markers(self, topic: str, markers: list, frame_id: str = "map") -> None:
+        """Hand RViz geometry to the bridge. Plain dicts; see bridge publish_markers."""
+        self._call("publish_markers", topic=str(topic), markers=list(markers),
+                   frame_id=str(frame_id))
+
+    def publish_grid(self, topic: str, grid, origin_xy, resolution: float,
+                     frame_id: str = "map", z: float = 0.0) -> None:
+        """Hand the pipeline's costmap to the bridge for the map window."""
+        self._call("publish_grid", topic=str(topic),
+                   grid=np.ascontiguousarray(grid, dtype=np.int8),
+                   origin_xy=[float(v) for v in origin_xy], resolution=float(resolution),
+                   frame_id=str(frame_id), z=float(z))
+
+    def publish_image(self, topic: str, image, encoding: str = "bgr8") -> None:
+        """Hand an image to the bridge for RViz. Debug only; see DebugStream."""
+        self._call("publish_image", topic=str(topic), image=np.ascontiguousarray(image),
+                   encoding=str(encoding))
 
     def pop_floor_switch(self) -> Optional[int]:
         """The operator's floor switch, if one arrived since the last call."""

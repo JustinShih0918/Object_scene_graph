@@ -126,7 +126,10 @@ class BehaviourLog:
             "log_version": self.VERSION,
             "steps": len(self.rows),
             "path_len_m": round(float(sum(moved)), 2),
-            "bbox_m": [round(float(xy[:, 0].ptp()), 2), round(float(xy[:, 1].ptp()), 2)],
+            # np.ptp(a), not a.ptp(): the ndarray method was removed in NumPy
+            # 2.0, which the Jetson image must run (its torch is built against
+            # the 2.x ABI). The function form works under both.
+            "bbox_m": [round(float(np.ptp(xy[:, 0])), 2), round(float(np.ptp(xy[:, 1])), 2)],
             "forwards": len(fwd),
             # The wedge signature: forward commanded, nothing happened.
             "blocked_forwards": blocked,

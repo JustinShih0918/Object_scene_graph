@@ -30,6 +30,69 @@ _RGB_ENCODINGS = {"rgb8": (3, False), "bgr8": (3, True), "rgba8": (4, False),
 _DEPTH_ENCODINGS = {"16UC1": np.uint16, "mono16": np.uint16, "32FC1": np.float32}
 
 
+def is_compressed_topic(topic: str) -> bool:
+    """image_transport's naming: `<base>/compressed` (jpeg/png colour) and
+    `<base>/compressedDepth` (png-packed depth). The bridge subscribes with
+    the matching message type, so the transport is chosen by topic name alone
+    (configs/ros2/stretch3.yaml)."""
+    return str(topic).endswith("/compressed") or str(topic).endswith("/compressedDepth")
+
+
+def compressed_to_array(msg):
+    """`sensor_msgs/CompressedImage` -> (ndarray, encoding).
+
+    Colour: a jpeg/png of the bgr8 frame, decoded to rgb8. Depth:
+    compressed_depth_image_transport's layout -- a 12-byte ConfigHeader
+    (int32 format, float32 depthParam[2]) followed by a PNG. For a 16UC1
+    source the PNG holds the millimetres unchanged, which is what the
+    RealSense's aligned depth is; a 32FC1 source is inverse-depth quantised
+    and undone with depthParam. RVL is refused: cv2 cannot read it, and a
+    silently wrong depth is a map of a room that does not exist.
+    """
+    import cv2
+
+    fmt = str(msg.format)
+    raw = np.frombuffer(bytes(msg.data), dtype=np.uint8)
+    if "compressedDepth" in fmt:
+        # The codec is not always named: the Stretch's plugin says just
+        # '16UC1; compressedDepth' (png, its default), a newer one
+        # '16UC1; compressedDepth png' or '... rvl'. Trust the bytes: a PNG
+        # starts with its signature right after the 12-byte header.
+        if "rvl" in fmt or bytes(raw[12:20]) != b"\x89PNG\r\n\x1a\n":
+            raise ValueError(f"cannot decode depth transport {fmt!r}: not a png payload "
+                             "(rvl? set the driver's compressedDepth format to png)")
+        a = cv2.imdecode(raw[12:], cv2.IMREAD_UNCHANGED)
+        if a is None:
+            raise ValueError(f"undecodable compressedDepth frame ({fmt!r}, {raw.size} bytes)")
+        src = fmt.split(";")[0].strip()
+        if src == "32FC1":
+            q_a, q_b = np.frombuffer(bytes(msg.data)[4:12], dtype=np.float32)
+            a = a.astype(np.float32)
+            return np.where(a > 0, q_a / np.maximum(a - q_b, 1e-6), 0.0).astype(np.float32), "32FC1"
+        return a.astype(np.uint16), "16UC1"
+    a = cv2.imdecode(raw, cv2.IMREAD_COLOR)   # BGR, whatever the source was
+    if a is None:
+        raise ValueError(f"undecodable compressed colour frame ({fmt!r}, {raw.size} bytes)")
+    return np.ascontiguousarray(a[..., ::-1]), "rgb8"
+
+
+def grid_to_occupancy(grid, origin_xy, resolution):
+    """Costmap2D's array -> OccupancyGrid's (data, origin_xy, (width, height)).
+
+    grid[i, j] sits at pipeline (x, z) = origin + (i + .5, j + .5) * res.
+    OccupancyGrid is row-major with rows along ROS y and columns along ROS x,
+    and ROS y = -z (frames.py): so rows are z flipped, columns are x, and the
+    origin is the corner at the most negative y, i.e. the LARGEST z. Pure, so
+    the CPU suite can pin it (tests/unit/test_ros2_deployment.py).
+    """
+    g = np.asarray(grid, dtype=np.int8)
+    n_x, n_z = g.shape
+    res = float(resolution)
+    ox, oz = (float(v) for v in origin_xy)
+    data = np.ascontiguousarray(g.T[::-1, :]).reshape(-1)
+    return data, (ox, -(oz + n_z * res)), (n_x, n_z)
+
+
 def image_to_array(msg) -> np.ndarray:
     """`sensor_msgs/Image` -> ndarray, without cv_bridge."""
     enc = str(msg.encoding)
@@ -90,8 +153,18 @@ class BridgeNode:
         self._tf_listener = TransformListener(self.tf_buffer, self.node)
 
         qos = 10
-        rgb = message_filters.Subscriber(self.node, Image, args.rgb_topic)
-        depth = message_filters.Subscriber(self.node, Image, args.depth_topic)
+        # Compressed transport is a topic-name choice (is_compressed_topic):
+        # jpeg colour + png depth are ~10x fewer bytes over the wired link
+        # than raw 1280x720 frames, which is latency the pipeline never sees.
+        from sensor_msgs.msg import CompressedImage
+
+        def _type(topic):
+            return CompressedImage if is_compressed_topic(topic) else Image
+        rgb = message_filters.Subscriber(self.node, _type(args.rgb_topic), args.rgb_topic)
+        depth = message_filters.Subscriber(self.node, _type(args.depth_topic), args.depth_topic)
+        self.node.get_logger().info(
+            f"camera: {args.rgb_topic} ({'compressed' if is_compressed_topic(args.rgb_topic) else 'raw'}), "
+            f"{args.depth_topic} ({'compressed' if is_compressed_topic(args.depth_topic) else 'raw'})")
         self._sync = message_filters.ApproximateTimeSynchronizer(
             [rgb, depth], queue_size=qos, slop=float(args.sync_slop_s))
         self._sync.registerCallback(self._on_images)
@@ -100,6 +173,20 @@ class BridgeNode:
         self.node.create_subscription(Int32, args.floor_topic, self._on_floor, qos)
 
         self._cmd_vel = self.node.create_publisher(Twist, args.cmd_vel_topic, qos)
+        # The goal as handed to Nav2, republished for RViz (scripts/ros2/osg.rviz).
+        # An action goal is not a topic, so without this the one thing a person
+        # watching the robot most wants to see -- where the pipeline is sending
+        # it -- is invisible. Transient-local, so an RViz opened mid-run gets
+        # the current goal at once. Nothing in the pipeline reads it.
+        from geometry_msgs.msg import PoseStamped
+        from rclpy.qos import DurabilityPolicy, QoSProfile
+
+        self._goal_pub = self.node.create_publisher(
+            PoseStamped, args.goal_topic,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self._image_pubs: dict = {}  # topic -> publisher, see publish_image
+        self._marker_pubs: dict = {}  # likewise, see publish_markers
+        self._grid_pubs: dict = {}    # likewise, see publish_grid
         self._nav = ActionClient(self.node, NavigateToPose, args.nav_action)
         self._head = ActionClient(
             self.node, FollowJointTrajectory, args.head_traj_action)
@@ -131,13 +218,22 @@ class BridgeNode:
                                         throttle_duration_sec=5.0)
             return
         K, width, height = self._info
+        try:
+            rgb_arr = compressed_to_array(rgb_msg)[0] if hasattr(rgb_msg, "format") else image_to_array(rgb_msg)
+            if hasattr(depth_msg, "format"):
+                depth_arr, depth_enc = compressed_to_array(depth_msg)
+            else:
+                depth_arr, depth_enc = image_to_array(depth_msg), str(depth_msg.encoding)
+        except Exception as exc:  # noqa: BLE001 -- say what, keep serving
+            self.node.get_logger().error(f"dropped a frame: {exc}", throttle_duration_sec=5.0)
+            return
         with self._lock:
             self._seq += 1
             self._frame = {
                 "seq": self._seq, "stamp": stamp,
-                "rgb": image_to_array(rgb_msg),
-                "depth": image_to_array(depth_msg),
-                "depth_encoding": str(depth_msg.encoding),
+                "rgb": rgb_arr,
+                "depth": depth_arr,
+                "depth_encoding": depth_enc,
                 "K": K, "width": width, "height": height,
                 "T_map_cam": T_map_cam, "frame_id": frame_id,
             }
@@ -161,12 +257,52 @@ class BridgeNode:
 
     # -------------------------------------------------------------------- ops
 
+    _RMW_VENDORS = {(0x01, 0x10): "cyclonedds", (0x01, 0x0f): "fastdds", (0x01, 0x01): "connext"}
+
+    def robot_rmw(self) -> dict:
+        """Which DDS vendor the robot's nodes are on, from the GID of every
+        publisher on /tf (the driver, robot_state_publisher, the localiser --
+        the nodes a run cannot do without).
+
+        Cross-vendor DDS is a trap this bridge fell into for a whole run:
+        topics interoperate, so the map, TF, the camera and even cmd_vel all
+        worked -- but services and actions do NOT, so every NavigateToPose
+        goal got no reply, was timed out as refused, and the base never moved
+        while the pipeline retired 25 frontiers. Discovery crosses vendors
+        too, which is why `wait_for_server` kept saying yes. The Stretch runs
+        CycloneDDS when launched as stretch_main intends; after a reboot it
+        comes up on ROS's default Fast-DDS unless RMW_IMPLEMENTATION is
+        exported in every shell that starts part of its stack.
+        """
+        by_vendor: dict = {}
+        for info in self.node.get_publishers_info_by_topic("/tf"):
+            gid = list(info.endpoint_gid)
+            vendor = self._RMW_VENDORS.get((gid[0], gid[1]), f"{gid[0]:02x}.{gid[1]:02x}") if len(gid) >= 2 else "?"
+            by_vendor.setdefault(vendor, []).append(str(info.node_name))
+        return by_vendor
+
     def ping(self) -> dict:
         with self._lock:
             seq = self._seq
         return {"node": "osg_bridge", "frames": seq,
                 "ros_time": self.node.get_clock().now().nanoseconds * 1e-9,
-                "has_camera_info": self._info is not None}
+                "has_camera_info": self._info is not None,
+                # Whether Nav2's action SERVER is up -- not merely the action
+                # name, which `ros2 action list` also shows for our own client.
+                # Read by run_robot.py before it loads a single model.
+                "nav_server": bool(self._nav.server_is_ready()),
+                # {vendor: [node, ...]} for the robot's /tf publishers; see robot_rmw.
+                "robot_rmw": self.robot_rmw(),
+                # Who publishes the map the goals are planned on: slam_toolbox
+                # when the robot is mapping as it goes, map_server (AMCL) when
+                # it was given one, rtabmap on the earlier setup. Printed by
+                # run_robot.py, because a run against the wrong one looks the
+                # same until the first goal.
+                "map_publishers": self.map_publishers()}
+
+    def map_publishers(self) -> list:
+        return sorted({str(info.node_name)
+                       for info in self.node.get_publishers_info_by_topic("/map")})
 
     def get_frame(self, after_seq: int = -1, timeout_s: float = 5.0):
         """The newest frame, optionally waiting for one newer than `after_seq`.
@@ -206,6 +342,7 @@ class BridgeNode:
         pose.pose.orientation.w = qw
         goal = self._NavigateToPose.Goal()
         goal.pose = pose
+        self._goal_pub.publish(pose)
 
         # Every callback below is stamped with the id of the goal that caused
         # it and ignored once a newer goal exists. Without that, the ABORTED
@@ -246,8 +383,17 @@ class BridgeNode:
             if current:
                 if not handle.accepted:
                     self._goal_state = "rejected"
+                    # Said out loud: a goal Nav2 refuses at the door was, until
+                    # now, indistinguishable in this log from one it drove.
+                    self.node.get_logger().warn(
+                        f"goal {goal_id} REJECTED by {self.args.nav_action}: "
+                        f"{self.last_goal}")
                     return
                 self._goal_handle = handle
+                self.node.get_logger().info(
+                    f"goal {goal_id} accepted by {self.args.nav_action}: "
+                    f"({self.last_goal['x']:.2f}, {self.last_goal['y']:.2f}) in "
+                    f"{self.last_goal['frame_id']}")
         if not current:
             # Superseded while still in flight. Cancel it rather than leave a
             # goal Nav2 is driving with nothing tracking it.
@@ -394,6 +540,124 @@ class BridgeNode:
             floor, self._floor = self._floor, None
         return {"floor": floor}
 
+    def publish_markers(self, topic: str, markers: list, frame_id: str = "map") -> dict:
+        """Republish pipeline-side geometry as a MarkerArray for RViz.
+
+        Each entry is a plain dict the pipeline built with no ROS types in
+        reach: {ns, id, type, xyz, scale, rgba, text?, points?}. `type` is one
+        of sphere | cube | cylinder | arrow | text | line_strip | points. The
+        array is prefixed with DELETEALL so what RViz shows is exactly what
+        the pipeline last said, with nothing stale left behind -- the scene
+        graph forgets objects, and so must the picture. /osg/* only, as
+        publish_image.
+        """
+        from visualization_msgs.msg import Marker, MarkerArray
+
+        if not str(topic).startswith("/osg/"):
+            raise ValueError(f"publish_markers is for /osg/* topics, not {topic!r}")
+        kinds = {"sphere": Marker.SPHERE, "cube": Marker.CUBE, "cylinder": Marker.CYLINDER,
+                 "arrow": Marker.ARROW, "text": Marker.TEXT_VIEW_FACING,
+                 "line_strip": Marker.LINE_STRIP, "points": Marker.POINTS}
+        pub = self._marker_pubs.get(topic)
+        if pub is None:
+            pub = self.node.create_publisher(MarkerArray, topic, 1)
+            self._marker_pubs[topic] = pub
+        stamp = self.node.get_clock().now().to_msg()
+        arr = MarkerArray()
+        wipe = Marker(); wipe.action = Marker.DELETEALL
+        wipe.header.frame_id = str(frame_id); wipe.header.stamp = stamp
+        arr.markers.append(wipe)
+        for m in markers:
+            mk = Marker()
+            mk.header.frame_id = str(frame_id); mk.header.stamp = stamp
+            mk.ns = str(m.get("ns", "osg")); mk.id = int(m.get("id", 0))
+            mk.type = kinds[str(m.get("type", "sphere"))]; mk.action = Marker.ADD
+            x, y, z = (float(v) for v in m.get("xyz", (0.0, 0.0, 0.0)))
+            mk.pose.position.x, mk.pose.position.y, mk.pose.position.z = x, y, z
+            mk.pose.orientation.w = 1.0
+            sx, sy, sz = (float(v) for v in m.get("scale", (0.1, 0.1, 0.1)))
+            mk.scale.x, mk.scale.y, mk.scale.z = sx, sy, sz
+            r, g, b, a = (float(v) for v in m.get("rgba", (1.0, 1.0, 1.0, 1.0)))
+            mk.color.r, mk.color.g, mk.color.b, mk.color.a = r, g, b, a
+            if "text" in m:
+                mk.text = str(m["text"])
+            for pt in m.get("points", ()):
+                from geometry_msgs.msg import Point
+                p_ = Point(); p_.x, p_.y, p_.z = (float(v) for v in pt)
+                mk.points.append(p_)
+            arr.markers.append(mk)
+        pub.publish(arr)
+        return {"published": len(markers)}
+
+    def publish_grid(self, topic: str, grid: np.ndarray, origin_xy, resolution: float,
+                     frame_id: str = "map", z: float = 0.0) -> dict:
+        """The pipeline's own costmap as an OccupancyGrid, for the map window.
+
+        `grid` is Costmap2D's array: grid[i, j] at pipeline (x, z) =
+        origin + (i, j) * resolution, values UNKNOWN -1 / FREE 0 / OCCUPIED 100
+        -- OccupancyGrid's own vocabulary. ROS's y is -z, so rows and columns
+        swap and the z axis flips; `z` lifts the grid for a stacked storey.
+        Latched, so a window opened mid-run gets the current map at once.
+        /osg/* only, as publish_image.
+        """
+        from nav_msgs.msg import OccupancyGrid
+        from rclpy.qos import DurabilityPolicy, QoSProfile
+
+        if not str(topic).startswith("/osg/"):
+            raise ValueError(f"publish_grid is for /osg/* topics, not {topic!r}")
+        pub = self._grid_pubs.get(topic)
+        if pub is None:
+            pub = self.node.create_publisher(
+                OccupancyGrid, topic,
+                QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+            self._grid_pubs[topic] = pub
+        data, (ox, oy), (w, h) = grid_to_occupancy(grid, origin_xy, resolution)
+        msg = OccupancyGrid()
+        msg.header.frame_id = str(frame_id)
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.info.resolution = float(resolution)
+        msg.info.width, msg.info.height = int(w), int(h)
+        msg.info.origin.position.x = ox
+        msg.info.origin.position.y = oy
+        msg.info.origin.position.z = float(z)
+        msg.info.origin.orientation.w = 1.0
+        msg.data = data.tolist()
+        pub.publish(msg)
+        return {"published": True}
+
+    def publish_image(self, topic: str, image: np.ndarray, encoding: str = "bgr8") -> dict:
+        """Republish a pipeline-side image for RViz (scripts/ros2/osg.rviz).
+
+        The pipeline has no rclpy, so the picture it draws for itself -- the
+        rotated frame it consumes, the detector's boxes and masks, the
+        simulator-style debug panel -- can only reach a screen through here.
+        Confined to /osg/: the bridge relays a debug view, it does not become a
+        general publisher. Publishers are created on first use, keyed by topic.
+        """
+        from sensor_msgs.msg import Image
+
+        if not str(topic).startswith("/osg/"):
+            raise ValueError(f"publish_image is for /osg/* topics, not {topic!r}")
+        arr = np.ascontiguousarray(image)
+        if arr.ndim != 3 or arr.shape[2] != 3 or arr.dtype != np.uint8:
+            raise ValueError(f"expected an HxWx3 uint8 image, got {arr.shape} {arr.dtype}")
+        if encoding not in ("rgb8", "bgr8"):
+            raise ValueError(f"encoding must be rgb8 or bgr8, not {encoding!r}")
+        pub = self._image_pubs.get(topic)
+        if pub is None:
+            pub = self.node.create_publisher(Image, topic, 1)
+            self._image_pubs[topic] = pub
+        msg = Image()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.frame_id = self.args.camera_frame or "camera_color_optical_frame"
+        msg.height, msg.width = int(arr.shape[0]), int(arr.shape[1])
+        msg.encoding = encoding
+        msg.is_bigendian = 0
+        msg.step = int(arr.shape[1] * 3)
+        msg.data = arr.tobytes()
+        pub.publish(msg)
+        return {"published": True}
+
     def get_last_goal(self):
         return self.last_goal
 
@@ -403,6 +667,8 @@ class BridgeNode:
             "send_goal": self.send_goal, "nav_status": self.nav_status,
             "cancel": self.cancel, "execute": self.execute, "look": self.look,
             "pop_floor_switch": self.pop_floor_switch, "last_goal": self.get_last_goal,
+            "publish_image": self.publish_image, "publish_markers": self.publish_markers,
+            "publish_grid": self.publish_grid,
         }
 
 
@@ -414,14 +680,29 @@ def serve(bridge, addr, authkey) -> None:
     """
     from multiprocessing.connection import Listener
 
+    from multiprocessing.connection import AuthenticationError
+
     with Listener(addr, authkey=authkey) as listener:
         bridge.node.get_logger().info(f"bridge listening on {addr}")
         while True:
-            conn = listener.accept()
+            # A peer that goes away is the pipeline's business, never the
+            # bridge's. Seen for real: the pipeline container exiting while a
+            # reply was in flight (ConnectionResetError from send), and a bare
+            # TCP probe that closed before the auth challenge (EOFError from
+            # accept). Either used to take the whole node down -- and with it
+            # the TF buffer and the outstanding Nav2 goal -- until compose
+            # restarted it.
+            try:
+                conn = listener.accept()
+            except (EOFError, ConnectionResetError, AuthenticationError) as exc:
+                bridge.node.get_logger().warn(f"rejected a connection: {exc!r}")
+                continue
             bridge.node.get_logger().info("pipeline connected")
             try:
                 while serve_once(conn, bridge.handlers()):
                     pass
+            except (EOFError, ConnectionResetError, BrokenPipeError) as exc:
+                bridge.node.get_logger().warn(f"pipeline dropped mid-call: {exc!r}")
             finally:
                 conn.close()
                 bridge.node.get_logger().info("pipeline disconnected")

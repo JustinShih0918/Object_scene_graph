@@ -106,6 +106,7 @@ class FakeRobot:
     def __init__(self, args) -> None:
         import rclpy
         from geometry_msgs.msg import Twist
+        from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
         from rclpy.node import Node
         from sensor_msgs.msg import CameraInfo, Image
         from std_msgs.msg import Int32
@@ -127,17 +128,44 @@ class FakeRobot:
         self._started = time.time()
         self._floor_sent = False
 
-        self._rgb_pub = self.node.create_publisher(Image, args.rgb_topic, 10)
-        self._depth_pub = self.node.create_publisher(Image, args.depth_topic, 10)
+        # The same rule as the bridge (bridge_node.is_compressed_topic): a
+        # topic named `.../compressed` or `.../compressedDepth` carries
+        # CompressedImage, jpeg for colour and the 12-byte header + png for
+        # depth, exactly as image_transport's plugins publish them.
+        from sensor_msgs.msg import CompressedImage
+
+        self._rgb_compressed = str(args.rgb_topic).endswith("/compressed")
+        self._depth_compressed = str(args.depth_topic).endswith("/compressedDepth")
+        self._CompressedImage = CompressedImage
+        self._rgb_pub = self.node.create_publisher(
+            CompressedImage if self._rgb_compressed else Image, args.rgb_topic, 10)
+        self._depth_pub = self.node.create_publisher(
+            CompressedImage if self._depth_compressed else Image, args.depth_topic, 10)
         self._info_pub = self.node.create_publisher(CameraInfo, args.camera_info_topic, 10)
         self._floor_pub = self.node.create_publisher(Int32, args.floor_topic, 10)
-        self.node.create_subscription(Twist, args.cmd_vel_topic, self._on_twist, 10)
+        # The tick and cmd_vel go in SEPARATE callback groups, and that is what
+        # makes `execute()` testable at all. Left in the node's one default
+        # (mutually exclusive) group, they cannot run at the same time however
+        # many threads the executor has -- and the tick is not cheap: it
+        # ray-casts a `width x height` depth image every period (53 ms for the
+        # default 640x480 on a Jetson, against a 100 ms period at 10 Hz). The
+        # timer is then ready again almost as soon as it yields, so `_on_twist`
+        # is starved and the base never moves: the bridge drives it for the
+        # full `move_timeout_s` and reports `achieved: 0.0`, which reads as a
+        # broken `execute()` when nothing is wrong with the bridge at all.
+        # Two groups let the MultiThreadedExecutor above overlap them; `pose`
+        # and `_twist` are already `_lock`-guarded for exactly this.
+        self._tick_group = MutuallyExclusiveCallbackGroup()
+        self._cmd_group = MutuallyExclusiveCallbackGroup()
+        self.node.create_subscription(Twist, args.cmd_vel_topic, self._on_twist, 10,
+                                      callback_group=self._cmd_group)
         self._tf = TransformBroadcaster(self.node)
         self._Image, self._CameraInfo, self._Int32 = Image, CameraInfo, Int32
         self._rclpy = rclpy
 
         self._make_servers()
-        self.node.create_timer(1.0 / float(args.rate_hz), self._tick)
+        self.node.create_timer(1.0 / float(args.rate_hz), self._tick,
+                               callback_group=self._tick_group)
         self._last_tick = time.time()
 
     # ------------------------------------------------------------- the servers
@@ -275,20 +303,37 @@ class FakeRobot:
         rgb = render_rgb(depth)
         mm = (depth * 1000.0).astype(np.uint16)
 
-        img = self._Image()
-        img.header.stamp, img.header.frame_id = stamp, self.args.camera_frame
-        img.height, img.width = self.height, self.width
-        img.encoding, img.is_bigendian = "rgb8", 0
-        img.step = self.width * 3
-        img.data = rgb.tobytes()
+        if self._rgb_compressed:
+            import cv2
+            img = self._CompressedImage()
+            img.header.stamp, img.header.frame_id = stamp, self.args.camera_frame
+            img.format = "rgb8; jpeg compressed bgr8"
+            ok, buf = cv2.imencode(".jpg", np.ascontiguousarray(rgb[..., ::-1]))
+            img.data = buf.tobytes()
+        else:
+            img = self._Image()
+            img.header.stamp, img.header.frame_id = stamp, self.args.camera_frame
+            img.height, img.width = self.height, self.width
+            img.encoding, img.is_bigendian = "rgb8", 0
+            img.step = self.width * 3
+            img.data = rgb.tobytes()
         self._rgb_pub.publish(img)
 
-        dimg = self._Image()
-        dimg.header.stamp, dimg.header.frame_id = stamp, self.args.camera_frame
-        dimg.height, dimg.width = self.height, self.width
-        dimg.encoding, dimg.is_bigendian = "16UC1", 0
-        dimg.step = self.width * 2
-        dimg.data = mm.tobytes()
+        if self._depth_compressed:
+            import struct
+            import cv2
+            dimg = self._CompressedImage()
+            dimg.header.stamp, dimg.header.frame_id = stamp, self.args.camera_frame
+            dimg.format = "16UC1; compressedDepth png"
+            ok, buf = cv2.imencode(".png", mm)
+            dimg.data = struct.pack("<iff", 0, 0.0, 0.0) + buf.tobytes()
+        else:
+            dimg = self._Image()
+            dimg.header.stamp, dimg.header.frame_id = stamp, self.args.camera_frame
+            dimg.height, dimg.width = self.height, self.width
+            dimg.encoding, dimg.is_bigendian = "16UC1", 0
+            dimg.step = self.width * 2
+            dimg.data = mm.tobytes()
         self._depth_pub.publish(dimg)
 
         info = self._CameraInfo()

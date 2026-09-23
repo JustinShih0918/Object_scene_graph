@@ -26,7 +26,9 @@
 # Built and run by docker/compose.thor.yaml. See docs/THOR.md.
 # ---------------------------------------------------------------------------
 ARG ROS_BASE=ros:humble-ros-base
-FROM ${ROS_BASE}
+# Two targets: `bridge` (the default -- compose names it explicitly, because
+# without that Docker builds the LAST stage) and `rviz`, below.
+FROM ${ROS_BASE} AS bridge
 
 ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -39,15 +41,22 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #   rmw-cyclonedds   the Stretch's DDS implementation
 # Images are decoded with numpy and quaternions turned by hand (frames.py), so
 # there is no cv_bridge and no tf_transformations here.
+#
+# python3-pip is in this list because `ros:humble-ros-base` does not ship one
+# -- only `ros-base`'s colcon tooling, which does not pull pip in. Without it
+# the hydra install below fails with `pip3: command not found`.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
     rm -f /etc/apt/apt.conf.d/docker-clean \
     && apt-get update && apt-get install -y --no-install-recommends \
        ros-humble-nav2-msgs \
+       ros-humble-rtabmap-msgs \
        ros-humble-control-msgs \
        ros-humble-message-filters \
        ros-humble-tf2-ros-py \
        ros-humble-rmw-cyclonedds-cpp \
        python3-numpy \
+       python3-pip \
+       python3-opencv \
        sudo tmux \
     && rm -rf /var/lib/apt/lists/*
 
@@ -80,3 +89,25 @@ WORKDIR /workspace
 # No custom entrypoint: the base image's already sources the ROS overlay, and
 # compose supplies the command (scripts/ros2/bridge.sh).
 CMD ["bash", "scripts/ros2/bridge.sh"]
+
+# ---------------------------------------------------------------------------
+# rviz: the same image plus RViz, as a SEPARATE build target so the bridge
+# proper stays the ~270 MB it was designed to be -- rviz2 and Qt roughly
+# triple that. It is the only ROS process on the Thor, so it is the only place
+# an RViz can run; compose exposes it as the on-demand `rviz` service
+# (profile `tools`), which puts the window on the Thor's own screen.
+#
+# libgl1-mesa-dri is the software renderer (llvmpipe). The bridge image has no
+# GPU on purpose, and a debug view does not need one.
+# ---------------------------------------------------------------------------
+FROM bridge AS rviz
+ARG USERNAME=user
+USER root
+RUN --mount=type=cache,target=/var/cache/apt,sharing=private \
+    apt-get update && apt-get install -y --no-install-recommends \
+       ros-humble-rviz2 \
+       ros-humble-rqt-image-view \
+       libgl1-mesa-dri \
+    && rm -rf /var/lib/apt/lists/*
+USER $USERNAME
+CMD ["bash", "scripts/ros2/rviz.sh"]

@@ -63,11 +63,59 @@ def main(cfg: DictConfig) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     OmegaConf.save(cfg, out_dir / "config.yaml")
 
+    # Everything below is written AS IT HAPPENS, not when the run ends. Two
+    # runs were lost by their shell closing: no episodes.jsonl, no map, and a
+    # stdout log that -- piped through tee -- had been sitting in Python's
+    # 8 KB block buffer. So: line-buffered stdout, SIGTERM (kill, docker stop,
+    # a closing terminal's hangup) treated as Ctrl-C so the record and the map
+    # still get written, and the mapping pass checkpoints its map below.
+    import signal
+    import sys
+
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(line_buffering=True)
+
+    def _stop(signum, _frame):
+        raise KeyboardInterrupt(f"signal {signum}")
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, _stop)
+
     # Same refusal as a benchmark run: a model server that is down is not a
     # degraded run, and on a robot it is a robot driving on a dead detector.
     probe_served_models(cfg)
 
     env = build_env(cfg)
+    # The same kind of refusal as probe_served_models, for the robot's side:
+    # a run that would drive found out Nav2 was missing at its first goal --
+    # `send_goal: RuntimeError: no navigate_to_pose action server` -- after
+    # every model had loaded. Ask the bridge first; it costs nothing.
+    info = env.transport.ping()
+    if not info.get("nav_server", True):
+        raise SystemExit(
+            f"no {cfg.ros2.nav_action} action server on the robot. Launch Nav2 there "
+            "(stretch_nav2 navigation.launch.py) and check `ros2 action info "
+            f"{cfg.ros2.nav_action}` shows a server, then rerun.")
+    # A robot on another DDS vendor is the failure that LOOKS like a working
+    # robot: topics cross vendors, services and actions do not, so every Nav2
+    # goal silently times out and the base never moves (bridge_node.robot_rmw).
+    foreign = {v: n for v, n in (info.get("robot_rmw") or {}).items()
+               if v != "cyclonedds" and any(name != "osg_bridge" for name in n)}
+    if foreign:
+        raise SystemExit(
+            "the robot's nodes are not on CycloneDDS: "
+            + "; ".join(f"{v}: {', '.join(sorted(set(n)))}" for v, n in foreign.items())
+            + ". Actions and services do not cross DDS vendors, so Nav2 would never "
+            "answer a goal. Relaunch the robot's stack (driver, camera, Nav2, SLAM) with "
+            "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp and the CycloneDDS env exported in "
+            "EVERY shell, then rerun.")
+    # Which map Nav2 plans on. slam_toolbox = the robot maps as it goes (the
+    # mapping protocol); map_server = AMCL on a map it was given, which must
+    # then be localised BEFORE the run (docs/THOR.md, "Mapping with slam_toolbox").
+    map_pubs = info.get("map_publishers")
+    if map_pubs is not None:
+        print(f"[robot] /map published by: {', '.join(map_pubs) or 'nobody (no map yet?)'}")
     components = build_run_components(cfg, env=env)
     env.attach_driver(components["pointnav"])
     target = env.target_category()

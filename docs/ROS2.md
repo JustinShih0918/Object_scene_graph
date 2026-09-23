@@ -229,7 +229,7 @@ This list is `src/osg/core/config/ros2.py`.
 
 | what to check | knob |
 |---|---|
-| Image/depth/info topic names; whether depth is really aligned to colour | `ros2.rgb_topic`, `depth_topic`, `camera_info_topic` |
+| Image/depth/info topic names; whether depth is really aligned to colour; raw or compressed (a `/compressed` / `/compressedDepth` name selects the transport) | `ros2.rgb_topic`, `depth_topic`, `camera_info_topic` |
 | Portrait camera: which rotation, or whether `stretch_core` already rotates (then 0) | `ros2.rotate_deg` — look at `outputs/ros2_check/frame.png` |
 | The optical frame name in TF | `ros2.camera_frame` (empty = the image header's) |
 | Depth encoding and scale (16UC1 mm vs 32FC1 m) | `ros2.depth_scale` |
@@ -237,7 +237,63 @@ This list is `src/osg/core/config/ros2.py`.
 | Head tilt action and joint name | `ros2.head_traj_action`, `head_tilt_joint`, `look_step_deg` |
 | Nav2's action name, goal frame, and how long it flails on an unreachable goal before aborting | `ros2.nav_action`, `goal_frame`, `nav_timeout_s` |
 | DDS: CycloneDDS, host networking, a matching domain | `docker/compose.ros2.yaml`, `ROS_DOMAIN_ID`; `ros2 topic list` from the bridge shell |
+| DDS pinned to the **wired** NIC at both ends, with the peer list and buffers sized for camera frames | `CYCLONEDDS_CONFIG`, `CYCLONEDDS_URI`, `CYCLONEDDS_IFACE` in `docker/.env` — see below |
 | Floor-to-optical-frame height, and the FOV after rotation | `agent.camera_height`, `eval.hfov_deg`, `eval.rgb_width/height` |
+
+## CycloneDDS on the link to the robot
+
+The DDS tuning is **not this repo's**. `stretch_main` drives the same Stretch and owns it;
+`docker/cyclonedds-eth.xml` here is a copy of `stretch_main/docker/cyclonedds-eth.xml`, and
+both composes mount it at `/etc/cyclonedds-eth.xml` with `CYCLONEDDS_URI` pointing there.
+
+**Keep the two in sync.** The config pins DDS to the wired NIC, and it only works if **both
+ends are pinned the same way** — a machine left on Cyclone's `autodetermine` can choose its
+Wi-Fi NIC, and then the two never discover each other at all. Drift between the copies
+reproduces exactly that, and silently. Everything below the copy's header block is
+stretch_main's file verbatim, so the check is a plain diff:
+
+```bash
+diff docker/cyclonedds-eth.xml ../stretch_main/docker/cyclonedds-eth.xml   # header only
+```
+
+What the file buys:
+
+- **The wired NIC, chosen explicitly.** `autodetermine` picks one interface by Cyclone's own
+  ranking, and with Wi-Fi and Ethernet both up that choice is not stable. A 1280x720 `rgb8`
+  frame is 2.76 MB; at 30 Hz that is ~663 Mbit/s, which Wi-Fi will not carry.
+- **A unicast peer list**, as a backstop where a direct cable or a dumb switch does not carry
+  multicast reliably.
+- **`MaxAutoParticipantIndex=60`.** Unicast discovery makes each participant claim an index,
+  and the default cap is ten per host per domain. Past the tenth, nodes die at startup with
+  `Failed to find a free participant index for domain 0` — which reads like a Cyclone/robot
+  incompatibility and is only this cap.
+- **Buffers sized for image traffic** (`SocketReceiveBufferSize` 10 MB, `WhcHigh` 4 MB). This
+  needs `net.core.rmem_max` raised on the **host**, because `network_mode: host` means the
+  host's value applies; `docker/.env.example` has the one-liner.
+
+Three variables in `docker/.env` drive it, and `CYCLONEDDS_IFACE` is the only one that is
+per-machine — **this** machine's wired NIC, not the robot's (`ip -brief addr`). The Thor's is
+`enP2p1s0`.
+
+Neither failure here is silent. A NIC name that does not exist, or one that is merely **down**
+(no cable), gives `enP2p1s0: does not match an available interface` followed by
+`rmw_create_node: failed to create domain`. A missing config file gives `can't open
+configuration file` — docker will have created a *directory* at the mount point because
+`CYCLONEDDS_CONFIG` pointed nowhere.
+
+One editing trap, if you ever add a comment to the file: **an XML comment may not contain a
+double hyphen**, so a rule line of dashes makes the whole file unparseable and Cyclone refuses
+to start.
+
+**Both ends must also be the same vendor.** `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` has to be
+exported in *every* shell that launches part of the robot's stack — the driver, the camera,
+Nav2, SLAM — or the robot comes up on ROS's default Fast-DDS. That mismatch is the one that
+looks like a working robot: DDS topics interoperate across vendors, so the map, TF, the images
+and `cmd_vel` all flow, but services and actions do **not**, so every `NavigateToPose` goal goes
+unanswered, `Nav2Driver` times it out as refused after `nav_timeout_s`, and the base never
+moves while frontiers are retired one by one. The bridge now reads each `/tf` publisher's
+vendor from its GID and `run_robot.py` refuses to start against a Fast-DDS robot; by hand,
+`ros2 topic info -v /tf` shows GIDs starting `01.0f` (Fast-DDS) or `01.10` (CycloneDDS).
 
 ## Where the code is
 
@@ -248,6 +304,9 @@ This list is `src/osg/core/config/ros2.py`.
 | `src/osg/ros2/transport.py` | the pipeline's end; the seam the tests fake |
 | `src/osg/ros2/bridge_node.py` | the rclpy node (system python3.10 only) |
 | `src/osg/ros2/fake_robot.py` | the synthetic robot, over ROS |
+| `src/osg/eval/debug_stream.py` | the simulator's debug view and the scene graph, pushed through the bridge to RViz (`/osg/*`) |
+| `scripts/ros2/rviz.sh`, `scripts/ros2/image_window.py`, `scripts/ros2/osg_map.rviz`, `scripts/ros2/osg.rviz` | the operator's two windows (camera: `image_window.py` on `/osg/detections`; map: rviz2 on `osg_map.rviz`) and the old everything-in-one view; on the Thor, the `rviz` compose service |
+| `docker/stretch/nav2_params_slam.yaml` | the robot's Nav2 params with its slam_toolbox block, for `navigation.launch.py use_slam:=True` (docs/THOR.md, *Mapping with slam_toolbox*) |
 | `src/osg/ros2/loopback.py` | the same robot with the ROS taken out |
 | `src/osg/planning/nav2_driver.py` | the mover: `goal_xy -> NavStep` |
 | `src/osg/planning/nav2_backends.py` | the robot's navigator, and habitat's |

@@ -11,6 +11,7 @@ See `osg/ros2/` for the bridge and `sim/ros2_env.py` for the env.
 """
 from __future__ import annotations
 
+from typing import List, Optional
 from dataclasses import dataclass
 
 
@@ -73,6 +74,13 @@ class Ros2Config:
     # frame means the camera or TF is gone, and continuing on a frozen view is
     # the failure that looks like a bad planner.
     frame_timeout_s: float = 10.0
+    # How long a run keeps WAITING through missing frames before it gives up,
+    # printing once per timeout. This is the carry: on the Stretch a second
+    # storey is reached by hand, and slam_toolbox (2D) has to be relaunched
+    # there, which takes `map -> camera` away for the minutes it takes to
+    # carry the robot up and bring the stack back. Without patience the
+    # mapping pass died on the stairs. 0 = fail at the first timeout.
+    frame_patience_s: float = 900.0
     # The FSM's own discrete actions (the opening scan, the escape window, the
     # close look) are metered on velocity against odometry rather than sent
     # through the navigator -- a 0.25 m pose per step would invoke a global

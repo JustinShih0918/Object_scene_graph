@@ -147,3 +147,47 @@ def test_the_robot_path_runs_with_habitat_unavailable():
     An `import habitat` anywhere on the robot path would only be discovered on
     the device, after the image was built and shipped."""
     assert _run(_ROBOT_PROBE).endswith("STEPS 6")
+
+
+def test_costmap_to_occupancy_grid_puts_each_cell_where_frames_py_says():
+    """grid[i, j] at pipeline (x, z); OccupancyGrid rows run along ROS y = -z."""
+    import numpy as np
+
+    from osg.ros2.bridge_node import grid_to_occupancy
+
+    g = np.full((3, 2), -1, np.int8)      # 3 cells along x, 2 along z
+    g[2, 0] = 100                          # x index 2, z index 0 -> pipeline (2.5, 0.5)*res + origin
+    data, (ox, oy), (w, h) = grid_to_occupancy(g, (-1.0, -1.0), 0.5)
+    assert (w, h) == (3, 2) and ox == -1.0 and oy == -(-1.0 + 2 * 0.5)    # y from -z: [0, 1] -> origin y = 0
+    occ = data.reshape(h, w)               # rows: ROS y up; cols: x
+    # pipeline z = -1 + 0.5*0.5 = -0.75 -> ROS y = 0.75 -> the TOP row (index 1); x = -1 + 2.5*0.5 = 0.25 -> col 2
+    assert occ[1, 2] == 100 and (occ == 100).sum() == 1
+
+
+def test_compressed_frames_decode_to_what_the_raw_ones_would():
+    """jpeg colour and header+png depth, as image_transport publishes them."""
+    import struct
+    from types import SimpleNamespace
+
+    import numpy as np
+    cv2 = pytest.importorskip("cv2")
+    from osg.ros2.bridge_node import compressed_to_array, is_compressed_topic
+
+    assert is_compressed_topic("/camera/color/image_raw/compressed")
+    assert is_compressed_topic("/camera/aligned_depth_to_color/image_raw/compressedDepth")
+    assert not is_compressed_topic("/camera/color/image_raw")
+
+    rgb = np.zeros((8, 12, 3), np.uint8); rgb[..., 0] = 200      # red in RGB
+    ok, buf = cv2.imencode(".png", np.ascontiguousarray(rgb[..., ::-1]))
+    out, enc = compressed_to_array(SimpleNamespace(format="rgb8; png compressed bgr8", data=buf.tobytes()))
+    assert enc == "rgb8" and out.shape == (8, 12, 3) and out[0, 0, 0] == 200 and out[0, 0, 2] == 0
+
+    mm = np.arange(8 * 12, dtype=np.uint16).reshape(8, 12) * 37
+    ok, buf = cv2.imencode(".png", mm)
+    for fmt in ("16UC1; compressedDepth png", "16UC1; compressedDepth"):   # the Stretch names no codec
+        msg = SimpleNamespace(format=fmt, data=struct.pack("<iff", 0, 0.0, 0.0) + buf.tobytes())
+        out, enc = compressed_to_array(msg)
+        assert enc == "16UC1" and out.dtype == np.uint16 and np.array_equal(out, mm)
+
+    with pytest.raises(ValueError):
+        compressed_to_array(SimpleNamespace(format="16UC1; compressedDepth rvl", data=b"\0" * 20))

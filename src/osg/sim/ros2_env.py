@@ -31,7 +31,7 @@ import numpy as np
 
 from ..core.types import FrameData
 from ..ros2 import frames as F
-from ..ros2.transport import Transport
+from ..ros2.transport import BridgeUnavailable, Transport
 
 # The actions the FSM can emit. `stop` ends the episode; the look pair moves the
 # head; the rest are metered on the base.
@@ -182,10 +182,26 @@ class Ros2Env:
             self.driver.mark_cancelled()
 
     def _next_frame(self, fresh: bool) -> FrameData:
-        payload = self.transport.get_frame(
-            after_seq=self._last_seq if fresh else -1,
-            timeout_s=float(self.ros.step_period_s) + float(self.ros.frame_timeout_s),
-        )
+        timeout = float(self.ros.step_period_s) + float(self.ros.frame_timeout_s)
+        patience = float(getattr(self.ros, "frame_patience_s", 0.0) or 0.0)
+        waited = 0.0
+        while True:
+            try:
+                payload = self.transport.get_frame(
+                    after_seq=self._last_seq if fresh else -1, timeout_s=timeout)
+                break
+            except BridgeUnavailable:
+                # No frame is the camera or `map -> camera` gone. On the
+                # Stretch that is also what a carry to the other storey
+                # looks like -- slam_toolbox relaunched there -- so wait it
+                # out, saying so, before calling the run dead.
+                waited += timeout
+                if waited >= patience:
+                    raise
+                print(f"[robot] no camera frame for {waited:.0f}s (camera or map->camera TF "
+                      f"missing; carrying?) -- waiting up to {patience:.0f}s", flush=True)
+        if waited:
+            print(f"[robot] frames are back after {waited:.0f}s", flush=True)
         self._last_seq = int(payload.get("seq", self._last_seq + 1))
         self._poll_floor_switch()
         return self._to_frame(payload)

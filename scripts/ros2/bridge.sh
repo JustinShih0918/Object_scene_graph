@@ -28,10 +28,17 @@ source "$ROS_SETUP"
 #   bash scripts/ros2/bridge.sh                             # the defaults
 #   bash scripts/ros2/bridge.sh +experiment=stretch3_map    # a preset's values
 #   bash scripts/ros2/bridge.sh -- --rgb-topic /other       # a one-off override
+#   bash scripts/ros2/bridge.sh --rviz                      # plus RViz (scripts/ros2/rviz.sh)
+#
+# `--rviz` is this script's, not Hydra's: it opens RViz beside the node in the
+# same shell, which is the x86 single-container case. On the Thor the bridge
+# is headless and RViz is its own compose service; see rviz.sh.
 HYDRA_ARGS=()
 PASSTHROUGH=()
+WITH_RVIZ=0
 for arg in "$@"; do
-    if [ "$arg" = "--" ]; then shift $((${#HYDRA_ARGS[@]} + 1)); PASSTHROUGH=("$@"); break; fi
+    if [ "$arg" = "--" ]; then shift $((${#HYDRA_ARGS[@]} + WITH_RVIZ + 1)); PASSTHROUGH=("$@"); break; fi
+    if [ "$arg" = "--rviz" ]; then WITH_RVIZ=1; continue; fi
     HYDRA_ARGS+=("$arg")
 done
 
@@ -49,4 +56,10 @@ BRIDGE_FLAGS="$("$CONFIG_PYTHON" scripts/ros2/bridge_args.py "${HYDRA_ARGS[@]}")
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 # shellcheck disable=SC2086 -- bridge_args.py shell-quotes each token
 eval "set -- $BRIDGE_FLAGS"
+
+if [ "$WITH_RVIZ" = "1" ]; then
+    # Background, and not fatal: a missing rviz2 or DISPLAY prints why and the
+    # bridge still comes up. The bridge is what the run needs.
+    bash scripts/ros2/rviz.sh &
+fi
 exec "$ROS_PYTHON" -m osg.ros2.bridge_node "$@" "${PASSTHROUGH[@]}"

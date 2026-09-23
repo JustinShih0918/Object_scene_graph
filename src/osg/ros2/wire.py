@@ -34,6 +34,9 @@ OPS = (
     "look",             # (tilt_delta_deg) -> {"tilt_deg": float}
     "pop_floor_switch", # -> {"floor": Optional[int]}
     "last_goal",        # -> the goal dict handed to Nav2, or None
+    "publish_image",    # (topic, image, encoding) -> {"published": True}; RViz only, /osg/* only
+    "publish_markers",  # (topic, markers, frame_id) -> {"published": int}; RViz only, /osg/* only
+    "publish_grid",     # (topic, grid, origin_xy, resolution, frame_id, z) -> {"published": True}; RViz only, /osg/* only
     "shutdown",         # -> {"bye": True}
 )
 

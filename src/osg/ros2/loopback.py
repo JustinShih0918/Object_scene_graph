@@ -178,6 +178,9 @@ class LoopbackRobot:
             "send_goal": self.send_goal, "nav_status": self.nav_status,
             "cancel": self.cancel, "execute": self.execute, "look": self.look,
             "pop_floor_switch": self.pop_floor_switch, "last_goal": self.get_last_goal,
+                    "publish_image": lambda topic, image, encoding="bgr8": {"published": True},
+            "publish_markers": lambda topic, markers, frame_id="map": {"published": len(markers)},
+            "publish_grid": lambda topic, grid, origin_xy, resolution, frame_id="map", z=0.0: {"published": True},
         }
 
 

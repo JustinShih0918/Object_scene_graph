@@ -133,7 +133,7 @@ class RedNet(nn.Module):
         return layers
 
     def _load_resnet_pretrained(self):
-        pretrain_dict = torch.load(ckpt, map_location='cpu')['model_state']
+        pretrain_dict = torch.load(ckpt, map_location='cpu', weights_only=False)['model_state']
         prefix = 'module.'
         pretrain_dict = {
             (k[len(prefix):] if k[:len(prefix)] == prefix else k): v for k, v in pretrain_dict.items()
@@ -477,9 +477,13 @@ def load_rednet(device, ckpt="", resize=True, stabilize=False):
 
     print("=> loading RedNet checkpoint '{}'".format(ckpt))
     if device.type == 'cuda':
-        checkpoint = torch.load(ckpt, map_location='cpu')
+        # weights_only=False: torch>=2.6 defaults it to True and then refuses
+        # this checkpoint (it carries a numpy scalar). It is the repo's own
+        # validated download (scripts/download_weights.py --rednet loads it the
+        # same way); the x86 arm only avoided this by pinning torch 2.1.
+        checkpoint = torch.load(ckpt, map_location='cpu', weights_only=False)
     else:
-        checkpoint = torch.load(ckpt, map_location=lambda storage, loc: storage)
+        checkpoint = torch.load(ckpt, map_location=lambda storage, loc: storage, weights_only=False)
 
     # state_dict = checkpoint['state_dict']
     state_dict = checkpoint['model_state']
