@@ -416,6 +416,20 @@ class BridgeNode:
                 GoalStatus.STATUS_CANCELED: "canceled",
             }.get(status, "aborted")
             self._goal_handle = None
+            state = self._goal_state
+        # Nav2 gives no reason with the result; the reason is on the ROBOT in
+        # bt_navigator's / planner_server's log. This line at least says WHEN
+        # and WHICH, so those logs can be read at the right second.
+        # Two call sites on purpose. rclpy caches the severity per call site
+        # and raises ("Logger severity cannot be changed between calls") when
+        # one line is used at two levels -- a CANCELED goal followed by a
+        # SUCCEEDED one took the executor thread down this way, and the bridge
+        # then served the pipeline with no ROS behind it.
+        msg = f"goal {goal_id} {state.upper()} (Nav2 status {int(status)})"
+        if state == "succeeded":
+            self.node.get_logger().info(msg)
+        else:
+            self.node.get_logger().warn(msg)
 
     def nav_status(self) -> dict:
         with self._lock:
@@ -730,7 +744,30 @@ def parse_args(argv=None):
                    default="/stretch_controller/follow_joint_trajectory")
     p.add_argument("--head-tilt-joint", default="joint_head_tilt")
     p.add_argument("--floor-topic", default="/osg/floor")
+    # Bridge-only, like --cancel-settle-s: a visualisation topic is not a
+    # pipeline setting, so it has no field in the ros2 config group.
+    p.add_argument("--goal-topic", default="/osg/goal")
     return p.parse_args(argv)
+
+
+def _spin_or_die(executor, node) -> None:
+    """Spin, and take the process down if spinning stops.
+
+    A callback that raises ends `executor.spin()`; on a daemon thread that was
+    silent, and the socket server kept accepting the pipeline while no frame
+    and no TF could ever arrive again -- `run_robot.py` waited 900 s on "no
+    camera frame". Exiting instead drops the pipeline's connection
+    (BridgeUnavailable, loudly) and lets compose's restart bring the node back.
+    """
+    import os
+    import traceback
+
+    try:
+        executor.spin()
+    except BaseException:  # noqa: BLE001 -- anything here means the ROS side is gone
+        traceback.print_exc()
+        node.get_logger().fatal("executor stopped; exiting so the bridge is restarted")
+        os._exit(3)
 
 
 def main(argv=None) -> None:
@@ -744,7 +781,8 @@ def main(argv=None) -> None:
     bridge = BridgeNode(args)
     executor = MultiThreadedExecutor()
     executor.add_node(bridge.node)
-    spin = threading.Thread(target=executor.spin, daemon=True)
+    spin = threading.Thread(target=_spin_or_die, args=(executor, bridge.node),
+                            daemon=True)
     spin.start()
     try:
         serve(bridge, parse_addr(args.bridge_addr), args.authkey.encode("utf-8"))
