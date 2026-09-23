@@ -16,8 +16,9 @@ measurement or the reasoning behind one decision.
 Also load-bearing: [`METHODOLOGY.md`](METHODOLOGY.md) (how this repo measures ObjectNav, and
 every difference from native ASCENT), [`UNIFIED_PIPELINE.md`](UNIFIED_PIPELINE.md) (one agent
 across three datasets), [`FIGURES.md`](FIGURES.md) (every paper figure, its caption and its
-renderer), [`ZERO_SHOT_AUDIT.md`](ZERO_SHOT_AUDIT.md) (every piece of hand-authored
-per-benchmark knowledge in the pipeline).
+renderer), [`VIDEO.md`](VIDEO.md) (the ICRA video: storyboard, narration, which episode each
+clip is and why, and the robot shot list still to film), [`ZERO_SHOT_AUDIT.md`](ZERO_SHOT_AUDIT.md)
+(every piece of hand-authored per-benchmark knowledge in the pipeline).
 
 ## The logs — measurements, in order
 
