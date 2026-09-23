@@ -306,6 +306,31 @@ def test_progress_ref_resets_on_new_frontier_selection():
     assert np.allclose(agent.exploration.progress_ref_xy, [0.0, 0.0])
 
 
+def test_the_giveup_window_is_the_robots_to_widen():
+    """exploration.giveup_after_steps: on the Stretch a step is ~1 s and Nav2
+    needs longer than 15 of them to plan and recover at a doorway; the
+    default is the constant the rule shipped with."""
+    def stalled_for(steps: int, window: int):
+        cfg = make_cfg()
+        cfg.exploration.giveup_after_steps = window
+        agent = make_agent(cfg)
+        _carve_free_square(agent)
+        agent.state = State.GOTO_FRONTIER
+        agent.exploration.current_frontier = Frontier(
+            id=0, centroid_xy=np.array([3.0, 4.0]), cells=np.zeros((0, 2), dtype=int), size=0)
+        agent.step_count = 100
+        agent.exploration.progress_ref_step = 100 - steps
+        agent.exploration.progress_ref_xy = np.array([0.0, 0.0])
+        agent._goal_xy = np.array([3.0, 4.0])
+        agent._current_path = None
+        agent._act_inner(_frame([0.0, 0.0], frame_id=agent.step_count))
+        return agent.stats.get("frontier_give_up", 0)
+
+    assert stalled_for(20, window=15) == 1, "the shipped rule"
+    assert stalled_for(20, window=45) == 0, "Nav2 is still allowed to be working on it"
+    assert stalled_for(50, window=45) == 1
+
+
 def test_giveup_logged_with_frontier_and_agent_position():
     agent = make_agent()
     _carve_free_square(agent)
@@ -847,3 +872,62 @@ def test_the_viewpoint_stop_is_off_unless_asked_for():
     agent.approach.step(frame)
 
     assert agent.approach.stop_reason != "viewpoint"
+
+
+# ------------------------------------ a far sighting does not protect the stop
+
+
+def test_a_sighting_counts_at_any_range_by_default():
+    """The shipped rule: seen once this approach, at any range, and the
+    arrival is a geometry question, not an absence one."""
+    agent = make_agent()
+    agent.approach.last_good_xy = np.array([0.0, 0.0])
+    for rng in (0.8, 4.9, None):
+        agent.approach.last_good_range_m = rng
+        assert agent._seen_this_approach() is True
+    assert "far_sighting_ignored" not in agent.stats
+
+
+def test_a_far_sighting_is_ignored_when_a_range_is_set():
+    """verification.seen_counts_within_m: measured on the Stretch, one
+    0.36-score detection at 4.9 m let the agent STOP at an empty spot."""
+    cfg = make_cfg()
+    cfg.verification.seen_counts_within_m = 3.0
+    agent = make_agent(cfg)
+    agent.approach.last_good_xy = np.array([0.0, 0.0])
+
+    agent.approach.last_good_range_m = 4.9
+    assert agent._seen_this_approach() is False
+    assert agent.stats["far_sighting_ignored"] == 1
+
+    agent.approach.last_good_range_m = 1.2
+    assert agent._seen_this_approach() is True
+    agent.approach.last_good_range_m = None  # depth invalid: the sighting stands
+    assert agent._seen_this_approach() is True
+    agent.approach.last_good_xy = None
+    assert agent._seen_this_approach() is False
+
+
+def test_the_absence_reading_is_taken_after_a_far_sighting():
+    """Through `_absence_at_arrival`: with the range set, a far sighting no
+    longer short-circuits the reading -- `absence.observe` is consulted."""
+    from types import SimpleNamespace
+
+    cfg = make_cfg()
+    cfg.verification.seen_counts_within_m = 3.0
+    agent = make_agent(cfg)
+    track = SimpleNamespace(id=7, label="chair", from_prior=True, seen_live=False,
+                            presence=SimpleNamespace(n_missed=0))
+    agent.object_layer.get = lambda tid: track if tid == 7 else None
+    agent._candidate_id = 7
+    agent.approach.last_good_xy = np.array([0.0, 0.0])
+    calls = []
+    agent.absence.observe = lambda *a, **kw: (calls.append(a), None)[1]
+
+    agent.approach.last_good_range_m = 4.9
+    agent._absence_at_arrival(_frame([0.0, 0.0]), "path_consumed")
+    assert len(calls) == 1, "a 4.9 m sighting does not stand in for the reading"
+
+    agent.approach.last_good_range_m = 1.0
+    agent._absence_at_arrival(_frame([0.0, 0.0]), "path_consumed")
+    assert len(calls) == 1, "a 1.0 m sighting still does"

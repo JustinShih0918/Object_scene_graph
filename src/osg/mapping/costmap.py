@@ -61,6 +61,35 @@ class Costmap2D:
     def in_bounds(self, rc: np.ndarray) -> bool:
         return 0 <= rc[0] < self.grid.shape[0] and 0 <= rc[1] < self.grid.shape[1]
 
+    def clear_footprint(self, xy: np.ndarray, radius_m: float) -> int:
+        """The robot is standing here, so these cells are free. Returns how
+        many cells changed.
+
+        What Nav2's costmaps do as a matter of course and the simulator never
+        needed: its agent sees the floor at its feet, a head camera at 1.3 m
+        does not, and a glossy floor or the robot's own mast in a tilted view
+        puts obstacle speckle exactly where the base is. Measured on the
+        Stretch (outputs/20260922_232853): 23 of 101 poses on cells the map
+        called OCCUPIED, 57 on free islands under 50 cells, 98 free
+        components -- and wavefront frontier detection, which grows from the
+        robot's own component, found nothing from a 9-cell island.
+        """
+        r = int(np.ceil(float(radius_m) / self.resolution))
+        if r <= 0:
+            return 0
+        rc = self.world_to_grid(xy)
+        if not self.in_bounds(rc):
+            return 0
+        h, w = self.grid.shape
+        r0, r1 = max(0, rc[0] - r), min(h, rc[0] + r + 1)
+        c0, c1 = max(0, rc[1] - r), min(w, rc[1] + r + 1)
+        rr, cc = np.ogrid[r0:r1, c0:c1]
+        disc = (rr - rc[0]) ** 2 + (cc - rc[1]) ** 2 <= r * r
+        block = self.grid[r0:r1, c0:c1]
+        changed = int((disc & (block != FREE)).sum())
+        block[disc] = FREE
+        return changed
+
     # The parallel layers -- one entry per cell of `grid`, and meaningless if
     # their shapes ever diverge from it.
     _PARALLEL_LAYERS = (("height", np.nan, np.float32),

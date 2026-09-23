@@ -70,6 +70,16 @@ agent:
   # with the robot's footprint and a local costmap this pipeline does not have.
   escape_window: 0
 
+mapping:
+  # MEASURED ON THE ROBOT, 2026-09-23 (outputs/20260922_232853): on the glossy
+  # first-floor corridor the map put obstacle speckle under the base -- 23 of
+  # 101 poses on OCCUPIED cells, 57 on free islands under 50 cells, 98 free
+  # components -- and frontier detection, which grows from the robot's own
+  # component, found nothing: the agent turned in place while a doorway sat
+  # two metres away. The robot IS where it stands: footprint (0.18) plus the
+  # inflation margin (0.07) and a little.
+  footprint_clear_m: 0.30
+
 floor:
   source: external
   enabled: true
@@ -90,6 +100,68 @@ exploration:
   # storeys here.
   floor_llm: false
   search_floor_requires_anchor_test: false
+  # MEASURED ON THE ROBOT, 2026-09-23 (outputs/20260922_234724): the give-up
+  # rule's 15 steps is ~15 s here, less than Nav2 takes to plan and run one
+  # recovery at a doorway; goals it had accepted were cancelled after 4-18 s
+  # and the doorway frontier blocked for 100 steps while the robot went the
+  # other way. Three quarters of a minute before a frontier is called blocked.
+  giveup_after_steps: 45
+
+# MEASURED ON THE ROBOT, 2026-09-22: the first mapping run built a `ball` track
+# from the region proposer alone and never approached it. Re-running YOLOE
+# over that run's keyframes with its own vocabulary found the ball only at
+# 0.28 and 0.22 -- under the simulator-tuned detector floor of 0.30, so the
+# detector never named it -- and both under verification.min_score 0.35. A
+# real camera on a base that is still decelerating when the scan frame is
+# taken scores lower than the simulator ever does; these two floors are
+# lowered to let a real sighting reach the candidate gate. The other gates
+# (min_bbox_px, min_obs, min_evidence, the proposal bar) are unchanged.
+#
+# LOWERED AGAIN 2026-09-22, on the operator's call, for the real-world runs
+# only: "you see anything, build it in the scene graph". Two runs had put the
+# ball in the graph from single sightings (0.51, 0.71) that no gate would act
+# on, and one clear 0.31 sighting never entered the graph at all, because
+# admission is scene_graph.min_det_score (0.35), not the floors above. So on
+# the robot every detection the detector names is admitted, and one sighting
+# with a fifth of the evidence bar is a candidate. The simulator arms keep
+# their measured values; nothing here is a default.
+detector:
+  conf: 0.2
+scene_graph:
+  min_det_score: 0.0
+  min_det_bbox_px: 0.0
+  target_bypasses_gates: true
+  # MEASURED ON THE ROBOT, 2026-09-22 (outputs/20260922_185444): the unified
+  # preset this one composes from ships the presence filter OFF, so
+  # `object_layer.presence_filter` is None, `absence.observe` returns before
+  # taking a reading (`presence_events: []`), and a close look that saw no
+  # ball let the STOP stand -- the run ended at the empty spot, 37 steps in.
+  # The filter is the mechanism the search pass exists to show (docs/PAPER.md
+  # III-C); on the robot it is on, and the restored map's beliefs start at
+  # `reload_max_log_odds` as they always did.
+  presence:
+    enabled: true
+verification:
+  min_score: 0.25
+  min_bbox_px: 600
+  min_obs: 1
+  min_evidence: 0.2
+  # MEASURED ON THE ROBOT, 2026-09-22 (outputs/20260922_184502): the search
+  # pass walked to the ball's remembered spot, the close look saw nothing
+  # (close_look_absence 1) -- and then STOPped there anyway, ending the run 41
+  # steps in with the ball gone. That is `stop_at_stale_anchor_once` doing
+  # what the unified preset means it to: under the DualMap protocol a stale
+  # anchor gets one deliberate STOP because it "costs one attempt of three"
+  # and a failed attempt is re-armed by eval/attempts.py. A robot has ONE
+  # attempt (eval.attempts above), so the same STOP is the whole run. Off
+  # here, the absence reading applies instead and the search goes on.
+  stop_at_stale_anchor_once: false
+  # MEASURED ON THE ROBOT, 2026-09-22 (outputs/20260922_191444): one 0.36
+  # "sports ball" at 4.9 m, 34 steps before arrival, counted as "seen this
+  # approach" and the run STOPped at the empty spot with the belief at 0.44.
+  # At conf 0.2 the detector will name a ball across a room; only a sighting
+  # inside 3 m -- where its recall is measured -- may protect the stop.
+  seen_counts_within_m: 3.0
 
 eval:
   mode: ros2

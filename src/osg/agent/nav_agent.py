@@ -728,6 +728,11 @@ class NavAgent:
                     max_range=self.cfg.mapping.max_range_m,
                     stride=self.cfg.mapping.depth_stride,
                 )
+                clear_m = float(getattr(self.cfg.mapping, "footprint_clear_m", 0.0) or 0.0)
+                if clear_m > 0.0:
+                    n_cleared = self.costmap.clear_footprint(self._agent_xy, clear_m)
+                    self.stats["footprint_cells_cleared"] = (
+                        self.stats.get("footprint_cells_cleared", 0) + n_cleared)
             if self.image_text is not None:
                 self._update_value_map(frame, self.floor_layer)
             # Tests and external callers may inject an image-text scorer
@@ -1341,6 +1346,28 @@ class NavAgent:
 
     # ------------------------------------------------------------- candidates
 
+    def _seen_this_approach(self) -> bool:
+        """Was the target confirmed visible during this approach, closely
+        enough for that to protect the stop from the absence reading?
+
+        `verification.seen_counts_within_m` is the range beyond which a
+        sighting does not count; 0 is the shipped rule, any range. Measured
+        on the robot (outputs/20260922_191444): one 0.36-score "sports ball"
+        at 4.9 m, 34 steps before arrival, and the run STOPped at an empty
+        spot while both ball tracks' beliefs had already fallen to 0.44 --
+        the reading that would have abandoned was never taken because of
+        that one far frame. Detector recall beyond 3 m is 0.24-0.26
+        (`absence_max_range_m`), so a far sighting is a weak claim either way.
+        """
+        if self.approach.last_good_xy is None:
+            return False
+        lim = float(getattr(self.cfg.verification, "seen_counts_within_m", 0.0) or 0.0)
+        rng = getattr(self.approach, "last_good_range_m", None)
+        if lim > 0.0 and rng is not None and float(rng) > lim:
+            self.stats["far_sighting_ignored"] = self.stats.get("far_sighting_ignored", 0) + 1
+            return False
+        return True
+
     def _absence_at_arrival(self, frame: FrameData, reason: str,
                             from_look: bool = False) -> Optional[str]:
         """The approach is ending and the target was never seen. Say so.
@@ -1357,7 +1384,7 @@ class NavAgent:
             self.object_layer.get(self._candidate_id)
             if self._candidate_id is not None else None
         )
-        if track is None or self.approach.last_good_xy is not None:
+        if track is None or self._seen_this_approach():
             return None
         if self._stale_stop_pending and not from_look:
             # Granted at the end of the close look; the approach walked back to

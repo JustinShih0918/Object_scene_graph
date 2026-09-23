@@ -198,6 +198,8 @@ def run_eval(cfg) -> dict:
             # "value_blip2_timeout_s" "value_blip2_url"
             # "verify_api_key" "verify_base_url"
             # "verify_viewpoint_min_clearance_m"
+            # "verify_seen_counts_within_m"
+            # "giveup_after_steps" "giveup_min_progress_m"
             # region_proposal.*: enabled, weights, backbone, tau, admit_score,
             # pad_frac, min_area_px, max_area_frac, max_regions,
             # only_when_unnamed, max_per_episode, require_never_named,

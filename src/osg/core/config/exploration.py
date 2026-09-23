@@ -277,6 +277,16 @@ class ExplorationConfig:
     # greedy argmax ping-ponging between far-apart frontiers (~30 steps/trip).
     # 0 = off; higher = stronger preference for staying the course.
     continuity_weight: float = 0.0
+    # `maybe_give_up`: a frontier pursuit that has not moved the agent
+    # `giveup_min_progress_m` in `giveup_after_steps` steps is abandoned and
+    # blocked (an obstacle the map cannot see, glass, a sim collision). The
+    # values are the constants the rule shipped with. On a robot a step is
+    # about a second and Nav2 spends several planning and 10-20 s in a
+    # recovery at a doorway, so the Stretch presets widen the window: measured
+    # (outputs/20260922_234724), goals Nav2 had accepted were cancelled after
+    # 4-18 s and the doorway frontier blocked for 100 steps.
+    giveup_after_steps: int = 15
+    giveup_min_progress_m: float = 0.2
     # Line-of-sight visibility down-weighting: multiply the score of frontiers
     # the agent has clear line of sight to (no wall between => same room) by this
     # factor, so exploration prefers occluded, behind-a-doorway frontiers that

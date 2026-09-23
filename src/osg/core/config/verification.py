@@ -72,6 +72,14 @@ class VerificationConfig:
     # remain; the belief arithmetic still does its work in the ranking. Lower
     # this only to A/B the stricter behaviour.
     abandon_below_p: float = 1.0
+    # A sighting of the target during the approach farther than this (median
+    # mask depth, m) does not count as "seen this approach", so the absence
+    # reading is still taken at arrival. 0 = any range counts (the shipped
+    # rule). Measured on the Stretch (outputs/20260922_191444): a single
+    # 0.36-score detection at 4.9 m protected a stop at an empty spot while
+    # the belief had fallen to 0.44; stretch3_map sets 3.0, the range past
+    # which in-situ detector recall is 0.24-0.26 (see absence_max_range_m).
+    seen_counts_within_m: float = 0.0
     # Two rules about PRIOR-MAP tracks of the target's label, measured on the
     # released benchmark (docs/SR_PROPOSAL_CLOSE_LOOK.md, "The stale anchor"):
     # the static pass names the target in 39 of 54 in-anchor and 39 of 53

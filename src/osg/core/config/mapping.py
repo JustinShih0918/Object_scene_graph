@@ -17,6 +17,13 @@ class MappingConfig:
     max_range_m: float = 5.0
     depth_stride: int = 4
     inflate_margin_m: float = 0.07
+    # Cells within this radius of the robot are FREE because the robot is
+    # there (Costmap2D.clear_footprint). 0 is off: the simulator agent sees
+    # the floor at its feet and never needed it. The Stretch presets set it
+    # to the footprint plus a margin -- a glossy floor and the robot's own
+    # mast in a tilted view put obstacle speckle under the base, and frontier
+    # detection then grew from a 9-cell island and found nothing.
+    footprint_clear_m: float = 0.0
     floor_reject_m: float = 0.0
     multi_floor: bool = False
     freeze_floor_in_climb: bool = False

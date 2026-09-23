@@ -53,6 +53,11 @@ class ApproachPolicy:
         # retreat target when a step carries the agent behind an occluder the
         # 2D costmap line-of-sight check cannot see.
         self.last_good_xy: Optional[np.ndarray] = None
+        # How far away the target was at that sighting (median mask depth, m;
+        # None when the depth was invalid). A sighting from across the room
+        # is not the same evidence as one at arm's length -- see
+        # NavAgent._seen_this_approach.
+        self.last_good_range_m: Optional[float] = None
         self.steps_left = 0
         self.at_viewpoint = False
         self.scan_turns_left = 0
@@ -128,6 +133,7 @@ class ApproachPolicy:
             x1, y1, x2, y2 = det.bbox_xyxy
             bbox_px = max(0.0, x2 - x1) * max(0.0, y2 - y1)
             depth = self.nav._detection_depth(det, frame)
+            self.last_good_range_m = None if depth is None else float(depth)
             # Log (step, bbox_px, depth) for terminal calibration.
             self.bbox_log.append(
                 (self.nav.step_count, round(float(bbox_px), 1),
@@ -754,6 +760,7 @@ class ApproachPolicy:
             "path_consumed_cause": None,
         }
         self.last_good_xy = None
+        self.last_good_range_m = None
 
     def follow_to(self, frame: FrameData, goal_xy: np.ndarray) -> Optional[str]:
         """Follow a path to an explicit goal, replanning when the goal

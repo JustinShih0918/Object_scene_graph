@@ -1085,9 +1085,11 @@ class ExplorationStrategy:
         progress instead: a switchback staircase barely moves in (x, z) while
         climbing perfectly well.
         """
-        if world.step - self.progress_ref_step < 15:
+        window = int(getattr(self.cfg, "giveup_after_steps", 15) or 15)
+        min_m = float(getattr(self.cfg, "giveup_min_progress_m", 0.2))
+        if world.step - self.progress_ref_step < window:
             return False
-        if portal_ok or float(np.linalg.norm(world.agent_xy - self.progress_ref_xy)) >= 0.2:
+        if portal_ok or float(np.linalg.norm(world.agent_xy - self.progress_ref_xy)) >= min_m:
             self.note_progress(world)
             return False
         self.giveup_log.append((

@@ -168,7 +168,7 @@ class CloseLookPolicy:
         if not self.can_start():
             return None
         nav = self.nav
-        if nav._candidate_id is None or nav.approach.last_good_xy is not None:
+        if nav._candidate_id is None or nav._seen_this_approach():
             return None  # seen live during this approach: not an absence question
         track = nav.object_layer.get(nav._candidate_id)
         if track is None:
