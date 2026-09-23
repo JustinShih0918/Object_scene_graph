@@ -172,6 +172,7 @@ def run_eval(cfg) -> dict:
             # "flights_prefer_stair_mask"
             # "climb_direction_from_flight"
             # "floor_disproved_after_failed_attempts" "protect_floor_switch"
+            # "request_new_storey_when_exhausted" "request_new_storey_after_steps"
             # "protect_floor_switch_range_m" "protect_floor_switch_min_score"
             # "climb_carrot_min_ahead_m"
             # "climb_to_target_storey_tol_m"

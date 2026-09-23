@@ -155,13 +155,36 @@ def main(cfg: DictConfig) -> None:
         )
         print(f"[robot] restored {n_tracks} tracks on floor {env.floor_key}")
 
+    # The simulator's debug video, live: rotated frame, detections, the
+    # two-panel view, all on /osg/* for scripts/ros2/osg.rviz. Always on for a
+    # robot -- a person is watching -- and it never costs a step (debug_stream.py).
+    from osg.eval.debug_stream import DebugStream
+
+    checkpoint_every = int(cfg.ros2.map_checkpoint_steps)
+
+    def _checkpoint(step: int) -> None:
+        # The map so far, at the path the search pass will read. A run that dies
+        # at step 150 then leaves a step-140 map instead of none; a proper end
+        # overwrites it with the final one below.
+        if map_mode == "map" and checkpoint_every > 0 and step % checkpoint_every == 0:
+            save_map(map_path, agent, scene=str(cfg.ros2.map_tag))
+            print(f"[robot] map checkpoint at step {step} -> {map_path}", flush=True)
+
+    debug = DebugStream(env, log_path=out_dir / "stream.jsonl", on_step=_checkpoint)
+    if bool(cfg.ros2.wait_for_switch):
+        # Resuming after a carry (config/ros2.py): the restored graph is
+        # already on RViz through `debug.write`; the operator's switch starts
+        # the run, and its first step applies the storey.
+        frame = env.wait_for_floor_switch(
+            on_frame=lambda f: debug.write(f, agent, target, components["detector"]))
     try:
         outcome = run_episode(cfg, env, agent, episode, target, frame,
-                              components["detector"])
-    except KeyboardInterrupt:
-        print("\n[robot] interrupted -- stopping the base")
+                              components["detector"], debug)
+    except KeyboardInterrupt as exc:
+        print(f"\n[robot] interrupted ({exc or 'Ctrl-C'}) -- stopping the base")
         outcome = None
     finally:
+        debug.close()
         env.close()
 
     driver = components["pointnav"]

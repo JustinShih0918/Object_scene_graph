@@ -62,7 +62,7 @@ from .floor_policy import FloorPolicy
 from .stair_sense import StairSense
 from ..core.labels import normalize_label
 from ..graph.containers import CONTAINER_CATEGORIES
-from .state import FORWARD_ACTION, STOP_ACTION, TURN_ACTION, State
+from .state import FORWARD_ACTION, STOP_ACTION, TURN_ACTION, WAIT_ACTION, State
 
 def _horizontal_radius_m(track) -> float:
     """The track's ground-plane extent, from its fitted ellipsoid.
@@ -583,6 +583,8 @@ class NavAgent:
         here = levels.get(floor)
         others = [k for k in levels if k != floor and k not in self._disproved_floors]
         if here is None or not others:
+            if self._request_new_storey("storey disproved, none other known"):
+                return
             self.stats["floor_disproved_no_other"] = (
                 self.stats.get("floor_disproved_no_other", 0) + 1)
             return
@@ -694,6 +696,7 @@ class NavAgent:
             self.pointnav.observe(frame)
         with self.profiler.timeit("floors"):
             floor_y = self.floors.observe(frame, self.step_count)
+        self._check_storey_budget()
         # ExplorationStrategy is deliberately floor-agnostic; repoint its seam
         # whenever the active FloorLayer changes.
         self.exploration.planner = self.planner
@@ -826,6 +829,8 @@ class NavAgent:
                     return facing
                 self._explore(frame)
             if self.state == State.EXPLORE:  # nothing selectable
+                if self._waiting_for_carry():
+                    return WAIT_ACTION  # at the stairs; the operator's move
                 return TURN_ACTION  # keep looking around; map will grow
 
         if self.state == State.CLIMB:

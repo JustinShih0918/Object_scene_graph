@@ -114,5 +114,39 @@ class Ros2Config:
     # Which map. One tag per physical place, so a place can be re-mapped
     # without disturbing another.
     map_tag: str = "lab"
+    # The mapping pass rewrites its map every this many steps, at the path the
+    # search pass reads, so a run that dies keeps the map up to its last
+    # checkpoint (two runs were lost whole to a closed shell). 0 = only at the
+    # end. A save is a few MB of npz+json; at 20 steps it is well under a
+    # second every few minutes of driving.
+    map_checkpoint_steps: int = 20
     # What to look for. There is no episode dataset on a robot.
     target: str = "chair"
+    # Where the staircase is, as (x, y) in the robot's `map` frame -- e.g.
+    # `ros2.stairs_xy=[3.2,-1.5]` at launch. Nothing climbs: when the agent
+    # asks for a storey nobody has mapped (agent.request_new_storey_when_
+    # exhausted) it drives here and waits for the carry, which is where the
+    # operator wants it, and what the demo shows. Unset, it waits where it is.
+    stairs_xy: Optional[List[float]] = None
+    # Hold after the map is restored, before the first step, until the
+    # operator declares a storey on /osg/floor. To RESUME a two-floor demo
+    # whose search pass died after the carry: the run starts on floor 0 with
+    # the stale graph on screen, the switch is published, and the storey lift
+    # is shown as it would have been. Frames flow during the hold; the base
+    # gets no command and no step is spent.
+    wait_for_switch: bool = False
+    # RViz: draw the scene graph of every storey, stacked in z by
+    # floor.virtual_storey_m (the default -- both floors of a map, never
+    # overprinted), or only the storey the agent is on, so a switch visibly
+    # clears the floor it left. The bridge prefixes every marker array with
+    # DELETEALL, so what is not published is not shown.
+    viz_other_storeys: bool = True
+    # An operator waypoint: the first exploration goal on storey
+    # `waypoint_floor` (-1: the run's first round) is this (x, y) in the
+    # robot's `map` frame, facing `waypoint_yaw_deg` on arrival (a quaternion
+    # (z, w) is yaw = 2 * atan2(z, w)); the search then resumes as usual from
+    # there. A human choosing where the search starts -- say so when the run
+    # is reported. Unset, nothing changes.
+    waypoint_xy: Optional[List[float]] = None
+    waypoint_yaw_deg: Optional[float] = None
+    waypoint_floor: int = -1

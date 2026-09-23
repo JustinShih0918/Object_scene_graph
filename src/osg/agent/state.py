@@ -21,6 +21,9 @@ from enum import Enum
 
 STOP_ACTION = "stop"
 TURN_ACTION = "turn_left"
+# Hold the base. Only the robot env honours it (sim/ros2_env.py): the agent
+# has asked to be carried to another storey and is standing at the stairs.
+WAIT_ACTION = "wait"
 FORWARD_ACTION = "move_forward"
 
 

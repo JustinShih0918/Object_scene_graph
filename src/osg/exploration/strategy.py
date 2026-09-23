@@ -102,6 +102,11 @@ class ExplorationChoice:
     face_turns: int = 0
 
 
+# Consecutive selection rounds with no frontier before a storey counts as
+# finished (nav_agent asks the operator for another one). See `select`.
+EXHAUSTED_ROUNDS = 3
+
+
 class ExplorationStrategy:
     def __init__(self, cfg, planner, scorer, viewpoint_planner, affinity,
                  stats: dict, profiler) -> None:
@@ -218,6 +223,22 @@ class ExplorationStrategy:
         self.disproved_floors: set = set()
         self._floor_arrived_step: int = 0
         self._floor_seen: Optional[int] = None
+        # The storey the last real round found no frontier on, or None. Read
+        # by nav_agent: on the robot that is the cue to ask the operator for a
+        # storey nobody has mapped (agent.request_new_storey_when_exhausted).
+        self._exhausted_floor: Optional[int] = None
+        self._empty_rounds: int = 0
+        self._empty_floor: Optional[int] = None
+
+    def storey_exhausted(self, floor_id: int) -> bool:
+        """Did the last real round find no frontier on THIS storey?"""
+        return self._exhausted_floor is not None and int(self._exhausted_floor) == int(floor_id)
+
+    def steps_on_storey(self, step: int, floor_id: int) -> int:
+        """Steps since the first real round on this storey; 0 before one."""
+        if self._floor_seen is None or int(self._floor_seen) != int(floor_id):
+            return 0
+        return int(step) - int(self._floor_arrived_step)
 
     def force_select_next(self) -> None:
         """Drop the rate limit so the next `select` really runs.
@@ -292,6 +313,20 @@ class ExplorationStrategy:
                 world.costmap, world.agent_xy,
                 floor=world.floor_id,
             )
+        # "Finished" is several EMPTY rounds in a row, not one: between rounds
+        # the idle agent turns in place and the grid grows, and one empty
+        # extraction is what a give-up looks like (its frontier is blocked
+        # for 50 steps). Measured on the robot (outputs/20260922_231133):
+        # 5 frontiers at step 34, a give-up at 43, none at 64 -- the agent
+        # asked for another storey -- and a frontier again from step 88.
+        if not frontiers:
+            same = self._empty_floor is not None and int(self._empty_floor) == int(world.floor_id)
+            self._empty_rounds = self._empty_rounds + 1 if same else 1
+            self._empty_floor = int(world.floor_id)
+        else:
+            self._empty_rounds, self._empty_floor = 0, None
+        self._exhausted_floor = (
+            int(world.floor_id) if self._empty_rounds >= EXHAUSTED_ROUNDS else None)
         if not frontiers and not bool(self.cfg.search_posterior):
             # Nothing left on this floor is the strongest possible "no near
             # frontier", so the portal gate still gets its chance.

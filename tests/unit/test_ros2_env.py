@@ -164,6 +164,38 @@ def test_a_discrete_action_is_metered_on_the_base():
             env.cfg.agent.turn_deg) in t.calls
 
 
+def test_a_wait_touches_neither_the_wheels_nor_the_head():
+    """WAIT_ACTION: the robot is standing at the stairs for the carry. One
+    tick's pause and a fresh frame, no command to the base."""
+    from osg.agent.state import WAIT_ACTION
+
+    t = FakeTransport()
+    env = _env(t)
+    env.reset()
+    before = _kinds(t)
+    frame = env.step(WAIT_ACTION)
+    assert frame is not None
+    assert "execute" not in _kinds(t)[len(before):] and "look" not in _kinds(t)[len(before):]
+
+
+def test_the_hold_ends_on_the_operators_switch_and_spends_no_step():
+    """ros2.wait_for_switch: frames flow, the base is untouched, the switch is
+    applied and recorded, and the episode's step budget is intact."""
+    t = FakeTransport(camera_z=1.3)
+    env = _env(t)
+    heard = []
+    env.on_floor_switch = heard.append
+    env.reset()
+    t.floor_queue.append(1)
+    seen = []
+    frame = env.wait_for_floor_switch(on_frame=seen.append)
+    assert frame is not None and seen, "frames were delivered during the hold"
+    assert env.floor_key == 1 and env.floor_switches == [(0, 1)]
+    assert heard == [1], "the agent's floor policy was told"
+    assert "execute" not in _kinds(t) and "look" not in _kinds(t)
+    assert not env.episode_over
+
+
 def test_a_look_goes_to_the_head_not_the_wheels():
     t = FakeTransport()
     env = _env(t, look_step_deg=30.0)

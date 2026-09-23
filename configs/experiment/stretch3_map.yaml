@@ -56,6 +56,13 @@ agent:
   # Nothing climbs.
   climb_enabled: false
   down_look_every: 0
+  # A storey the agent has finished -- no frontier left, or the budget below
+  # spent on it -- is the operator's cue to carry it to one nobody has mapped
+  # (the search pass may restore a one-storey map): the agent names the lowest
+  # unvisited key, RViz and the console say "wants floor N", and publishing
+  # /osg/floor N is the arrival. 0 below is no per-storey step budget.
+  request_new_storey_when_exhausted: true
+  request_new_storey_after_steps: 0
   # The escape window watches the agent's OWN action history for a stall it
   # should break out of. With Nav2 driving, that history is a placeholder
   # repeated once per tick (planning/nav2_driver.py), so the window fires on a
@@ -100,3 +107,7 @@ eval:
 
 ros2:
   map_mode: map
+  # RViz shows the storey the agent is on; the floor it left clears at the
+  # switch (the two-floor demo is watched live, and a stacked graph reads as
+  # "the old objects are still there").
+  viz_other_storeys: false

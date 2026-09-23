@@ -58,6 +58,26 @@ class Ros2Env:
         self._last_payload: Optional[dict] = None
         self._episode_id = f"{self.ros.map_tag}_{int(time.time())}"
 
+    def wait_for_floor_switch(self, on_frame=None) -> FrameData:
+        """Hold before the first step until the operator declares a storey.
+
+        Fresh frames keep coming (so RViz shows the restored graph and the
+        camera), the switch topic is polled on each, no command reaches the
+        base and no step is counted. For resuming a demo whose search pass
+        died after the carry: the run restores the map on floor 0, the person
+        publishes /osg/floor 1, and the storey lift happens on the first step
+        -- on screen, as it would have. Returns the frame the switch arrived on.
+        """
+        print(f"[robot] holding on floor {self.floor_key}: waiting for /osg/floor "
+              f"(bash scripts/ros2/switch_floor.sh N ...)", flush=True)
+        while not self.floor_switches:
+            time.sleep(float(self.ros.step_period_s))
+            frame = self._next_frame(fresh=True)
+            if on_frame is not None:
+                on_frame(frame)
+        print(f"[robot] floor {self.floor_key} declared; starting", flush=True)
+        return frame
+
     def attach_driver(self, driver) -> None:
         """The mover, so `step` can ask who owns the base this tick."""
         self.driver = driver
@@ -113,6 +133,11 @@ class Ros2Env:
         # The FSM is steering. Take the base back first.
         if goal_active:
             self._cancel()
+        if action == "wait":
+            # Standing at the stairs for the carry (agent/state.py WAIT_ACTION):
+            # no wheel command, one tick's pause, and a fresh look.
+            time.sleep(float(self.ros.step_period_s))
+            return self._next_frame(fresh=True)
         if action in _LOOKS:
             self.transport.look(_LOOKS[action] * float(self.ros.look_step_deg))
         else:

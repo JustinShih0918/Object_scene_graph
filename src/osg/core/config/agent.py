@@ -576,6 +576,19 @@ class AgentConfig:
     # attempt at the prior's own pose that finds nothing is the single
     # strongest "it moved" reading there is.
     floor_disproved_after_failed_attempts: int = 0
+    # On the robot only (floor.source=external): when the storey the agent is
+    # on is finished -- no frontier left on it, `_after_steps` spent on it, or
+    # disproved by failed attempts with no other storey known -- ask the
+    # operator for the lowest storey key nobody has stood on, instead of
+    # idling until max_steps. The posterior and the rule above can only name
+    # storeys the map already holds, and the search pass may restore a
+    # one-storey map (docs/THOR.md, the operator's protocol). Off is every
+    # simulator arm; stretch3_map turns it on. `_after_steps` 0 is no budget;
+    # it counts from the first exploration round on the storey (after the
+    # remembered spot has been walked to and checked) and is checked every
+    # step, so it interrupts a frontier drive.
+    request_new_storey_when_exhausted: bool = False
+    request_new_storey_after_steps: int = 0
     # While a floor switch is being walked (`floors.pursuing`), only a
     # candidate seen LIVE within `range_m` with detector score >= `min_score`
     # may pre-empt it. Off (False) is the shipped behaviour: any candidate
