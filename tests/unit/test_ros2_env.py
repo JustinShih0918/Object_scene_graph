@@ -413,3 +413,68 @@ def test_closing_releases_the_base_and_the_socket():
     env.reset()
     env.close()
     assert "cancel" in _kinds(t) and "close" in _kinds(t)
+
+
+def test_a_frame_gap_is_waited_out_then_fatal(capsys):
+    """Carrying the robot to the other storey and relaunching slam_toolbox
+    takes `map -> camera` away for minutes. A run waits through that, says
+    so, and only fails once `frame_patience_s` is spent."""
+    from osg.ros2.transport import BridgeUnavailable
+
+    class GappyTransport(FakeTransport):
+        def __init__(self, misses):
+            super().__init__()
+            self.misses = misses
+
+        def get_frame(self, after_seq=-1, timeout_s=5.0):
+            if self.misses > 0:
+                self.misses -= 1
+                self.calls.append(("get_frame", after_seq))
+                raise BridgeUnavailable("no camera frame within 10.5s")
+            return super().get_frame(after_seq, timeout_s)
+
+    t = GappyTransport(misses=3)
+    env = _env(t)
+    env.cfg.ros2.frame_timeout_s = 10.0
+    env.cfg.ros2.step_period_s = 0.5
+    env.cfg.ros2.frame_patience_s = 60.0     # 3 misses = 31.5 s of gap: waited out
+    env.reset()
+    out = capsys.readouterr().out
+    assert out.count("no camera frame for") == 3 and "frames are back" in out
+
+    t = GappyTransport(misses=3)
+    env = _env(t)
+    env.cfg.ros2.frame_timeout_s = 10.0
+    env.cfg.ros2.step_period_s = 0.5
+    env.cfg.ros2.frame_patience_s = 20.0     # spent after the second miss
+    with pytest.raises(BridgeUnavailable):
+        env.reset()
+
+
+def test_an_operator_waypoint_carries_its_own_heading_once():
+    """RosNav2Backend.set_goal_yaw: the posed goal is sent facing the operator's
+    yaw; any other goal, and the same goal sent again, faces the travel
+    direction as before."""
+    import math
+
+    from osg.core.config import OSGConfig
+    from osg.planning.nav2_backends import RosNav2Backend
+    from osg.ros2.frames import ros_xy_to_pipeline
+
+    t = FakeTransport()
+    b = RosNav2Backend(t, OSGConfig().ros2)
+    b._agent_xy = np.array([0.0, 0.0])
+    goal = ros_xy_to_pipeline(-3.7773, 6.2081)
+    b.set_goal_yaw(goal, math.radians(80.3))
+    b.send_goal(goal)
+    _, x, y, yaw, _ = [c for c in t.calls if c[0] == "send_goal"][-1]
+    assert (round(x, 4), round(y, 4)) == (-3.7773, 6.2081)
+    assert yaw == pytest.approx(math.radians(80.3))
+    b.send_goal(goal)   # the heading was for one send
+    _, _, _, yaw2, _ = [c for c in t.calls if c[0] == "send_goal"][-1]
+    assert yaw2 == pytest.approx(math.atan2(6.2081, -3.7773))
+    other = ros_xy_to_pipeline(1.0, 1.0)
+    b.set_goal_yaw(goal, 0.0)
+    b.send_goal(other)  # a different goal: not posed
+    _, _, _, yaw3, _ = [c for c in t.calls if c[0] == "send_goal"][-1]
+    assert yaw3 == pytest.approx(math.atan2(1.0, 1.0))

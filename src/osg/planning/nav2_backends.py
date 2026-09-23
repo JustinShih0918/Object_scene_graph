@@ -80,9 +80,19 @@ class RosNav2Backend:
     def observe(self, frame: FrameData) -> None:
         self._agent_xy = frame.camera_position[list(PLANE)].copy()
 
+    def set_goal_yaw(self, goal_xy, yaw_ros: float) -> None:
+        """Face `yaw_ros` (map frame, radians) on arrival at THIS goal instead
+        of the direction of travel -- an operator waypoint carries a heading.
+        Applies to the next send of a goal within 5 cm of `goal_xy`, once."""
+        self._posed = (np.asarray(goal_xy, dtype=float).copy(), float(yaw_ros))
+
     def send_goal(self, goal_xy) -> None:
         x, y = frames.pipeline_xy_to_ros(goal_xy)
         yaw = frames.goal_yaw_ros(self._agent_xy, goal_xy)
+        posed = getattr(self, "_posed", None)
+        if posed is not None and float(np.linalg.norm(posed[0] - np.asarray(goal_xy, dtype=float))) <= 0.05:
+            yaw = posed[1]
+            self._posed = None
         frame_id = str(self.cfg.goal_frame)
         goal_id = self.transport.send_goal(x, y, yaw, frame_id)
         self.last_sent_ros = {"x": x, "y": y, "yaw": yaw, "frame_id": frame_id,

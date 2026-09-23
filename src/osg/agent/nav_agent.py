@@ -595,6 +595,131 @@ class NavAgent:
             self.stats.get("floor_disproved_requests", 0) + 1)
         self.stats["floor_disproved_to"] = int(other)
 
+    def _request_new_storey(self, reason: str) -> bool:
+        """Ask the operator for a storey this agent has never stood on.
+
+        The robot cannot climb, and the map it restored may hold one storey,
+        so when this one is finished the two floor requests above have
+        nothing to name: the posterior scores storeys that have surfaces, and
+        the disproved rule asks for the nearest KNOWN level. This names the
+        lowest key nobody has stood on; the operator carries the robot and
+        declares it on /osg/floor (docs/THOR.md), which `select` reads as
+        arrival and clears the request. Only on the external floor source and
+        only with `agent.request_new_storey_when_exhausted`; never a
+        simulator behaviour.
+        """
+        if not bool(getattr(self.cfg.agent, "request_new_storey_when_exhausted", False)):
+            return False
+        if not bool(getattr(self.floors, "external", False)):
+            return False
+        if self.exploration.requested_floor is not None:
+            return False  # already asking
+        known = {int(k) for k in self.floors.known_levels()}
+        key = 0
+        while key in known or key in self._disproved_floors:
+            key += 1
+        self.exploration.forced_floor = int(key)
+        self.exploration.requested_floor = int(key)
+        self.stats["new_storey_requests"] = self.stats.get("new_storey_requests", 0) + 1
+        self.stats["new_storey_request_reason"] = reason
+        self._new_storey_reason = reason
+        self._wait_at_stairs()
+        return True
+
+    def _retract_new_storey_request(self) -> None:
+        """A frontier turned up after all: the storey was not finished.
+
+        Only a request raised for exhaustion is withdrawn; a spent step budget
+        stands. Without this the wish stood for the rest of the run, and
+        because a standing wish holds the base still instead of turning, the
+        map stopped growing and the frontier that had appeared was never
+        looked at (outputs/20260922_231133, steps 88-127).
+        """
+        if getattr(self, "_new_storey_reason", None) != "no frontier left":
+            return
+        self.exploration.requested_floor = None
+        self.exploration.forced_floor = None
+        self._new_storey_reason = None
+        self.stats.pop("stairs_wait_goal_ros", None)
+        self.stats["new_storey_requests_retracted"] = (
+            self.stats.get("new_storey_requests_retracted", 0) + 1)
+
+    def _wait_at_stairs(self) -> bool:
+        """Drive to the staircase the operator declared and wait there.
+
+        `ros2.stairs_xy` is (x, y) in the robot's `map` frame, given at launch.
+        The request above is the decision; this is where the robot goes to be
+        carried: GOTO_FRONTIER is the one state that follows `_goal_xy`, and
+        on arrival the FSM drops to EXPLORE, where `_waiting_for_carry` holds
+        the base until /osg/floor arrives. Unset, the robot waits where it is.
+        """
+        xy = getattr(getattr(self.cfg, "ros2", None), "stairs_xy", None)
+        if not xy:
+            return False
+        from ..ros2.frames import ros_xy_to_pipeline
+
+        self._goal_xy = ros_xy_to_pipeline(float(xy[0]), float(xy[1]))
+        self._current_path = None
+        self.exploration.current_frontier = None
+        self._candidate_id = None
+        self.state = State.GOTO_FRONTIER
+        self.stats["stairs_wait_goto"] = self.stats.get("stairs_wait_goto", 0) + 1
+        self.stats["stairs_wait_goal_ros"] = [float(xy[0]), float(xy[1])]
+        return True
+
+    def _check_storey_budget(self) -> None:
+        """`agent.request_new_storey_after_steps`, checked every step.
+
+        Counted from the first selection round on this storey -- i.e. after
+        the restored anchor has been walked to and tested, which is the part
+        of the search pass a budget must not cut short -- and checked here
+        rather than in `_explore` so it fires while a frontier is being driven
+        to, not at the next EXPLORE round. Measured on the robot (budget 40):
+        spent at step 96, acted on at 111, three frontiers later.
+        """
+        budget = int(getattr(self.cfg.agent, "request_new_storey_after_steps", 0) or 0)
+        if budget <= 0 or self.state not in (State.EXPLORE, State.GOTO_FRONTIER):
+            return
+        here = int(self.floors.current_id)
+        if self.exploration.steps_on_storey(self.step_count, here) >= budget:
+            self._request_new_storey("storey step budget spent")
+
+    def _take_operator_waypoint(self, world) -> bool:
+        """`ros2.waypoint_xy`: the first exploration goal on the declared
+        storey is where the operator said, facing `waypoint_yaw_deg`; the
+        search resumes from there. Taken once per run."""
+        ros = getattr(self.cfg, "ros2", None)
+        xy = getattr(ros, "waypoint_xy", None)
+        if not xy or getattr(self, "_waypoint_taken", False):
+            return False
+        want_floor = int(getattr(ros, "waypoint_floor", -1))
+        if want_floor >= 0 and int(self.floors.current_id) != want_floor:
+            return False
+        from ..ros2.frames import ros_xy_to_pipeline
+
+        goal = ros_xy_to_pipeline(float(xy[0]), float(xy[1]))
+        yaw_deg = getattr(ros, "waypoint_yaw_deg", None)
+        backend = getattr(getattr(self, "pointnav", None), "backend", None)
+        if yaw_deg is not None and hasattr(backend, "set_goal_yaw"):
+            backend.set_goal_yaw(goal, float(np.radians(float(yaw_deg))))
+        self._waypoint_taken = True
+        self._goal_xy = goal
+        self._current_path = None
+        self._candidate_id = None
+        self.exploration.current_frontier = None
+        self.exploration.note_progress(world)
+        self.state = State.GOTO_FRONTIER
+        self.stats["operator_waypoint"] = [float(xy[0]), float(xy[1]),
+                                           None if yaw_deg is None else float(yaw_deg)]
+        return True
+
+    def _waiting_for_carry(self) -> bool:
+        """Has the agent asked the operator for a storey it cannot reach?"""
+        if not bool(getattr(self.floors, "external", False)):
+            return False
+        want = self.exploration.requested_floor
+        return want is not None and int(want) != int(self.floors.current_id)
+
     def _storey_disproved(self, floor_id) -> bool:
         return int(floor_id) in self._disproved_floors
 
@@ -1140,12 +1265,26 @@ class NavAgent:
         is the defect that invalidated every C3 result before it was found.
         """
         world = self._world(frame)
+        if self._take_operator_waypoint(world):
+            return
         choice = self.exploration.select(
             world,
             floor_switch=lambda cost, target_floor=None: self._try_floor_switch(
                 frame, cost, target_floor=target_floor
             ),
         )
+        here = int(self.floors.current_id)
+        on_storey = self.exploration.steps_on_storey(self.step_count, here)
+        # Not on the first round after a carry: the new storey's grid holds
+        # only what the camera has seen since the switch, and "no frontier" on
+        # a near-empty grid is "unmapped", not "finished".
+        settled = on_storey >= int(getattr(self.cfg.exploration, "select_every", 5))
+        if choice is None and settled and self.exploration.storey_exhausted(here):
+            self._request_new_storey("no frontier left")
+        elif choice is not None and self._waiting_for_carry():
+            self._retract_new_storey_request()
+        if self.state == State.GOTO_FRONTIER:
+            return  # the request sent it to the stairs; the frontier can wait
         if choice is None:
             return
         self._goal_xy = choice.goal_xy
