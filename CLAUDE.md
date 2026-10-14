@@ -172,6 +172,9 @@ it. Two golden files pin this:
 - **Generated, not source:** `outputs/`, downloads under `data/`, `relative_work/` (the ASCENT
   checkout and its recorded reference runs) and `assets/` (the real-robot recordings) are all
   ignored. Keep secrets and machine-specific dataset paths in `docker/.env`.
+- **Skills:** `.claude/skills/` holds the three loops above as procedures — `run-tests` (the
+  suites, and when regenerating a golden is right), `run-eval` (preflight, smoke, naming a run,
+  what makes an A/B valid) and `diagnose-run` (which analyzer answers which question).
 - **Where a script lives says what it is:** `scripts/` is the release surface (entry points,
   analyzers, figure renderers, `ros2/`, `video/`, `campaign/`); `scripts/legacy/` holds the
   one-off probes that produced a number in `docs/history/` and are kept only so that number

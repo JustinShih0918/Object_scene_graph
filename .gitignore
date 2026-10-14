@@ -17,7 +17,9 @@ data/splits/*
 mobileclip_blt.ts
 .vscode/
 .idea/
-.claude
+# Local Claude Code state stays private; the repo's skills are shared.
+.claude/*
+!.claude/skills/
 .conda-envs/
 relative_work/
 /assets/
