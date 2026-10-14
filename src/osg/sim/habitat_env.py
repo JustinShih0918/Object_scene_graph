@@ -139,7 +139,7 @@ class HabitatObjectNavEnv:
         caller knows which storey the goal is on, otherwise the agent's own
         height -- the historical behaviour, which silently forces every goal
         onto the agent's current floor. That substitution is why cross-floor
-        targets read as unreachable (see docs/MULTI_FLOOR.md).
+        targets read as unreachable (see docs/history/MULTI_FLOOR.md).
         """
         g = np.asarray(goal, dtype=float).ravel()
         if g.size == 3:

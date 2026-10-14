@@ -6,7 +6,7 @@ place the object moved to -- and a table of coordinates does not settle a
 geometric question. Three things came out of the first one of these that the
 numbers had not: the stair paste and the flight ends were correct, the lower
 storey's northern room was never mapped at all, and the two episodes were
-failing for different reasons (docs/CROSS_ANCHOR_OBSTACLE_MAP.md).
+failing for different reasons (docs/history/CROSS_ANCHOR_OBSTACLE_MAP.md).
 
 Written once per scene at the end of a run that read `ycb.obstacle_map_in`.
 Best effort throughout: a drawing must never be able to fail a run that has

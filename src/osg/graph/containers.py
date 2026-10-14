@@ -5,7 +5,7 @@ centroid, so there was nowhere to record that the mug is on *that* table. Both
 halves of the dynamic-scene work need exactly that edge -- the presence filter
 asks "should I be seeing this object at its mapped pose", and the search
 posterior asks "if it left this surface, which surface did it go to"
-(docs/DYNAMIC_SCENES.md). This module supplies the two predicates the
+(docs/history/DYNAMIC_SCENES.md). This module supplies the two predicates the
 `container` layer is built from.
 
 Membership is a category gate AND a geometry gate. DualMap decides the same

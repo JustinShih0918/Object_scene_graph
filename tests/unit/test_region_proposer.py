@@ -1,6 +1,6 @@
 """The proposal stage finds what the detector will not name -- within limits.
 
-Measured (docs/PERCEPTION_GAP.md): a tight proposal on the object comes from
+Measured (docs/history/PERCEPTION_GAP.md): a tight proposal on the object comes from
 YOLOE on 0-48% of frames and from FastSAM on 72-100%, and YOLOE calls the boxes
 that do cover it `mirror`, `lamp`, `chair`. But appearance can only rank the
 region first for compact objects, and a threshold at 0.24 buys 85% precision at

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The close-look A/B (docs/SR_PROPOSAL_CLOSE_LOOK.md): three arms x three scenes,
+# The close-look A/B (docs/history/SR_PROPOSAL_CLOSE_LOOK.md): three arms x three scenes,
 # dynamic trials only, paired against the tight-ring baseline already on disk
 # at outputs/osg_dualmap_tightring. Each (arm, scene) is one process because the
 # prior map is per scene; MAX_PARALLEL bounds how many share the GPU.

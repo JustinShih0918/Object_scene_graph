@@ -3,7 +3,7 @@
 21 of the 50 remaining failures are perception: the target in view, often close
 and centred and fully visible, and never named. Measured on the dumped
 keyframes where the object's pixel is known
-(`scripts/probe_perception_gap.py`), the detector is not mislabelling the
+(`scripts/legacy/probe_perception_gap.py`), the detector is not mislabelling the
 object so much as never proposing it. A proposal tight enough to BE the object
 rather than the furniture under it comes from YOLOE on 0% of scissors frames,
 20% of cracker box, 25% of soup can, 48% of banana -- and from FastSAM-s on
@@ -156,7 +156,7 @@ class RegionProposer:
         # The region's own feature rides along so the track can keep a running
         # mean over views without a second encode. What decides a commit is the
         # cosine of THAT mean against the query -- per-frame argmax was measured
-        # not to separate (docs/REGION_FALSE_ADMISSION.md), and a mean over
+        # not to separate (docs/history/REGION_FALSE_ADMISSION.md), and a mean over
         # several views of one 3D object is DualMap's actual matching unit.
         det = Detection(
             label=str(self.target),

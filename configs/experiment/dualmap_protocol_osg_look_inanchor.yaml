@@ -1,7 +1,7 @@
 # @package _global_
 #
 # Tight-ring baseline plus the close look BEFORE ABSENCE only
-# (docs/SR_PROPOSAL_CLOSE_LOOK.md, arm 2). When the approach arrives silently
+# (docs/history/SR_PROPOSAL_CLOSE_LOOK.md, arm 2). When the approach arrives silently
 # at a track it never saw live, it looks from the 1.5 m ring before the
 # absence sensor decides, and re-aims if the target shows. Nothing changes for
 # the search. The ground-truth keyframe dump is off: the anatomy tables read

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The close-look A/B: four arms, paired on trial id, mechanism first.
 
-Arms (docs/SR_PROPOSAL_CLOSE_LOOK.md): the tight-ring baseline; the look
+Arms (docs/history/SR_PROPOSAL_CLOSE_LOOK.md): the tight-ring baseline; the look
 before absence; the opportunistic look; both. The report is ordered the way
 the proposal says it must be read -- did the knob move, did the population it
 targets change, what did it cost -- and only then SR, with the sign test.

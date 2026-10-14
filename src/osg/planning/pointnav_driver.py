@@ -2,7 +2,7 @@
 
 This is the sensor-only replacement for habitat's `ShortestPathFollower`. It
 consumes only depth and the agent's own pose, so it has no knowledge of
-geometry it has not seen -- which is the entire point (docs/AB_RESULTS.md, S8).
+geometry it has not seen -- which is the entire point (docs/history/AB_RESULTS.md, S8).
 
 Ported from `ascent/ascent_policy.py:837 _pointnav` / `:876 _navigate`, whose
 wrapper is `ascent/pointnav_policy.py:51 WrappedPointNavResNetPolicy`.
@@ -233,7 +233,7 @@ class PointNavDriver:
             # non-navigable, i.e. inside the furniture. Habitat then refuses the
             # forward, `rho` never falls, and the press runs to the budget: those
             # 44 burned a median 262 approach steps and 33 of them ended the
-            # episode (docs/WHY_THE_SENSOR_ARM_LOSES.md).
+            # episode (docs/history/WHY_THE_SENSOR_ARM_LOSES.md).
             #
             # So: if the pursuit stops closing, it has arrived at whatever the
             # geometry allows. Measured on those trials, how far the goal sits

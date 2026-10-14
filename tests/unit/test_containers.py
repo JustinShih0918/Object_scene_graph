@@ -4,7 +4,7 @@ The gap these guard: the graph had no support relation, so "the mug is on THAT
 table" was unrepresentable and every dynamic-scene mechanism that is defined
 relative to a surface -- the presence filter's visibility check, the search
 posterior over where a moved object went -- had nothing to attach to
-(docs/DYNAMIC_SCENES.md, Phase 0).
+(docs/history/DYNAMIC_SCENES.md, Phase 0).
 
 Deliberately Habitat-free, like tests/unit/test_ycb_layouts.py: the whole layer
 is decidable from ellipsoid geometry, so it must stay testable on a machine with

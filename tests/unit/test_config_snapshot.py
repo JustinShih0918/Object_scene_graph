@@ -128,13 +128,17 @@ def experiment_fingerprints() -> dict:
     root = Path(__file__).resolve().parents[2] / "configs"
     out = {}
     with initialize_config_dir(config_dir=str(root), version_base="1.3"):
-        for path in sorted((root / "experiment").glob("*.yaml")):
-            cfg = compose(config_name="config", overrides=[f"+experiment={path.stem}"])
+        # `archive/` holds the exploratory ladders; they compose as `+experiment=archive/<name>`
+        # and are pinned under that key, so moving a preset there shows up in the diff as a
+        # rename and nothing else.
+        for path in sorted((root / "experiment").rglob("*.yaml")):
+            name = path.relative_to(root / "experiment").with_suffix("").as_posix()
+            cfg = compose(config_name="config", overrides=[f"+experiment={name}"])
             encoded = json.dumps(
                 normalise_env_paths(OmegaConf.to_container(cfg, resolve=False)),
                 sort_keys=True, separators=(",", ":"),
             ).encode("utf-8")
-            out[path.stem] = hashlib.sha256(encoded).hexdigest()
+            out[name] = hashlib.sha256(encoded).hexdigest()
     return out
 
 
@@ -258,7 +262,7 @@ def test_the_saturation_preset_is_one_flag_from_the_best_one():
     root = Path(__file__).resolve().parents[2] / "configs"
     with initialize_config_dir(config_dir=str(root), version_base="1.3"):
         best = compose(config_name="config", overrides=["+experiment=ycb_dynamic_best"])
-        sat = compose(config_name="config", overrides=["+experiment=ycb_dynamic_sat"])
+        sat = compose(config_name="config", overrides=["+experiment=archive/ycb_dynamic_sat"])
 
     assert best.exploration.search_room_saturation == 0.0
     assert sat.exploration.search_room_saturation > 0.0
@@ -301,8 +305,8 @@ def test_the_grounded_preset_is_one_flag_from_the_saturation_one():
     register_configs()
     root = Path(__file__).resolve().parents[2] / "configs"
     with initialize_config_dir(config_dir=str(root), version_base="1.3"):
-        sat = compose(config_name="config", overrides=["+experiment=ycb_dynamic_sat"])
-        gnd = compose(config_name="config", overrides=["+experiment=ycb_dynamic_grounded"])
+        sat = compose(config_name="config", overrides=["+experiment=archive/ycb_dynamic_sat"])
+        gnd = compose(config_name="config", overrides=["+experiment=archive/ycb_dynamic_grounded"])
 
     assert sat.exploration.affinity_grounded is False
     assert gnd.exploration.affinity_grounded is True

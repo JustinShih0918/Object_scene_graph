@@ -1,8 +1,9 @@
 # Reproducing the cross-anchor headline: it is not in the tree
 
 *2026-09-20. The paper's single-floor cross-anchor result (28/53 = 52.8%, Table I)
-does not reproduce today. This records what was tested, what was ruled out, and
-what is left.*
+does not reproduce from anything the current tree can rebuild. This records what was
+tested, what was ruled out, and what is left. **Update 2026-09-27**, at the end: the
+original prior maps were recovered and re-run — cross-anchor comes back to 25/53.*
 
 ## What reproduces and what does not
 
@@ -122,3 +123,98 @@ outputs/RERUN/control_v4_fuse_cls   # HEAD, _v4_fuse_cls, the 107 dynamic
 outputs/RERUN/tree62_xa             # 74e0eab, 00829 cross_anchor, 18 trials
 outputs/RERUN/maps_tree62           # 00829's map as 74e0eab builds it today
 ```
+
+## 2026-09-27 — the original prior maps, re-run
+
+The three pass-1 maps the locked run loaded turned up as an archive (`maps_released/`
+with a README: 00829 682 tracks, 00848 800, 00880 618; built 2026-09-10 from
+`outputs/collector_layouts`; md5s verified against the README). They were run on the
+current tree with both the paper's preset and the unified arm, over all 186 released
+trials, verifier on, `MAX_PARALLEL=3`:
+
+| condition | paper (Table I) | rerun 09-20, rebuilt 534-track maps | **rerun 09-27, original maps** |
+|---|---|---|---|
+| static | 51/79 = 64.6% | 51/79 = 64.6% | 42/79 = 53.2% |
+| in-anchor | 34/54 = 63.0% | 30/54 = 55.6% | **35/54 = 64.8%** |
+| cross-anchor | 28/53 = 52.8% | 20/53 = 37.7% | **25/53 = 47.2%**, SPL 0.073 |
+
+Cross-anchor per scene, against the archive's README of what these maps scored in the
+locked run: 00829 **11**/18 (was 12), 00848 **5**/18 (5), 00880 **9**/17 (11).
+
+`dualmap_protocol_osg_sensor_v4_fuse_cls` and `dualmap_osg_unified` agree on **186 of 186**
+trials, so the two presets are one arm here, as `UNIFIED_PIPELINE.md` says.
+
+What this settles: the prior map is the cause of the cross-anchor deficit, as the section
+above argued from 00829 alone. With the original maps the two dynamic conditions are back
+within noise of the paper (in-anchor above it, cross-anchor three trials under it, on a
+53-trial condition where one trial is 1.9 points and the VLM verifier is on). What it does
+not settle: static lost nine trials against the same maps' locked run, which the 09-20
+rerun on the rebuilt maps had not — so the environment still differs from the locked one
+in something the static condition is sensitive to and the dynamic ones are not.
+
+The maps themselves are not in the repository (`outputs/` is ignored); they are the
+`prior_map_<scene>.zip` archives, and the run is `outputs/RERUN_UPLOADMAP/{v4_fuse_cls,osg_unified}`
+with per-trial results in `*_trials.json` beside them. To repeat it:
+
+```bash
+# the three scene directories under one root, then
+ARM=sensor_v4_fuse_cls SPLIT=data/splits/dualmap_186.json \
+  MAP_ROOT=outputs/maps_released_upload/maps_released MAP_SUBDIR=1 \
+  CONDITIONS=cross_anchor OUT=outputs/RERUN_UPLOADMAP/v4_fuse_cls MAX_PARALLEL=3 \
+  bash scripts/run_dualmap_arm.sh
+```
+
+(`run_dualmap_arm.sh` takes its trial ids from the split, so with the 186-trial split it
+runs all three conditions regardless of `CONDITIONS`; use `data/splits/dualmap_cross_anchor.json`
+for the 53 alone.)
+
+### The three lost trials, taken apart (2026-09-28)
+
+Against the locked artifact (`outputs/osg_v4_fuse_cls_full`, the 107 dynamic trials),
+today's run with the same maps loses 3 cross-anchor trials and gains none:
+
+| trial | locked | today |
+|---|---|---|
+| 00829 `0128-2` cracker box | success, 445 steps, 0.39 m | fail, 500 steps, **0.99 m** |
+| 00880 `0128-2` blue pitcher | success, 417 steps, 0.65 m | fail, 500 steps, 15.5 m |
+| 00880 `0129-1` tin can | success, 128 steps, 0.84 m | fail, 500 steps, 8.1 m |
+
+Everything the setup could have missed was tested and ruled out:
+
+- **Config.** The full composed `dualmap_protocol_osg_sensor_v4_fuse_cls` at `74e0eab` and at
+  HEAD differ in no shared key; the 96 keys that exist only at HEAD are the robot / climb /
+  obstacle-map fields and all default off (the two that touch this arm, `giveup_after_steps`
+  15 / `giveup_min_progress_m` 0.2, are the old hard-coded values made configurable).
+- **Map.** Same files (md5), same 682 / 618 tracks; both trees restore the stored occupancy.
+- **Run-to-run noise and load.** The three trials re-run at HEAD three times (twice at
+  `MAX_PARALLEL=3`, once at 1) are **bit-identical** to each other and to the full run —
+  same step counts, same final distances. The hosted-LLM calls do not perturb these trials.
+- **Code.** The same three trials on a worktree of `74e0eab` (the locked commit) are
+  bit-identical to HEAD's. `74e0eab` reproduces the locked run **only in the locked image**.
+- **GPU.** Both the locked run and today's ran on the RTX 4090 (PAPER.md §IV-A).
+
+What is left is the image. Between the locked run (09-13 04:09) and the rebuild (09-14 21:02)
+the base went from `nvidia/cuda:12.1.1-cudnn8-runtime` to `11.8.0-cudnn8-devel` and
+`opencv-python-headless` (unpinned) became `opencv-python==4.10.0.84`; the EGL/GL userland
+habitat-sim renders through changed with the base. The fingerprint fits a float-level
+perturbation of the perception path, not a logic change: in the pitcher trial the first
+mismatch is a track centre that differs in the **fifth decimal** (−13.833261 vs −13.833272)
+at step 111, which moves one surface's search prior from 0.9138 to 0.9259 and flips the
+surface chosen at step 116; in the cracker-box trial the trajectories are identical for 262
+steps and part at the frontier picked next; in the tin-can trial the approach path is
+consumed 13 steps sooner (32 vs 45), so the close look, the disbelief and everything after
+it land differently.
+
+Across all 107 dynamic trials the perturbation is small and the outcome mostly survives it:
+cross-anchor — 31 of 53 trajectories **bit-for-bit identical** to the locked run, 17 diverge
+(13 of them only in the last half of the episode), outcomes agree on 50/53; in-anchor — 38
+of 54 identical, outcomes agree on 53/54 (one gained). The condition that loses is the one
+where a single late surface/frontier choice decides the episode.
+
+So: the number the paper prints (28/53) is what this code, this map and the 09-13 image
+produce; the same code and map in the current image produce 25/53. Neither is "the" number
+— the honest statement for Table I cross-anchor is 25–28 of 53 (47–53 %) against DualMap's
+16/53, with the image pinned as part of the experimental record from here on
+(`docker/Dockerfile` at `0cfecec` onward). Static cannot be diffed the same way: the locked
+artifact holds only the 107 dynamic trials, and no 79-trial static run from the locked image
+exists on this machine.

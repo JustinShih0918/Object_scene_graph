@@ -85,7 +85,7 @@ YCB classes already use.
 
 The newest addition (the 59→62 step). Defensible **in principle**: it is set from
 an offline probe of how often each class's *query text* admits on object-free
-frames (bowl 42%, plate 26%, mug 16% — `docs/REGION_FALSE_ADMISSION.md`), which
+frames (bowl 42%, plate 26%, mug 16% — `docs/history/REGION_FALSE_ADMISSION.md`), which
 is a property of the class name and the text encoder, not of the benchmark
 scenes. But as implemented it is a hardcoded four-class dict.
 

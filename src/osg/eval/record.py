@@ -81,7 +81,7 @@ def stair_track_fields(agent) -> dict:
     `"stairs"` is already in DEFAULT_VOCABULARY (core/config/detector.py), so YOLOE has
     always been detecting staircases into the object layer -- but nothing has
     ever consumed or measured them. Stage 4 of the multi-floor plan
-    (docs/MULTI_FLOOR.md) assumes these tracks exist and are usable; this logs
+    (docs/history/MULTI_FLOOR.md) assumes these tracks exist and are usable; this logs
     the evidence to confirm or falsify that BEFORE the stair-detection work is
     built on top of it. Cheap: a filter over tracks the layer already holds.
     """
@@ -308,7 +308,7 @@ def build_episode_record(
         # (scripts/analyze_localization.py).
         **target_track_fields(agent),
         # Which floor the goal is on relative to the start pose, and whether the
-        # agent actually changed level (docs/MULTI_FLOOR.md).
+        # agent actually changed level (docs/history/MULTI_FLOOR.md).
         **episode_floor_fields(episode, outcome.trajectory_y),
         **runtime_floor_fields(episode, outcome.trajectory_y, agent, authored),
         **stair_track_fields(agent),

@@ -1,7 +1,7 @@
 """One occupancy map per storey.
 
 The single shared `Costmap2D` is what confines the pipeline to one floor, and
-it does so in two ways (docs/MULTI_FLOOR.md):
+it does so in two ways (docs/history/MULTI_FLOOR.md):
 
 1. **Upper floors are never mapped.** `Costmap2D.update` bands points by height
    above a `floor_y` that was latched on the first frame, so once the agent

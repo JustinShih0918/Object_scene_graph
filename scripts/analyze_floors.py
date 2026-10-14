@@ -1,7 +1,7 @@
 """Decompose a run's SR by floor structure, and audit the floor estimator.
 
 Answers the three questions Stage 0/1 of the multi-floor work exists to answer
-(docs/MULTI_FLOOR.md):
+(docs/history/MULTI_FLOOR.md):
 
   1. **Where is the SR lost?** SR/SPL split by `floor_class` -- `same_floor`
      (the goal category has an instance on the start floor) vs `cross_floor`

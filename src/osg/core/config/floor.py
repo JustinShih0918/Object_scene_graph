@@ -1,4 +1,4 @@
-"""`floor` group: multi-floor support (docs/MULTI_FLOOR.md).
+"""`floor` group: multi-floor support (docs/history/MULTI_FLOOR.md).
 
 Not part of the dynamic-scene line: every default here reproduces single-floor
 behaviour, so `floor.enabled=false` -- which every YCB run uses -- is a no-op
@@ -12,13 +12,13 @@ from typing import List
 
 @dataclass
 class FloorConfig:
-    """Multi-floor support (docs/MULTI_FLOOR.md). Every default reproduces the
+    """Multi-floor support (docs/history/MULTI_FLOOR.md). Every default reproduces the
     current single-floor behaviour, so `floor.enabled=false` is a no-op path."""
 
     enabled: bool = False
     # Where the current storey comes from.
     #
-    #   estimator  the agent's own height trace (docs/MULTI_FLOOR.md). The only
+    #   estimator  the agent's own height trace (docs/history/MULTI_FLOOR.md). The only
     #              source in habitat, and the default, so nothing below moves.
     #   external   an authority outside the agent says which storey it is on:
     #              the operator's `/osg/floor` topic on the robot, or
@@ -26,7 +26,7 @@ class FloorConfig:
     #              not consulted at all -- its primary signal is
     #              `camera_position[1] - camera_height`, and a real robot on a
     #              2D Nav2 map has no trustworthy vertical at all. A phantom
-    #              floor is strictly worse than no floor (docs/MULTI_FLOOR.md
+    #              floor is strictly worse than no floor (docs/history/MULTI_FLOOR.md
     #              "the landing problem"), which is the argument for taking an
     #              authoritative id when one exists.
     source: str = "estimator"  # estimator | external
@@ -65,7 +65,7 @@ class FloorConfig:
     # shared map. Implies enabled=true and estimate_only=false. Without it an
     # upper floor is never mapped at all (its points fall outside the band
     # around the latched floor_y), so it yields no frontiers and the agent has
-    # nothing to explore there. See docs/MULTI_FLOOR.md.
+    # nothing to explore there. See docs/history/MULTI_FLOOR.md.
     per_floor_costmap: bool = False
     # --- stair detection (Stage 4) -------------------------------------------
     # Find steppable regions and mark them traversable, so the staircase stops
@@ -90,7 +90,7 @@ class FloorConfig:
     stair_min_evidence: float = 1.0
     # Require a YOLOE `stairs` track to corroborate. Default False: measured at
     # only 15% coverage on multi-floor episodes, so requiring it would discard
-    # most real staircases. See docs/MULTI_FLOOR.md.
+    # most real staircases. See docs/history/MULTI_FLOOR.md.
     stair_require_semantic: bool = False
     # Cap on relabelled area as a fraction of the known map. The FREE relabel
     # is permanent, so a runaway mask could carve through real obstacles.
@@ -101,7 +101,7 @@ class FloorConfig:
     # on the 100-episode v1 run all 24 cross-floor episodes failed and not one
     # ever attempted a transition. Implies per_floor_costmap; uses the height
     # layer to find portals, and does NOT depend on floor.stairs (which does
-    # not work -- see docs/MULTI_FLOOR.md).
+    # not work -- see docs/history/MULTI_FLOOR.md).
     cross_floor: bool = False
     # An UNDIRECTED storey switch (the geometric "nothing near left here" gate,
     # not a directed request for a known target floor) is attempted only when
@@ -127,7 +127,7 @@ class FloorConfig:
     # runs out of frontiers it is marked explored and the agent leaves
     # (`ascent_policy.py:656-670`), with no interval guard anywhere in
     # `relative_work/ascent/ascent/`. The "T/10" this comment used to cite is
-    # a related-work note about the ASCENT PAPER (docs/MULTI_FLOOR.md:152),
+    # a related-work note about the ASCENT PAPER (docs/history/MULTI_FLOOR.md:152),
     # not about the code we transcribe.
     switch_min_interval: int = 50
     # MFNP's two free guards: too early the current floor is barely mapped, too

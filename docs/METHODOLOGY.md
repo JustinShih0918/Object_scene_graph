@@ -29,7 +29,7 @@ repo computes.
 selects exactly which episodes run (`configs/eval/scenes20_ep0to4.yaml`), so
 two runs — including a run of native ASCENT in a different harness — score the
 same episodes regardless of how each iterates the dataset. Every paired number
-in `docs/AB_RESULTS.md` depends on this.
+in `docs/history/AB_RESULTS.md` depends on this.
 
 The second benchmark, MP3D ObjectNav (21 categories, 11 val scenes), is wired
 the same way; see `docs/USAGE.md` §5 for what does and does not transfer.
@@ -135,7 +135,7 @@ ASCENT's 90, conversion equal.
 
 Runs are compared on the same episode ids, with wins/losses and a McNemar
 exact test — not two independent success rates. At n=100 a 3-point difference
-is inside the noise; several published-looking effects in `docs/AB_RESULTS.md`
+is inside the noise; several published-looking effects in `docs/history/AB_RESULTS.md`
 are ±2 with p > 0.7.
 
 ### 4.3 Count the mechanism, not just the outcome
@@ -266,5 +266,5 @@ python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs
 from, and `tests/unit/golden/` pins the composed config of every preset so a
 default cannot move unnoticed.
 
-`docs/AB_RESULTS.md` is the running log — every arm, its mechanism counters,
+`docs/history/AB_RESULTS.md` is the running log — every arm, its mechanism counters,
 its paired result, and the ones that measured null.

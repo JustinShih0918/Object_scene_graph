@@ -13,7 +13,7 @@
 # samples them.
 #
 # On top of that base, the working configuration from the released-benchmark
-# campaign (docs/SR_PROPOSAL_CLOSE_LOOK.md): terminal rings measured from the
+# campaign (docs/history/SR_PROPOSAL_CLOSE_LOOK.md): terminal rings measured from the
 # object's surface, the close look before absence, the flat proximity prior.
 # Success is what DualMap's benchmark means by it -- a STOP within 1 m
 # horizontal of the object, within three attempts -- not the authored-viewpoint

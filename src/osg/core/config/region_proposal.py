@@ -9,7 +9,7 @@ class RegionProposalConfig:
     """Off by default; every field is inert while `enabled` is False.
 
     Measured justification for each number is in
-    `src/osg/perception/region_proposer.py` and `docs/PERCEPTION_GAP.md`.
+    `src/osg/perception/region_proposer.py` and `docs/history/PERCEPTION_GAP.md`.
     """
 
     enabled: bool = False
@@ -88,7 +88,7 @@ class RegionProposalConfig:
     commit_tau: float = -1.0
     # A per-class bar over `commit_tau`, keyed by the normalised target label
     # ("bowl", "red_plate", "mug"). Calibrated OFF-RUN, on the offline
-    # false-admission probe (docs/REGION_FALSE_ADMISSION.md): the classes whose
+    # false-admission probe (docs/history/REGION_FALSE_ADMISSION.md): the classes whose
     # text vector admits on more than 15% of object-free frames -- bowl 42%,
     # plate 26%, mug 16% -- are the classes whose phantoms cleared 0.28 on the
     # full 107 (13 of 15), while every true track of theirs that scored sat

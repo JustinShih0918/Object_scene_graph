@@ -27,7 +27,7 @@ For CPU-only work: `pip install -e '.[dev]'`.
 ## Commands
 
 ```bash
-pytest tests/unit -q                                   # 1397 tests, ~50 s, no GPU or data
+pytest tests/unit -q                                   # 1535 tests, ~50 s, no GPU or data
 pytest tests/unit/test_floors.py -q                    # one file
 pytest tests/unit/test_floors.py::test_name -q         # one test
 pytest -m sim                                          # tests/integration; needs Habitat + HM3D
@@ -129,7 +129,8 @@ names carry the scene because HM3D episode ids repeat across scenes.
 Hydra groups with a YAML directory live in `configs/` (`agent`, `detector`, `eval`,
 `exploration`, `llm`, `profile`, `scene_graph`, `verification`), and are selected as
 `detector=yoloe_small`. `configs/experiment/*.yaml` are composable presets applied with
-`+experiment=name`. Every group is backed by a **structured dataclass** under
+`+experiment=name`; `configs/experiment/archive/` holds the exploratory ladders no current
+document runs, composable as `+experiment=archive/name` and pinned under that key. Every group is backed by a **structured dataclass** under
 `src/osg/core/config/` (one module per group) registered with Hydra's ConfigStore, so a typo in a
 YAML or CLI override fails fast instead of silently creating a key.
 
@@ -155,10 +156,11 @@ it. Two golden files pin this:
   `verification=off` for any A/B meant to prove two configs equivalent.
 - **Claiming a result:** the repo's currency is measured behaviour, not plausible reasoning. At
   n=100 SR moves ±3 points on noise, so a change should move one of the paired trace metrics
-  (`scripts/compare_ascent_osg.py` prints them) and not just SR. `docs/AB_RESULTS.md` is the results
-  log; `docs/INVESTIGATION.md`, `docs/MULTI_FLOOR.md`, `docs/UNIFIED_PIPELINE.md` carry the history
-  of why the pipeline is shaped as it is — read the relevant one before re-litigating a decision.
-  `docs/README.md` indexes all of them and marks the ones that are superseded.
+  (`scripts/compare_ascent_osg.py` prints them) and not just SR. `docs/` holds the reference
+  set; `docs/history/` the logs and frozen results — `docs/history/AB_RESULTS.md` is the results
+  log, `docs/history/INVESTIGATION.md`, `docs/history/MULTI_FLOOR.md`, `docs/UNIFIED_PIPELINE.md`
+  carry why the pipeline is shaped as it is. Read the relevant one before re-litigating a
+  decision; `docs/README.md` indexes all of them and marks the superseded ones.
 - **The paper:** `docs/PAPER.md` is the ICRA 2027 submission in full. Its Appendix A maps every
   equation to the module implementing it, and Appendix B traces every reported number to the run
   that produced it — including the three rows that no run under `outputs/` currently reproduces.
@@ -168,7 +170,11 @@ it. Two golden files pin this:
   floor-estimator audit), `analyze_localization.py` / `analyze_trackloc.py` (stop pose vs GT),
   `analyze_approach.py` (why the terminal approach failed).
 - **Generated, not source:** `outputs/`, downloads under `data/`, `relative_work/` (the ASCENT
-  checkout and its recorded reference runs) are all ignored. Keep secrets and machine-specific
-  dataset paths in `docker/.env`.
+  checkout and its recorded reference runs) and `assets/` (the real-robot recordings) are all
+  ignored. Keep secrets and machine-specific dataset paths in `docker/.env`.
+- **Where a script lives says what it is:** `scripts/` is the release surface (entry points,
+  analyzers, figure renderers, `ros2/`, `video/`, `campaign/`); `scripts/legacy/` holds the
+  one-off probes that produced a number in `docs/history/` and are kept only so that number
+  can be re-derived. Do not add to `legacy/`; delete instead.
 - The LLM/VLM is queried **asynchronously** — the control loop never blocks on it, which is what
   keeps the pipeline real-time. Preserve that when touching the scorer or verifier.

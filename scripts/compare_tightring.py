@@ -2,7 +2,7 @@
 """Did the tighter, extent-aware viewpoint ring convert the near misses?
 
 The expected effect is about nine trials out of 107, which is inside the noise
-floor two arms of this size can resolve (docs/AB_RESULTS.md). An SR delta alone
+floor two arms of this size can resolve (docs/history/AB_RESULTS.md). An SR delta alone
 therefore cannot answer the question, and two of five arms in an earlier campaign
 returned confident nulls while testing nothing. So this leads with the MECHANISM
 counter -- the distance from the placed goal to the object, which the change acts

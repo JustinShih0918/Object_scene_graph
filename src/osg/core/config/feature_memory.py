@@ -1,6 +1,6 @@
 """Matching an object by what it looks like, the way DualMap does.
 
-Measured before it was written (`docs/FEATURE_MEMORY_PROBE.md`). Two findings
+Measured before it was written (`docs/history/FEATURE_MEMORY_PROBE.md`). Two findings
 shape every default here.
 
 The first is that a threshold does not work and an argmax does. Asked for an

@@ -197,7 +197,7 @@ class AgentConfig:
     # agent's own height. Without this, a candidate one storey up snaps to
     # whatever lies under the agent, so is_reachable reports it unreachable and
     # _check_candidates blacklists it -- every cross-floor target is discarded.
-    # Needs floor.enabled for the floor heights. See docs/MULTI_FLOOR.md.
+    # Needs floor.enabled for the floor heights. See docs/history/MULTI_FLOOR.md.
     navmesh_3d_goals: bool = False
     # Ask whether the pose the agent would DRIVE TO is reachable, not whether
     # the object's own position is.
@@ -319,7 +319,7 @@ class AgentConfig:
     terminal_stall_steps: int = 3
     terminal_percentile: float = 5.0
 
-    # A close look at a surface (agent/close_look.py, docs/SR_PROPOSAL_CLOSE_LOOK.md):
+    # A close look at a surface (agent/close_look.py, docs/history/SR_PROPOSAL_CLOSE_LOOK.md):
     # drive to a facing pose on `close_look_ring_m`, turn until the surface is
     # inside 15 degrees, hold `close_look_hold_steps` with the detector on, and
     # only then conclude anything. 1.5 m is where in-situ recall peaks (0.58,

@@ -1,4 +1,4 @@
-"""Presence belief: positive AND negative evidence (docs/DYNAMIC_SCENES.md, Phase 1).
+"""Presence belief: positive AND negative evidence (docs/history/DYNAMIC_SCENES.md, Phase 1).
 
 The defect these guard is the one DualMap has: an object leaves the map on a
 timer, so "I turned away" and "it is gone" are the same transition. Here they

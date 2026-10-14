@@ -86,7 +86,7 @@ class Ellipsoid:
     # is wrong by however much the object is tilted in the map frame. The
     # shape matrix below is the only correct route, and three consumers share
     # it -- container surface heights, the C1 depth band, the C3 affordance
-    # test (docs/DYNAMIC_SCENES.md).
+    # test (docs/history/DYNAMIC_SCENES.md).
 
     def shape_matrix(self) -> np.ndarray:
         """Q = R diag(a^2, b^2, c^2) R^T -- the ellipsoid's 3x3 shape matrix.

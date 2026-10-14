@@ -7,7 +7,7 @@ everything the estimator would have moved -- the active grid, the scene graph's
 storey, the object layer's filing -- or half the pipeline keeps mapping the
 floor the robot left.
 
-`docs/MULTI_FLOOR.md` makes the single-floor equivalence gate a hard one, so
+`docs/history/MULTI_FLOOR.md` makes the single-floor equivalence gate a hard one, so
 the first test here is that the default source is untouched by all of this.
 """
 from __future__ import annotations

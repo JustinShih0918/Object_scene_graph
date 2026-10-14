@@ -10,7 +10,7 @@
 # on 43 episodes with commits off). A proposal-only track keeps the running
 # mean of its features, and may become a candidate only behind every named
 # track and only past this bar, set on the observation runs
-# (docs/PROPOSAL_FUSION.md) against the authored object positions:
+# (docs/history/PROPOSAL_FUSION.md) against the authored object positions:
 #
 #   commit_min_obs 4, commit_tau 0.28
 #     true tracks on the 11 perception trials that had one:  8/11 clear it

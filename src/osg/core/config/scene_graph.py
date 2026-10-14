@@ -13,7 +13,7 @@ from typing import Tuple
 
 @dataclass
 class PresenceConfig:
-    """Presence belief per object (objects/presence.py, docs/DYNAMIC_SCENES.md).
+    """Presence belief per object (objects/presence.py, docs/history/DYNAMIC_SCENES.md).
 
     Off by default: enabling it changes which candidate the agent proposes
     first, so it must be an explicit, measurable A/B rather than a silent
@@ -90,7 +90,7 @@ class SceneGraphConfig:
     # Two tracks may only be merged if they were observed at about the same
     # time. Linking exists to reunite fragments of one object that a single
     # ellipsoid cannot cover, and those are seen together; an object and its own
-    # ghost are not (docs/DYNAMIC_SCENES.md, the in-anchor ghosting bug).
+    # ghost are not (docs/history/DYNAMIC_SCENES.md, the in-anchor ghosting bug).
     link_max_frame_gap: int = 50
     assoc_score_thresh: float = 0.4
     assoc_depth_gate_m: float = 0.5
@@ -204,7 +204,7 @@ class SceneGraphConfig:
     cloud_cap: int = 2000
     room_classifier: str = "none"  # none | place365
     # Container (anchor) layer -- floor -> room -> container -> object
-    # (docs/DYNAMIC_SCENES.md). A track qualifies as a support surface when its
+    # (docs/history/DYNAMIC_SCENES.md). A track qualifies as a support surface when its
     # label is in graph.containers.CONTAINER_CATEGORIES AND its world top height
     # falls in this band with at least this much ground footprint. The geometry
     # half is what a DualMap-style word list alone cannot do: reject the

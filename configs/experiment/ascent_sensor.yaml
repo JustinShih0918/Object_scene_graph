@@ -92,5 +92,5 @@ verification:
   #    -- but on 100 paired episodes they moved SR 42.0% -> 41.0% (net -1,
   #    McNemar p = 1.00) and their predicted mechanism did not happen:
   #    `GOTO_FRONTIER` steps stayed flat at ~24k and `frontier_give_up` rose
-  #    from 127 to 168. See docs/AB_RESULTS.md S30, and
+  #    from 127 to 168. See docs/history/AB_RESULTS.md S30, and
   #    `+experiment=ascent_sensor_all3` to run that arm.

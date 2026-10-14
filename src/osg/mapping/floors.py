@@ -32,7 +32,7 @@ two cleanly is the gap itself: HM3D storeys are 2.5-3.4 m apart, landings
 
 The trade is deliberate: a real mezzanine less than 1.8 m up is missed and
 folded into the floor below. A missed floor degrades to today's behaviour; a
-phantom floor is worse than today's behaviour. See docs/MULTI_FLOOR.md.
+phantom floor is worse than today's behaviour. See docs/history/MULTI_FLOOR.md.
 """
 from __future__ import annotations
 

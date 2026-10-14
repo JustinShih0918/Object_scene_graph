@@ -55,7 +55,7 @@ def build_affinity_prior(cfg):
 
 def build_presence_filter(cfg):
     """None unless scene_graph.presence.enabled -- the filter must be an opt-in
-    A/B, not a silent default (docs/DYNAMIC_SCENES.md, Phase 1)."""
+    A/B, not a silent default (docs/history/DYNAMIC_SCENES.md, Phase 1)."""
     pc = cfg.scene_graph.presence
     if pc is None or not pc.enabled:
         return None

@@ -437,7 +437,7 @@ class NavAgent:
         self._room_votes: list = []
         self.stats.clear()
         self.stats.update({"plan_ok": 0, "plan_fail": 0, "select_none": 0, "select_ok": 0})
-        # Phase 2 instrumentation (docs/DYNAMIC_SCENES.md): when the map STOPPED
+        # Phase 2 instrumentation (docs/history/DYNAMIC_SCENES.md): when the map STOPPED
         # believing in something, and what it believed at the moment it
         # committed to a goal. Belief latency and stale-goal rate are computed
         # from these two logs plus the relocation step the env records.
@@ -464,7 +464,7 @@ class NavAgent:
         self.exploration.disproved_floors = self._disproved_floors
         # The SAME set, so a storey disproved here also stops the floor policy
         # walking back to it. It gated three channels and not the one that
-        # chooses where to go (docs/CROSS_ANCHOR_STATUS.md).
+        # chooses where to go (docs/history/CROSS_ANCHOR_STATUS.md).
         self.floors.disproved_floors = self._disproved_floors
         self._escape = ActionHistoryEscape(int(self.cfg.agent.escape_window))
         self._progress_ref_step = 0

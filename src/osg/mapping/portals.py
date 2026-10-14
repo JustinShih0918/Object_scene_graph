@@ -15,7 +15,7 @@ is standing on. Those cells are a **portal**: not the staircase itself, but a
 place to walk toward, after which the navmesh handles the climb.
 
 This deliberately does NOT depend on `mapping.stairs`, which does not detect
-staircases (see docs/MULTI_FLOOR.md). It needs only the height layer, and it
+staircases (see docs/history/MULTI_FLOOR.md). It needs only the height layer, and it
 works for descending portals too, which are invisible to a forward-facing
 obstacle band.
 """
@@ -113,7 +113,7 @@ class FloorSwitchPolicy:
     """When may the agent leave the storey it is on?
 
     ASCENT's gate rather than MFNP's weighted score, for reasons specific to
-    this repo: MFNP's score needs an LLM term, and `docs/INVESTIGATION.md`
+    this repo: MFNP's score needs an LLM term, and `docs/history/INVESTIGATION.md`
     records that LLM frontier guidance produced byte-identical trajectories to
     the geometric heuristic here across all 35 episodes. Its other two terms
     need new accumulators whose weights would have to be tuned at n=65, where

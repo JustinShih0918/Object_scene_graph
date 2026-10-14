@@ -513,7 +513,7 @@ class ObjectLayer:
 
         A track the proposal stage alone has seen (`proposal_only`) carries the
         target's label without the detector ever having said so. Measured on
-        the full 107 (docs/REGION_FALSE_ADMISSION.md), letting such a track
+        the full 107 (docs/history/REGION_FALSE_ADMISSION.md), letting such a track
         through on the label test cost 18 trials: a per-frame region admitted
         on 13% of frames with no object in view became an ordinary same-label
         track, won this gate and spent an attempt. So it is judged on what it

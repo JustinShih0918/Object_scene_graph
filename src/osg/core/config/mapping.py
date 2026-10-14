@@ -11,7 +11,7 @@ class MappingConfig:
     # ground (thresholds, rugs, ramps, floor_y drift) reads as an obstacle at
     # the robot's feet. Ceiling kept at 1.5 (aligning the FULL band to the old
     # [0.15, 0.88] regressed SR 40% -> 28.6% -- the 0.88 m ceiling, not the
-    # lower bound, was the culprit; see docs/INVESTIGATION.md).
+    # lower bound, was the culprit; see docs/history/INVESTIGATION.md).
     obstacle_low_m: float = 0.15
     obstacle_high_m: float = 1.5
     max_range_m: float = 5.0

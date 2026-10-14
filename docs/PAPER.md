@@ -737,7 +737,7 @@ viewpoint rule.
 | Table III, w/o surface scoring 35.8% | 19 / 53 | — | **not on this machine** |
 | Table III, w/o VLM verification 52.8% | 28 / 53 | — | **not on this machine** as a separate run |
 
-> **The single-floor dynamic rows no longer re-derive.** Re-run 2026-09-20: static
+> **The single-floor dynamic rows no longer re-derive from rebuilt maps.** (With the original prior maps recovered on 2026-09-27: in-anchor 35/54 = 64.8%, cross-anchor 25/53 = 47.2%, static 42/79 = 53.2% — `docs/CROSS_ANCHOR_REPRODUCTION.md`.) Re-run 2026-09-20: static
 > 51/79 = 64.6%, in-anchor 30/54 = 55.6%, cross-anchor 20/53 = 37.7%. The cause is
 > not the code — the tree that produced 62/107 (`74e0eab`) agrees with HEAD on 18 of
 > 18 trials when given the same prior map — but the prior map, which rebuilds

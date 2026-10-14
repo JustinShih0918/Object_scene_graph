@@ -6,7 +6,7 @@
 #   python scripts/run_eval.py +experiment=ascentnav eval=scenes20_ep0to4
 #
 # THIS IS THE DEFAULT CONFIG, kept under its name so earlier runs and
-# docs/AB_RESULTS.md stay comparable; `python scripts/run_eval.py` with no
+# docs/history/AB_RESULTS.md stay comparable; `python scripts/run_eval.py` with no
 # preset composes to exactly this (pinned by the fingerprint golden).
 #
 # `src/navigation/agent.py` is a transcription of `Ascent_Policy.act` and the

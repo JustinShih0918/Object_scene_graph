@@ -3,7 +3,7 @@
 SR alone hides the mechanism: an agent that never notices a change and one that
 notices instantly both fail an episode they cannot reach in time, and both
 succeed on an easy one. The metrics below measure the noticing itself
-(docs/DYNAMIC_SCENES.md, Phase 2).
+(docs/history/DYNAMIC_SCENES.md, Phase 2).
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def per_floor_class(episode_results: List[dict]) -> Dict[str, Dict[str, float]]:
     """SR/SPL split by whether the goal is on the agent's starting floor.
 
     Multi-floor scenes are the dominant remaining SR loss (see
-    docs/MULTI_FLOOR.md); without this split a run reports one number that
+    docs/history/MULTI_FLOOR.md); without this split a run reports one number that
     averages two very different regimes. `floor_class` is written per episode
     by eval/floors.py.
     """

@@ -12,7 +12,7 @@
 # and its prompts already existed and had no caller outside their own tests:
 # `decide()` was never invoked, `_floor_goal_dir` was assigned 0 once and never
 # again, and `_floor_direction_boost` had no caller at all, so every preset that
-# claimed `floor_llm: true` measured nothing. See docs/FUSED_PIPELINE.md.
+# claimed `floor_llm: true` measured nothing. See docs/history/FUSED_PIPELINE.md.
 #
 # The call is synchronous, happens at most once per `floor_ask_every` steps, and
 # any failure returns None and leaves the posterior's own answer standing.

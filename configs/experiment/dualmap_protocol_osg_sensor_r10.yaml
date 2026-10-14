@@ -19,7 +19,7 @@
 #    once -- read any SR difference with both in mind:
 #      * habitat-lab recomputes the navmesh from this radius, and the agent is
 #        physically confined to it (all 107 final poses snap to it at 0.0000 m,
-#        docs/UNREACHABLE_SET_EXPERIMENT.md). 6 of the 15 objects with no
+#        docs/history/UNREACHABLE_SET_EXPERIMENT.md). 6 of the 15 objects with no
 #        navmesh point inside the 1 m rule come into reach; 9 stay out at any
 #        body size. The reachability ceiling moves 92/107 -> 98/107.
 #      * costmap inflation is `agent_radius + inflate_margin_m`, so the free

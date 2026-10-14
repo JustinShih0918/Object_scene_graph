@@ -4,7 +4,7 @@ The dynamic-scene benchmark is two passes over the same scene: explore the
 STATIC layout and keep the map, then move the objects and navigate the moved
 world *with that map*. The staleness is the experiment -- an agent that rebuilds
 from scratch is never wrong about anything, and measures nothing
-(docs/DYNAMIC_SCENES.md, Phase 2).
+(docs/history/DYNAMIC_SCENES.md, Phase 2).
 
 What is stored is the map's EVIDENCE, not its conclusions: object tracks with
 their ellipsoids and presence beliefs, the occupancy grid, and the room

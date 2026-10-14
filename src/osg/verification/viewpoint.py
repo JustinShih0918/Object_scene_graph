@@ -62,7 +62,7 @@ class ViewpointPlanner:
         # become the approach goal. Habitat's navmesh excludes such a pose, and
         # measuring the sensor arm's stranded approaches against it, 27 of 44
         # goals were non-navigable against 17 of 17 navigable among those that
-        # arrived (docs/WHY_THE_SENSOR_ARM_LOSES.md).
+        # arrived (docs/history/WHY_THE_SENSOR_ARM_LOSES.md).
         #
         # The navmesh follower hid this: it SNAPPED the goal to the mesh, so an
         # unstandable goal silently became a standable one. The PointNav mover

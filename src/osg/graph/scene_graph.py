@@ -22,7 +22,7 @@ ROOM_IDS_PER_FLOOR = 1_000_000
 @dataclass
 class FloorNode:
     """A storey. The missing middle of the advertised building -> room -> object
-    hierarchy (docs/MULTI_FLOOR.md); ids come from mapping.floors.FloorEstimator
+    hierarchy (docs/history/MULTI_FLOOR.md); ids come from mapping.floors.FloorEstimator
     and are creation-ordered, so never infer "upstairs" from the id."""
 
     id: int

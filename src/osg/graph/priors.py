@@ -12,7 +12,7 @@ looked at enough to have mapped a reasonable number of objects, seeing NONE of
 the target's usual companions is real evidence the target is not there -- and
 that judgement is available long before the floor is exhausted.
 
-Deliberately not an LLM call. `docs/INVESTIGATION.md` records that LLM frontier
+Deliberately not an LLM call. `docs/history/INVESTIGATION.md` records that LLM frontier
 scoring produced byte-identical trajectories to the geometric heuristic across
 all 35 episodes while adding a network dependency; a fixed co-occurrence table
 over the 6 ObjectNav goal categories costs nothing and is inspectable. The
@@ -177,7 +177,7 @@ DEFAULT_AFFORDANCE = (0.15, 1.6, 0.03)
 # The first of those two is a correctness fix and would be right on any data.
 # The second is calibrated against THIS benchmark, whose relocations appear to
 # be placed for reachability rather than for semantic plausibility -- see
-# docs/DYNAMIC_SCENES.md. On a benchmark that moved objects the way people do,
+# docs/history/DYNAMIC_SCENES.md. On a benchmark that moved objects the way people do,
 # a stronger affinity term would be worth more, and AFFINITY_POWER is the knob.
 UNLISTED_AFFINITY = 0.5
 AFFINITY_POWER = 0.5

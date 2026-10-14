@@ -1,6 +1,6 @@
 {
  "rule": "no navmesh point within 1.0 m of the object for radius 0.18 / height 0.88",
- "source": "scripts/analyze_reachability_ceiling.py",
+ "source": "scripts/legacy/analyze_reachability_ceiling.py",
  "trial_ids": [
   "00829-QaLdnwvtxbs__cross_anchor__0129-1__scissors",
   "00829-QaLdnwvtxbs__in_anchor__0118__pitcher",

@@ -728,13 +728,13 @@ being won.
 **Multi-floor is a separate line and is inert here.** `floor.enabled=false` in
 every YCB run. `agent/floor_policy.py` holds it, and no trajectory lock can reach
 the enabled branch because the mounted data is single-floor; three unit tests
-cover it instead. See `docs/MULTI_FLOOR.md`.
+cover it instead. See `docs/history/MULTI_FLOOR.md`.
 
 ---
 
 ## Related documents
 
-- `docs/DYNAMIC_SCENES.md` — the full design and experiment log, in order
-- `docs/REPORT_zh.md`, `docs/PROGRESS_zh.md` — report-facing summaries (中文)
-- `docs/MULTI_FLOOR.md` — the multi-floor line, including two negative results
-- `docs/INVESTIGATION.md` — the earlier SR-gap A/Bs
+- `docs/history/DYNAMIC_SCENES.md` — the full design and experiment log, in order
+- `docs/history/REPORT_zh.md`, `docs/history/PROGRESS_zh.md` — report-facing summaries (中文)
+- `docs/history/MULTI_FLOOR.md` — the multi-floor line, including two negative results
+- `docs/history/INVESTIGATION.md` — the earlier SR-gap A/Bs

@@ -1,8 +1,11 @@
 # Documentation index
 
-52 files, and they are not all the same kind of thing. Read the four in **Start here** and
-ignore the rest until you need them; everything below that line is either a frozen
-measurement or the reasoning behind one decision.
+Two kinds of document live here. The **reference** set at this level describes the system as
+it is: the paper, the architecture, how to set it up, run it, measure it, and put it on a
+robot. Everything under [`history/`](history/) is the record of how it got here — experiment
+logs, frozen result tables and superseded design notes — kept because the numbers in the
+paper trace back to them, and labelled at the top of each file where they no longer describe
+the current tree.
 
 ## Start here
 
@@ -13,26 +16,23 @@ measurement or the reasoning behind one decision.
 | [SETUP.md](SETUP.md) | Clone with submodules, `docker/.env`, weights, the two conda envs. |
 | [USAGE.md](USAGE.md) | How to run the pipeline, and what the default arm scores. |
 
-Also load-bearing: [`METHODOLOGY.md`](METHODOLOGY.md) (how this repo measures ObjectNav, and
-every difference from native ASCENT), [`UNIFIED_PIPELINE.md`](UNIFIED_PIPELINE.md) (one agent
-across three datasets), [`FIGURES.md`](FIGURES.md) (every paper figure, its caption and its
-renderer), [`VIDEO.md`](VIDEO.md) (the ICRA video: storyboard, narration, which episode each
-clip is and why, and the robot shot list still to film), [`ZERO_SHOT_AUDIT.md`](ZERO_SHOT_AUDIT.md)
-(every piece of hand-authored per-benchmark knowledge in the pipeline).
+## Measuring it
 
-## The logs — measurements, in order
-
-Append-only. Large because they are complete, not because they are untidy.
-
-| doc | |
+| doc | what it is |
 |---|---|
-| [AB_RESULTS.md](AB_RESULTS.md) | 236 KB. Every staged change S0–S76, its measured effect, the decision. The results log CLAUDE.md names. |
-| [DYNAMIC_SCENES.md](DYNAMIC_SCENES.md) | 161 KB. The dynamic-scene design and its experiment log. |
-| [CROSS_ANCHOR_OBSTACLE_MAP.md](CROSS_ANCHOR_OBSTACLE_MAP.md) | The chronological log of navigating a moved layout over ASCENT's obstacle map — every measurement and every wrong turn. Carries an internal retraction: everything before the transpose fix was measured on a map 8–9 m from the truth. |
-| [CROSS_ANCHOR_STATUS.md](CROSS_ANCHOR_STATUS.md) | The summary of the above: where it stands, what was found by layer, what is left. **Read this one first.** |
-| [OVERNIGHT_SR_ITERATION.md](OVERNIGHT_SR_ITERATION.md) | Written as it happened, on branch `experiment/sr-70-50`. |
-| [DUALMAP_OFFICIAL_RERUN.md](DUALMAP_OFFICIAL_RERUN.md) | DualMap rerun on its own released benchmark; the source of the 30.2% cross-anchor figure the paper compares against. |
-| [CROSS_ANCHOR_REPRODUCTION.md](CROSS_ANCHOR_REPRODUCTION.md) | 2026-09-20: why the paper's cross-anchor headline no longer re-derives, what was ruled out, and what is left. **Read before quoting Table I.** |
+| [METHODOLOGY.md](METHODOLOGY.md) | How this repo measures ObjectNav, and every difference from native ASCENT. |
+| [DYNAMIC_EXPERIMENT_PROTOCOL.md](DYNAMIC_EXPERIMENT_PROTOCOL.md) | The two-pass moved-object protocol: map the static layout, relocate, search from the stale snapshot. |
+| [UNIFIED_PIPELINE.md](UNIFIED_PIPELINE.md) | One agent across the three datasets (DualMap's release, the five-scene multi-floor set, the fifteen authored scenes). |
+| [DUALMAP_OFFICIAL_RERUN.md](DUALMAP_OFFICIAL_RERUN.md) | DualMap re-run on its own released benchmark; the source of the 30.2 % cross-anchor figure the paper compares against. |
+| [CROSS_ANCHOR_REPRODUCTION.md](CROSS_ANCHOR_REPRODUCTION.md) | Whether the paper's single-floor cross-anchor headline re-derives, what was ruled out, and the 2026-09-27 re-run on the original prior maps. **Read before quoting Table I.** |
+| [ZERO_SHOT_AUDIT.md](ZERO_SHOT_AUDIT.md) | Every piece of hand-authored per-benchmark knowledge in the pipeline. |
+
+## Figures and the video
+
+| doc | what it is |
+|---|---|
+| [FIGURES.md](FIGURES.md) | Every paper figure, its caption, its provenance and the renderer that regenerates it. |
+| [VIDEO.md](VIDEO.md) | The ICRA video: storyboard, narration and subtitles, which episode each clip is and why, the real-robot takes, how to rebuild. |
 
 ## Running on a real robot
 
@@ -40,53 +40,51 @@ Append-only. Large because they are complete, not because they are untidy.
 |---|---|
 | [ROS2.md](ROS2.md) | The ROS 2 / Nav2 layer for the Stretch 3: why two interpreters, the frame conventions, who owns the base, the manual floor switch, the two-run protocol, and how to check all of it with no robot. |
 | [THOR.md](THOR.md) | Where that layer runs: a Jetson AGX Thor beside the robot, two containers, and every knob that can only be settled on the device. |
-| [DEMO_FLOW.md](DEMO_FLOW.md) | The two-floor moved-object demo as a checklist of commands: bring-up, the two passes, the carry, the one-line floor switch. Just the order; the reasons are in the two rows above. |
+| [DEMO_FLOW.md](DEMO_FLOW.md) | The two-floor moved-object demo as a checklist of commands: bring-up, the two passes, the carry, the one-line floor switch. |
 
-## Design notes
+## History — `history/`
 
-[MULTI_FLOOR.md](MULTI_FLOOR.md) · [CROSS_FLOOR_CLIMB.md](CROSS_FLOOR_CLIMB.md) ·
-[FUSED_PIPELINE.md](FUSED_PIPELINE.md) · [PROPOSAL_FUSION.md](PROPOSAL_FUSION.md) ·
-[DYNAMIC_EXPERIMENT_PROTOCOL.md](DYNAMIC_EXPERIMENT_PROTOCOL.md) ·
-[ABLATION_FAILURE_MODES.md](ABLATION_FAILURE_MODES.md) ·
-[APPEARANCE_REID_AND_CANDIDATE_BUDGET_PLAN.md](APPEARANCE_REID_AND_CANDIDATE_BUDGET_PLAN.md) ·
-[SR_PROPOSAL_CLOSE_LOOK.md](SR_PROPOSAL_CLOSE_LOOK.md)
+Append-only measurements and the reasoning behind decisions. Large because they are complete.
 
-## Frozen results
+**The logs, in order**
 
-One table each, from one run. **Most of the runs they name are gone from `outputs/`** — the
-table is the record, and re-deriving it means re-running the arm.
-
-[SENSOR_ONLY_RESULT.md](SENSOR_ONLY_RESULT.md) ·
-[WHY_THE_SENSOR_ARM_LOSES.md](WHY_THE_SENSOR_ARM_LOSES.md) ·
-[CREEP_FIX_RESULTS.md](CREEP_FIX_RESULTS.md) ·
-[REACHABILITY_CEILING.md](REACHABILITY_CEILING.md) ·
-[UNREACHABLE_SET_EXPERIMENT.md](UNREACHABLE_SET_EXPERIMENT.md) ·
-[RELEASED_MAPS_RESULT.md](RELEASED_MAPS_RESULT.md) ·
-[RESIDUE_AFTER_RELEASED_MAPS.md](RESIDUE_AFTER_RELEASED_MAPS.md) ·
-[FUSION_RESULTS.md](FUSION_RESULTS.md) ·
-[FUSION_RESULTS_00808.md](FUSION_RESULTS_00808.md) ·
-[PROPOSAL_FUSION_CLS_RESULT.md](PROPOSAL_FUSION_CLS_RESULT.md) ·
-[PROPOSAL_COMMIT_BAR.md](PROPOSAL_COMMIT_BAR.md) ·
-[REGION_PROPOSAL_RESULT.md](REGION_PROPOSAL_RESULT.md) ·
-[REGION_FALSE_ADMISSION.md](REGION_FALSE_ADMISSION.md) ·
-[PERCEPTION_RESULT_FINAL.md](PERCEPTION_RESULT_FINAL.md) ·
-[PERCEPTION_GAP.md](PERCEPTION_GAP.md) ·
-[PERCEPTION_INVESTIGATION.md](PERCEPTION_INVESTIGATION.md) ·
-[FEATURE_MEMORY_PROBE.md](FEATURE_MEMORY_PROBE.md) ·
-[FEATURE_MEMORY_ONLINE.md](FEATURE_MEMORY_ONLINE.md) ·
-[ASSET_SUBSTITUTION_EVIDENCE.md](ASSET_SUBSTITUTION_EVIDENCE.md)
-
-## Superseded — kept, and labelled at the top of each file
-
-| doc | superseded by |
+| doc | |
 |---|---|
-| [INVESTIGATION.md](INVESTIGATION.md) | S71. Historical (2026-07); names a stack that no longer exists. |
-| [MULTI_FLOOR.md](MULTI_FLOOR.md) | Partly. Its `frontier_cost_free_cell=true` recommendation was reversed with a measurement. |
-| [PROPOSAL_FUSION_RESULT.md](PROPOSAL_FUSION_RESULT.md) | `PROPOSAL_FUSION_CLS_RESULT.md` — 59/107 against 62/107. |
-| [DUALMAP_SWAP.md](DUALMAP_SWAP.md) | Nothing. Paused before any trial ran. |
-| [METHOD_SECTION.zh.md](METHOD_SECTION.zh.md) | `PAPER.md`. Kept only for its Chinese review commentary. |
+| [AB_RESULTS.md](history/AB_RESULTS.md) | 236 KB. Every staged change S0–S76 on the ObjectNav / ASCENT-parity line, its measured effect, the decision. |
+| [DYNAMIC_SCENES.md](history/DYNAMIC_SCENES.md) | 161 KB. The dynamic-scene design and its experiment log. |
+| [CROSS_ANCHOR_OBSTACLE_MAP.md](history/CROSS_ANCHOR_OBSTACLE_MAP.md) | Navigating a moved layout over ASCENT's obstacle map — every measurement and every wrong turn. Carries an internal retraction. |
+| [CROSS_ANCHOR_STATUS.md](history/CROSS_ANCHOR_STATUS.md) | The summary of the above: where it stands, what was found by layer, what is left. |
+| [OVERNIGHT_SR_ITERATION.md](history/OVERNIGHT_SR_ITERATION.md) | Written as it happened, on branch `experiment/sr-70-50`. |
+| [SENSOR_V2_107.md](history/SENSOR_V2_107.md) | The `_sensor_v2` arm on the 107 dynamic trials. |
 
-## Chinese-language summaries
+**Design notes** — [MULTI_FLOOR.md](history/MULTI_FLOOR.md) (partly superseded: its
+`frontier_cost_free_cell=true` recommendation was reversed with a measurement) ·
+[CROSS_FLOOR_CLIMB.md](history/CROSS_FLOOR_CLIMB.md) · [FUSED_PIPELINE.md](history/FUSED_PIPELINE.md) ·
+[PROPOSAL_FUSION.md](history/PROPOSAL_FUSION.md) · [ABLATION_FAILURE_MODES.md](history/ABLATION_FAILURE_MODES.md) ·
+[APPEARANCE_REID_AND_CANDIDATE_BUDGET_PLAN.md](history/APPEARANCE_REID_AND_CANDIDATE_BUDGET_PLAN.md) ·
+[SR_PROPOSAL_CLOSE_LOOK.md](history/SR_PROPOSAL_CLOSE_LOOK.md)
 
-[PROGRESS_zh.md](PROGRESS_zh.md) · [REPORT_zh.md](REPORT_zh.md) ·
-[METHOD_SECTION.zh.md](METHOD_SECTION.zh.md)
+**Frozen results** — one table each, from one run; most of the runs they name are gone from
+`outputs/`, so the table is the record — [SENSOR_ONLY_RESULT.md](history/SENSOR_ONLY_RESULT.md) ·
+[WHY_THE_SENSOR_ARM_LOSES.md](history/WHY_THE_SENSOR_ARM_LOSES.md) · [CREEP_FIX_RESULTS.md](history/CREEP_FIX_RESULTS.md) ·
+[REACHABILITY_CEILING.md](history/REACHABILITY_CEILING.md) · [UNREACHABLE_SET_EXPERIMENT.md](history/UNREACHABLE_SET_EXPERIMENT.md) ·
+[RELEASED_MAPS_RESULT.md](history/RELEASED_MAPS_RESULT.md) · [RESIDUE_AFTER_RELEASED_MAPS.md](history/RESIDUE_AFTER_RELEASED_MAPS.md) ·
+[FUSION_RESULTS.md](history/FUSION_RESULTS.md) · [FUSION_RESULTS_00808.md](history/FUSION_RESULTS_00808.md) ·
+[PROPOSAL_FUSION_CLS_RESULT.md](history/PROPOSAL_FUSION_CLS_RESULT.md) · [PROPOSAL_COMMIT_BAR.md](history/PROPOSAL_COMMIT_BAR.md) ·
+[REGION_PROPOSAL_RESULT.md](history/REGION_PROPOSAL_RESULT.md) · [REGION_FALSE_ADMISSION.md](history/REGION_FALSE_ADMISSION.md) ·
+[PERCEPTION_RESULT_FINAL.md](history/PERCEPTION_RESULT_FINAL.md) · [PERCEPTION_GAP.md](history/PERCEPTION_GAP.md) ·
+[PERCEPTION_INVESTIGATION.md](history/PERCEPTION_INVESTIGATION.md) · [FEATURE_MEMORY_PROBE.md](history/FEATURE_MEMORY_PROBE.md) ·
+[FEATURE_MEMORY_ONLINE.md](history/FEATURE_MEMORY_ONLINE.md) · [ASSET_SUBSTITUTION_EVIDENCE.md](history/ASSET_SUBSTITUTION_EVIDENCE.md)
+
+**Superseded** — [INVESTIGATION.md](history/INVESTIGATION.md) (by S71; names a stack that no
+longer exists) · [PROPOSAL_FUSION_RESULT.md](history/PROPOSAL_FUSION_RESULT.md) (by
+`PROPOSAL_FUSION_CLS_RESULT.md`, 59/107 against 62/107) · [DUALMAP_SWAP.md](history/DUALMAP_SWAP.md)
+(paused before any trial ran) · [METHOD_SECTION.zh.md](history/METHOD_SECTION.zh.md) (by `PAPER.md`)
+
+**Chinese-language summaries** — [PROGRESS_zh.md](history/PROGRESS_zh.md) ·
+[REPORT_zh.md](history/REPORT_zh.md) · [METHOD_SECTION.zh.md](history/METHOD_SECTION.zh.md)
+
+The scripts these documents ran, where they are no longer part of the release surface, are in
+[`scripts/legacy/`](../scripts/legacy/README.md); the exploratory presets they name are in
+[`configs/experiment/archive/`](../configs/experiment/archive/README.md) and compose as
+`+experiment=archive/<name>`.

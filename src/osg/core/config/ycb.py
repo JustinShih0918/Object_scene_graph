@@ -83,7 +83,7 @@ class YCBAuthoredConfig:
     starts_per_target: int = 1
     seed: int = 42
     manifest_cache_dir: str = "outputs/ycb_manifests"
-    # Mid-episode relocation (docs/DYNAMIC_SCENES.md, Phase 2). -1 disables it
+    # Mid-episode relocation (docs/history/DYNAMIC_SCENES.md, Phase 2). -1 disables it
     # and every episode behaves exactly as before. When enabled, an episode
     # whose layout is a dynamic one starts the world in the paired STATIC
     # layout and moves the objects to the episode's own poses at this step --
@@ -98,7 +98,7 @@ class YCBAuthoredConfig:
     # If the visibility condition never comes true, relocate anyway this many
     # steps later, rather than silently turning the episode into a static one.
     relocate_deadline_steps: int = 120
-    # Two-pass benchmark (docs/DYNAMIC_SCENES.md, Phase 2). Pass 1 explores the
+    # Two-pass benchmark (docs/history/DYNAMIC_SCENES.md, Phase 2). Pass 1 explores the
     # STATIC layout and writes one snapshot per scene to `map_out`; pass 2 runs
     # the moved layout and starts from `map_in`, so the map the agent navigates
     # with is genuinely stale. The staleness IS the experiment -- an agent that

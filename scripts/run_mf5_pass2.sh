@@ -24,7 +24,8 @@
 # episode and no `<scene>.json`, so without it `load_obstacle_map` raises.
 set -u
 cd "$(dirname "$0")/.."
-set -a; [ -f docker/.env ] && . ./docker/.env; set +a
+# UID/GID in docker/.env are for compose; bash's UID is readonly, so skip them.
+set -a; [ -f docker/.env ] && . <(grep -vE '^(UID|GID)=' docker/.env); set +a
 umask 002
 
 OBS=${OBS:-outputs/maps_p1500_ascent}

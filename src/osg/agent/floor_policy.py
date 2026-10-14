@@ -1,7 +1,7 @@
 """Which storey the agent is on, and when to leave it.
 
 Not part of the dynamic-scene line. This is the multi-floor work
-(docs/MULTI_FLOOR.md), and it is here rather than in `nav_agent.py` because with
+(docs/history/MULTI_FLOOR.md), and it is here rather than in `nav_agent.py` because with
 `floor.enabled=false` -- which is every YCB run and every default -- none of it
 does anything except log, and 350 inert lines interleaved with `act()` made the
 path an episode actually takes impossible to read off the file.
@@ -99,7 +99,7 @@ class FloorPolicy:
             ),
             value_map_factory=value_map_factory,
         )
-        # Which storey the agent is on (docs/MULTI_FLOOR.md). Constructed
+        # Which storey the agent is on (docs/history/MULTI_FLOOR.md). Constructed
         # unconditionally so the estimate is always logged; whether it FEEDS
         # the costmap is gated by floor.enabled / floor.estimate_only.
         self.estimator = FloorEstimator(

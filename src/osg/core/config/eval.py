@@ -65,7 +65,7 @@ class EvalConfig:
     # `ycb.obstacle_map_in` have anything to draw, so this is a no-op
     # elsewhere. On by default: the cross-anchor failures are geometric, and
     # the first of these figures answered three questions the numbers had not
-    # (docs/CROSS_ANCHOR_OBSTACLE_MAP.md).
+    # (docs/history/CROSS_ANCHOR_OBSTACLE_MAP.md).
     obstacle_map_png: bool = True
     # Per-step behaviour log in episodes.jsonl, WITHOUT the debug videos.
     # `debug_frames` writes an mp4 per episode, which is minutes of encoding and

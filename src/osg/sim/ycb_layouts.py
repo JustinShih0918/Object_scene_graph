@@ -385,7 +385,7 @@ def _dynamic_file(root: Path, layout_index: int) -> Path | None:
 class RelocationPair:
     """A before/after layout pair: the same objects, moved.
 
-    Phase 2 of docs/DYNAMIC_SCENES.md. The point of a pair is that the change
+    Phase 2 of docs/history/DYNAMIC_SCENES.md. The point of a pair is that the change
     can be made to happen DURING an episode, in or out of the agent's view, so
     "how long did the map take to notice" becomes measurable. DualMap's protocol
     -- map, change the world offline, query -- can only measure recovery from a

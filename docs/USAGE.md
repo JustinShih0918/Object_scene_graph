@@ -4,7 +4,7 @@ The default configuration is the S71 arm: ASCENT's control flow
 (`src/navigation/`) on ASCENT's served perception models, sensor-only, on the
 frozen PointNav mover. On the 100-episode HM3D v1 split `scenes20_ep0to4` it
 scores **63.0% SR / 0.36 SPL**; native ASCENT on the same episodes scores
-65.0% / 0.36 (`docs/AB_RESULTS.md`, S71). Everything below runs inside the
+65.0% / 0.36 (`docs/history/AB_RESULTS.md`, S71). Everything below runs inside the
 `nav` container (see `README.md` → Quick start for building it).
 
 ## 1. One-time setup
@@ -133,7 +133,7 @@ NIM, the VLM verifier, the text-LLM frontier scorer).
 ## 6. Tests
 
 ```bash
-pytest tests/unit -q                       # ~20 s, no GPU or data
+pytest tests/unit -q                       # ~1535 tests, ~50 s, no GPU or data
 python tests/unit/test_config_snapshot.py  # regenerate the config golden after a deliberate default change
 ```
 
@@ -151,5 +151,5 @@ was transcribed from.
 | the mover | `src/osg/planning/pointnav_driver.py` (weights bit-identical to ASCENT's) |
 | config | `configs/config.yaml` → `agent/s71`, `exploration/s71`, `verification/s71`, `detector/dfine`, `llm/qwen_local`, `scene_graph/place365`, `eval/scenes20_ep0to4` |
 | setup | `docs/SETUP.md` — submodule, CUDA extension, weights, datasets |
-| results log | `docs/AB_RESULTS.md` (S71 is the current record), `src/navigation/README.md` (fidelity notes F1–F14) |
+| results log | `docs/history/AB_RESULTS.md` (S71 is the current record), `src/navigation/README.md` (fidelity notes F1–F14) |
 | methodology | `docs/METHODOLOGY.md` — protocol, evidence rules, differences from native ASCENT |

@@ -9,7 +9,7 @@ wandering Phase 3 exists to replace.
 One text call per unknown target answers it. The result is cached to disk, so a
 run is deterministic after the first, an A/B is not paying for the model, and
 the priors the agent used are inspectable afterwards -- which matters, because
-docs/INVESTIGATION.md records an earlier LLM scorer that produced byte-identical
+docs/history/INVESTIGATION.md records an earlier LLM scorer that produced byte-identical
 trajectories to a geometric heuristic while adding a network dependency. A prior
 you can read and diff is the difference between using a model and trusting one.
 

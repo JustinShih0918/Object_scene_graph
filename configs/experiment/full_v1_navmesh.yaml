@@ -6,7 +6,7 @@
 #   - forced-choice VLM verify (verification=nim) -- rejects detector mislabels
 #     (e.g. stool->chair) before committing
 #   - MULTI-FLOOR: per-floor costmaps, 3D navmesh goals, portal-based cross-floor
-#     exploration timed by target-category context (docs/MULTI_FLOOR.md)
+#     exploration timed by target-category context (docs/history/MULTI_FLOOR.md)
 #
 # Measured on full v1 (100 episodes):
 #   flags off                       SR 40.0  SPL 0.200  single 68.6  multi 24.6  cross  0.0

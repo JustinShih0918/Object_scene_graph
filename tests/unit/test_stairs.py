@@ -1,7 +1,7 @@
 """Stair detection (osg.mapping.stairs).
 
 Geometry leads and semantics only confirm, because the YOLOE `stairs` class was
-measured firing on just 15% of multi-floor episodes -- see docs/MULTI_FLOOR.md.
+measured firing on just 15% of multi-floor episodes -- see docs/history/MULTI_FLOOR.md.
 """
 import numpy as np
 import pytest
@@ -57,7 +57,7 @@ def test_ramp_is_detected():
            "INTERIORS, so a real staircase fragments into disconnected riser "
            "strips (measured: 9 components, largest 200 cells, 0 regions) and "
            "no threshold recovers it. Detection currently only works on ramps. "
-           "See docs/MULTI_FLOOR.md; floor.stairs is default-off because of it.",
+           "See docs/history/MULTI_FLOOR.md; floor.stairs is default-off because of it.",
     strict=True,
 )
 def test_discrete_treads_are_detected():

@@ -43,7 +43,7 @@ class ExplorationConfig:
     max_frontiers_per_call: int = 4
     unscored_prior: float = 0.3
     min_path_cost_m: float = 0.5
-    # Search posterior (docs/DYNAMIC_SCENES.md, C3). Off by default: it changes
+    # Search posterior (docs/history/DYNAMIC_SCENES.md, C3). Off by default: it changes
     # where the agent goes, so it must be an explicit A/B. When on, mapped
     # surfaces compete with frontiers under ONE index, b*d/c, so exploring and
     # re-searching stop being separate subsystems.
@@ -60,7 +60,7 @@ class ExplorationConfig:
     # cross_anchor ones 6.06 m, which is a short mode plus a long tail rather
     # than one exponential with a 4 m scale. Scored offline against the true
     # destination over 114 (scene, layout, target) combinations
-    # (scripts/rank_search_surfaces.py), share of cases where the true surface
+    # (scripts/legacy/rank_search_surfaces.py), share of cases where the true surface
     # lands in the top 5 -- what one episode can afford to inspect:
     #
     #                                    overall   in_anchor  cross_anchor
@@ -326,7 +326,7 @@ class ExplorationConfig:
     # clip | constant | blip2itm. `blip2itm` is ASCENT's own value model,
     # reached over HTTP because lavis cannot be installed in this environment;
     # see `perception/image_text.py::Blip2ItmScorer` and
-    # `scripts/serve_blip2itm.sh`.
+    # `scripts/serve_perception.sh`, which serves it on this port.
     value_model: str = "clip"
     value_blip2_url: str = "http://localhost:13182/blip2itm"
     value_blip2_timeout_s: float = 10.0

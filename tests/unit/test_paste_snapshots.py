@@ -5,7 +5,7 @@ audit, the map figure and the frame check use. They were separate code once,
 and the separate one was WRONG: `navigation/mapping/map_store` writes its grids
 transposed relative to its own points, so a second implementation put the walls
 8-9 m from the truth and every geometric conclusion drawn before that was found
-had to be retracted (docs/CROSS_ANCHOR_OBSTACLE_MAP.md).
+had to be retracted (docs/history/CROSS_ANCHOR_OBSTACLE_MAP.md).
 
 So the offline path is now the in-run path with the costmaps passed in, and
 this file is the lock: paste the same snapshot both ways, assert the grids are

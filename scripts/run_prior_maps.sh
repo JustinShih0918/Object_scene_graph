@@ -29,7 +29,8 @@
 # Sequential statements in one script cannot have that bug.
 set -u
 cd "$(dirname "$0")/.."
-set -a; [ -f docker/.env ] && . ./docker/.env; set +a
+# UID/GID in docker/.env are for compose; bash's UID is readonly, so skip them.
+set -a; [ -f docker/.env ] && . <(grep -vE '^(UID|GID)=' docker/.env); set +a
 umask 002
 
 STEPS=${STEPS:-1500}

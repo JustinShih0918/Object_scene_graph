@@ -3,7 +3,7 @@
 
 Some of the collector's targets cannot be recognised by any open-vocabulary
 detector at any resolution or under any name -- the scissors render as 315 px of
-grey and score 0.00 against eight candidate labels (docs/DYNAMIC_SCENES.md). An
+grey and score 0.00 against eight candidate labels (docs/history/DYNAMIC_SCENES.md). An
 episode targeting one of those measures asset coverage, not dynamic-scene
 handling, so it is dead weight in a 21-episode benchmark.
 

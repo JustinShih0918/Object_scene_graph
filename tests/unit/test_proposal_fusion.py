@@ -1,6 +1,6 @@
 """Proposals are fused as appearance hypotheses, not as namings.
 
-Measured on the full 107 (docs/REGION_FALSE_ADMISSION.md): a region the stage
+Measured on the full 107 (docs/history/REGION_FALSE_ADMISSION.md): a region the stage
 admitted became an ordinary same-label track, won the candidate gate and spent
 an attempt -- 18 trials lost, because the per-frame threshold admits on 13% of
 frames with no object in view. The fix is not when the stage runs but how its

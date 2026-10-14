@@ -18,7 +18,7 @@ class VerificationConfig:
     # permanent rejection behavior used by existing dynamic presets.
     reject_cooldown_steps: int = 0
     # Arriving at a committed target without ever seeing it is an OBSERVATION,
-    # not just a failed trip (docs/DYNAMIC_SCENES.md, C5). Applying it as
+    # not just a failed trip (docs/history/DYNAMIC_SCENES.md, C5). Applying it as
     # negative evidence is what stops a stale map sending the agent back to the
     # same empty spot next episode.
     absence_on_arrival: bool = True
@@ -81,7 +81,7 @@ class VerificationConfig:
     # which in-situ detector recall is 0.24-0.26 (see absence_max_range_m).
     seen_counts_within_m: float = 0.0
     # Two rules about PRIOR-MAP tracks of the target's label, measured on the
-    # released benchmark (docs/SR_PROPOSAL_CLOSE_LOOK.md, "The stale anchor"):
+    # released benchmark (docs/history/SR_PROPOSAL_CLOSE_LOOK.md, "The stale anchor"):
     # the static pass names the target in 39 of 54 in-anchor and 39 of 53
     # cross-anchor trials, and in-anchor moves it a median 0.7 m, so the stale
     # track is the answer more often than not -- yet a silent arrival there

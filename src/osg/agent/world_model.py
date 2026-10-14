@@ -162,7 +162,7 @@ class WorldModel:
         Mirrors `NavAgent._act_inner`'s mapping half, including the stair
         check: while the agent is ON a staircase its depth belongs to neither
         storey, and folding it into either paints a phantom wall across the
-        landing (docs/MULTI_FLOOR.md).
+        landing (docs/history/MULTI_FLOOR.md).
         """
         self.step_count = int(step)
         floor_y = self.floors.observe(frame, self.step_count)

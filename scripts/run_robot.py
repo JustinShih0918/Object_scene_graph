@@ -6,7 +6,7 @@ Two runs make an experiment, differing in one field:
     python scripts/run_robot.py +experiment=stretch3_search   # load it, find the thing
 
 That is the protocol the whole dynamic-scene line is built around
-(docs/DYNAMIC_SCENES.md): run 1 leaves a scene graph and per-storey occupancy;
+(docs/history/DYNAMIC_SCENES.md): run 1 leaves a scene graph and per-storey occupancy;
 run 2 starts believing it, and the object has moved. The difference on a robot
 is only that the world changes because somebody moved a chair rather than
 because a script re-authored a layout.

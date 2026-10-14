@@ -16,7 +16,7 @@ gate a floor transition on. So:
 
 The output is deliberately conservative. Confirmed cells get written FREE in
 the costmap and exempted from the obstacle stamp, and
-`docs/INVESTIGATION.md` records that *every* previous attempt to soften the
+`docs/history/INVESTIGATION.md` records that *every* previous attempt to soften the
 costmap's obstacle writes (hit-count corroboration, speckle filtering) cost
 more real geometry than it gained. So a cell must clear the geometric test AND
 belong to a component large enough to be an actual staircase before it is

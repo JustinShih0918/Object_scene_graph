@@ -5,7 +5,7 @@ it once) or gone (the track was never created). There was no way for the world
 to tell the system an object had left -- and no way to tell "I turned away" apart
 from "I am looking right at it and it is not there". DualMap has the same hole
 and fills it at query time with a per-query ignore list that is discarded when
-the query ends (docs/DYNAMIC_SCENES.md, Phase 1).
+the query ends (docs/history/DYNAMIC_SCENES.md, Phase 1).
 
 The filter is a textbook binary Bayes filter in log-odds with three channels
 kept deliberately separate:
