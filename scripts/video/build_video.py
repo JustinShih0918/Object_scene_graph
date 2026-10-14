@@ -5,12 +5,6 @@
     python scripts/video/build_video.py --narration voice.wav   # mux a recorded voiceover
     python scripts/video/build_video.py --print-storyboard      # the table for docs/VIDEO.md
 
-Robot footage: a shot of kind `robot` with slot R2_5 is replaced by
-`outputs/video/robot/R2_5.mp4` when that file exists (scaled and padded to 1280x720,
-trimmed or frozen to the slot's duration); otherwise the placeholder slate rendered by
-`make_assets.py` stands in. Nothing else about the cut changes, so the timing the narration
-was written against holds.
-
 Size: ICRA's limit is 20 MB for at most 3 minutes. The video bitrate is derived from the
 total duration so a two-pass H.264 encode lands at ~18.5 MB with the audio, and the result
 is checked against both limits before the script reports success.
@@ -18,35 +12,27 @@ is checked against both limits before the script reports success.
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from common import FPS, H, OUT_ROOT, ROBOT_DIR, SEGMENTS, W, load_shotlist, probe  # noqa: E402
+from common import FPS, OUT_ROOT, SEGMENTS, load_shotlist, probe  # noqa: E402
 
 TARGET_BYTES = 18_500_000     # headroom under the 20 MB limit for container overhead
 AUDIO_KBPS = 64
 
 
-def conform_robot(src: pathlib.Path, dur: float, out: pathlib.Path) -> pathlib.Path:
-    """Scale/pad a robot clip to the frame, cut or freeze it to `dur` seconds, 24 fps."""
-    vf = (f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
-          f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=0x181a1e,fps={FPS},"
-          f"tpad=stop_mode=clone:stop_duration={dur},trim=duration={dur},setpts=PTS-STARTPTS,"
-          f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0.0, dur - 0.3)}:d=0.3")
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-an", "-vf", vf,
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "16", "-pix_fmt", "yuv420p", str(out)],
-                   check=True)
-    return out
-
-
 def storyboard(data: dict) -> str:
-    rows = ["| t | shot | beat | on screen | narration |", "|---|---|---|---|---|"]
+    here = pathlib.Path(__file__).resolve().parent
+    nar = json.loads((here / "narration.json").read_text())["cues"]
+    rows = ["| t | section | shot | beat | on screen | narration |", "|---|---|---|---|---|---|"]
     for s in data["shots"]:
         t0 = s["t_start"]
-        rows.append(f"| {int(t0 // 60)}:{int(t0 % 60):02d} (+{s['dur']} s) | `{s['id']}` | "
-                    f"{s['beat']} | {s.get('on_screen', '')} | {s.get('narration', '')} |")
+        lines = " ".join(c.get("display", c["text"]) for c in nar if c["shot"] == s["id"])
+        rows.append(f"| {int(t0 // 60)}:{int(t0 % 60):02d} (+{s['dur']} s) | {s.get('section', '')} | `{s['id']}` | "
+                    f"{s['beat']} | {s.get('on_screen', '')} | {lines} |")
     rows.append(f"\nTotal: {data['total']:.0f} s of {data['meta']['limits']['max_seconds']} s.")
     return "\n".join(rows)
 
@@ -65,17 +51,22 @@ def main() -> None:
 
     limits = data["meta"]["limits"]
     total = data["total"]
+    here = pathlib.Path(__file__).resolve().parent
+    cues = OUT_ROOT / "narration" / "cues.json"
+    if not cues.exists():
+        sys.exit("no cues.json: run make_narration.py (the subtitles are drawn from its timings)")
+    stale = [f.name for f in (here / "narration.json", here / "shotlist.json") if f.stat().st_mtime > cues.stat().st_mtime]
+    if stale:
+        sys.exit(f"{', '.join(stale)} changed after cues.json: re-run make_narration.py, then make_assets.py")
+    rows = json.loads(cues.read_text())
+    print(f"narration: {len(rows)} cues, {sum(len(r['text'].split()) for r in rows)} words, "
+          f"{sum(r['t1'] - r['t0'] for r in rows):.0f} s of speech")
     if total > limits["max_seconds"]:
         sys.exit(f"shot list runs {total:.1f} s, over the {limits['max_seconds']} s limit")
 
-    parts, substituted = [], []
+    parts = []
     for s in data["shots"]:
         seg = SEGMENTS / f"{s['id']}.mp4"
-        if s["kind"] == "robot":
-            robot = ROBOT_DIR / f"{s['slot']}.mp4"
-            if robot.exists():
-                seg = conform_robot(robot, float(s["dur"]), SEGMENTS / f"{s['id']}_robot.mp4")
-                substituted.append(s["slot"])
         if not seg.exists():
             sys.exit(f"missing segment {seg}; run scripts/video/make_assets.py first")
         parts.append(seg)
@@ -101,7 +92,6 @@ def main() -> None:
     st = info["streams"][0]
     print(f"{args.out}: {st['width']}x{st['height']} {st['codec_name']} {st['r_frame_rate']} fps, "
           f"{dur:.1f} s, {size / 1e6:.2f} MB  (video {v_kbps} kbps)")
-    print(f"robot slots filled: {substituted or 'none (placeholder slates)'}")
     ok = size <= limits["max_bytes"] and dur <= limits["max_seconds"] + 0.5
     print("within limits" if ok else "OVER LIMIT")
     if not ok:

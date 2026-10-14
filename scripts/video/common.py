@@ -21,7 +21,6 @@ SHOTLIST = pathlib.Path(__file__).resolve().parent / "shotlist.json"
 OUT_ROOT = WORKSPACE / "outputs" / "video"
 ASSETS = OUT_ROOT / "assets"
 SEGMENTS = OUT_ROOT / "segments"
-ROBOT_DIR = OUT_ROOT / "robot"
 
 W, H, FPS = 1280, 720, 24
 
