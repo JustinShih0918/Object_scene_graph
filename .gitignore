@@ -9,6 +9,9 @@ outputs/
 data/*
 !data/README.md
 !data/splits/
+# Native ASCENT's recorded 100-episode trace (gzipped, <1 MB), which compare_ascent_osg.py
+# reads by default and which cannot be regenerated from the unpatched submodule.
+!data/reference/
 data/splits/*
 !data/splits/*.json
 .env

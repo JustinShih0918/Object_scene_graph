@@ -3,7 +3,8 @@
 The vocabulary is not a list of the objects in the scene -- it is the set of
 query strings the detector is asked about, and which strings are in it changes
 what gets found. See `osg/perception/vocabulary.py` for the target-side rule and
-docs/ARCHITECTURE.md for the measurements behind the per-class gates.
+docs/history/AUTHORED_BENCHMARK_LADDER.md (conditions H and M) for the measurements behind
+the per-class gates.
 """
 from __future__ import annotations
 

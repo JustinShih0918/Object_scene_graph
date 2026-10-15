@@ -78,8 +78,8 @@ The premise is a map that is **actively wrong**, not merely incomplete: pass 1 e
 | benchmark | scenes | trials | preset | source |
 |---|---|---|---|---|
 | DualMap's released single-floor benchmark — static / in-anchor / cross-anchor | 00829, 00848, 00880 | 79 / 54 / 53 | `dualmap_osg_unified` | DualMap's `HM3D_collect` release, imported by `scripts/import_collector_layouts.py` |
-| **Multi-floor cross-anchor** (ours) — the target is moved to another storey | 00800, 00821, 00862, 00873, 00878 | 25 | `mf5_osg_unified` vs `mf5_ascent_crossanchor` | authored YCB layouts, `outputs/dualmap_multifloor` |
-| Authored fifteen-scene benchmark (ours) | 15 HM3D v0.2 scenes | 111 objects | `ycb15_osg_unified` | `outputs/dualmap_authoring` |
+| **Multi-floor cross-anchor** (ours) — the target is moved to another storey | 00800, 00821, 00862, 00873, 00878 | 25 | `mf5_osg_on_ascent_map` vs `mf5_ascent_crossanchor` | authored YCB layouts, the data collector's `outputs/dualmap_multifloor` |
+| Authored fifteen-scene benchmark (ours) | 15 HM3D v0.2 scenes | 111 objects | `ycb15_osg_unified` | the data collector's `outputs/dualmap_authoring` |
 
 Pass-1 maps are built once with `scripts/campaign/rebuild_maps.sh` / `scripts/run_prior_maps.sh`; the DualMap arm runs through `scripts/run_dualmap_arm.sh` and the multi-floor arm through `scripts/run_mf5_pass2.sh`.
 

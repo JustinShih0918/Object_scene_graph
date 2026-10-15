@@ -4,7 +4,7 @@ Two decisions in this agent conclude something from a single frame taken
 wherever the follower happened to stop. The search retires a surface's belief
 on arrival, and the absence sensor abandons a committed track when the
 detector says nothing at the goal. Measured on the released benchmark
-(`docs/DUALMAP_OFFICIAL_RERUN.md`, "What the old headline was made of"), both
+(`docs/history/DUALMAP_PROTOCOL_EARLY_ARMS.md`, "What the old headline was made of"), both
 frames are usually the wrong ones:
 
 * Across the 32 cross-anchor failures without a detection, the search reached

@@ -204,8 +204,8 @@ class VerificationConfig:
     # clears the object: on a couch or a counter the track centre is a metre
     # inside the furniture, and every sample on a small ring lands in an
     # occupied cell -> approach_viewpoint returns None -> the fallback goal that
-    # scored 0.100 against 0.516. Off by default: every result in ARCHITECTURE.md
-    # and every frozen condition was measured with centred rings.
+    # scored 0.100 against 0.516. Off by default: every condition in
+    # docs/history/AUTHORED_BENCHMARK_LADDER.md was measured with centred rings.
     ring_radius_extent_aware: bool = False
     accept_confidence: float = 0.5
     # Forced-choice verification: instead of asking the VLM "is this a <target>?"

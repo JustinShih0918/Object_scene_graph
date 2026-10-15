@@ -147,7 +147,8 @@ than silent.
   frontier it becomes FORWARD; on a flight it marks the centroid reached.
 * `_disable_stair_and_reset_state` zeroes the climb flag before testing it, so
   the stair burn never runs and a failed staircase is retried at once (F3).
-  `stair_disable_burns_map: true` runs the branch the code was written for.
+  `+agent.stair_disable_burns_map=true` runs the branch the code was written for (the
+  flag is read with `getattr` and has no `AgentConfig` field, hence the `+`).
 * The pause ≥ 30 branch does not switch floors: it copies the flight to the
   neighbour map and re-runs the 13-turn scan on the same floor (F5).
 * The multi-floor LLM prompt is dead in the reference run (F2); it is ported
@@ -167,6 +168,9 @@ python scripts/run_eval.py +experiment=ascentnav eval=scenes20_ep0to4 \
     eval.behaviour_log=true eval.save_viz=false output_dir=outputs/<run>
 python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/<run>
 ```
+
+The ASCENT trace that command reads is not in this checkout (`docs/SETUP.md` §6): it was
+never committed and cannot be regenerated from the unpatched submodule.
 
 The comparison's last block scores both traces against the dataset's object
 positions: SAW episodes, never-saw → STOP / timeout, climb share on same-floor

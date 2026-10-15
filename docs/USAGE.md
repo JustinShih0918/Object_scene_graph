@@ -20,10 +20,9 @@ python scripts/download_weights.py --pointnav --rednet
 docker exec docker-ollama-1 ollama pull qwen2.5:7b
 ```
 
-The five ASCENT models run in the `ascent` conda env
-(the `ascent` env, built by `docker/Dockerfile` alongside `habitat`; see
-docs/SETUP.md §5), not in
-habitat's — BLIP-2's `lavis` and habitat-sim cannot share an interpreter.
+The five ASCENT models run in the `ascent` conda env, which `docker/Dockerfile`
+builds alongside `habitat` (`docs/SETUP.md` §5) — BLIP-2's `lavis` and
+habitat-sim cannot share an interpreter.
 
 ## 2. Start the model servers
 
@@ -44,9 +43,10 @@ Logs land in `relative_work/ascent/debug/vlm_logs/<window>.log`. The GPU
 budget with all five plus habitat is ~12 GB.
 
 Only run **one evaluation at a time** against these servers. They hold
-per-image state on the model object, so concurrent requests used to race and
-return HTTP 500; the servers now serialise model calls behind a lock and the
-client retries once, but a second eval still halves everyone's throughput.
+per-image state on the model object and are not reentrant — the submodule is
+pinned to upstream, without the lock a local patch once added — so concurrent
+requests race and the loser gets HTTP 500. The client retries once, which
+covers a transient hit, not a second eval.
 
 The run **refuses to start** if any server it needs is down
 (`PerceptionUnavailable`, raised by `probe_served_models` before Habitat
@@ -92,12 +92,19 @@ Outputs, under `output_dir`:
 
 ## 4. Compare against ASCENT
 
-`data/reference/ascent_behaviour_100/` holds native ASCENT's recorded
+`data/reference/ascent_behaviour_100/` is native ASCENT's recorded
 100-episode run on the same split (65.0%). Pair any OSG run against it:
 
 ```bash
 python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/my_run
 ```
+
+**The reference trace is not in this checkout.** `data/reference/ascent_behaviour_100/` was
+meant to be committed beside the code (commit `11e0b4a` says so), but `data/*` was ignored
+and it never was, and the recorder patch that produced it is no longer applied to the
+submodule, so it cannot be regenerated. `.gitignore` now admits `data/reference/`: whoever
+holds the copy from the S71 machine should put it back there and commit it. Until then,
+`scripts/compare_runs.py` still pairs two OSG runs episode by episode.
 
 The report gives paired SR by floor class and category, the episodes each
 side wins, and — scored against the dataset's own object positions — the
@@ -119,7 +126,7 @@ without moving any of them is noise at n = 100 (±3 points).
 | command | what it tests |
 |---|---|
 | `+experiment=ascentnav_union_stairs` | OSG's looser stair sensing (RedNet union, no passive entry, lip test) in the same control flow |
-| `agent.stair_disable_burns_map=true` | run the reference's dead stair-burn branch (F3) so a failed staircase is not retried |
+| `+agent.stair_disable_burns_map=true` | run the reference's dead stair-burn branch (F3) so a failed staircase is not retried (the `+` is needed: no dataclass field) |
 | `exploration.llm_multi_floor=true` | the reference's multi-floor prompt, which its own run never reached (F2) |
 | `agent.downstair_detector=lip` | OSG's "missing floor" down-stair trigger instead of the reference's mirrored depth |
 | `verification.enabled=true` | add OSG's forced-choice VLM verifier on top (needs `NVIDIA_API_KEY`) |

@@ -144,8 +144,8 @@ collapses to 0.05-0.07, but only 92 of 426 frames are in that state, and the
 median missed frame is fully visible.
 
 It is also the one asymmetry the comparison never resolved --
-`DUALMAP_OFFICIAL_RERUN.md` lists the two camera heights under "what could not be
-shared" and leaves it there.
+`DUALMAP_OFFICIAL_RERUN.md` lists the two camera heights under "what a paired
+comparison cannot share" and leaves it there.
 
 ## The camera height does not explain it either
 

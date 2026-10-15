@@ -17,8 +17,9 @@ docker compose -f docker/compose.yaml --env-file docker/.env up -d
 docker exec -it docker-nav-1 bash
 ```
 
-The five ASCENT perception models run in a *second* conda env (`/workspace/.conda-envs/ascent`,
-built by the single `docker/Dockerfile`) because BLIP-2's `lavis` and habitat-sim cannot share an
+The five ASCENT perception models run in a *second* conda env (`/opt/conda/envs/ascent`,
+built by the single `docker/Dockerfile`; containers from before that merge fall back to
+`/workspace/.conda-envs/ascent`) because BLIP-2's `lavis` and habitat-sim cannot share an
 interpreter. They are served over HTTP on ports 13182–13186 by `bash scripts/serve_perception.sh`
 (tmux session `osg_models`; `--stop` to tear down).
 

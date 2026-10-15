@@ -14,7 +14,7 @@ docker compose -f docker/compose.yaml --env-file docker/.env build nav
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
 ```
 
-For lightweight local development, install with `pip install -e '.[dev]'`. Run `pytest tests/unit -q` for the CPU-only suite and `pytest -m sim` only when Habitat and HM3D data are available. Start a small evaluation with `python scripts/run_eval.py eval=hm3d_val_mini`; compose named settings with Hydra syntax such as `+experiment=full_v1_navmesh`.
+For lightweight local development, install with `pip install -e '.[dev]'`. Run `pytest tests/unit -q` for the CPU-only suite and `pytest -m sim` only when Habitat and HM3D data are available. Start a small evaluation with `python scripts/run_eval.py eval.num_episodes=3`; compose named settings with Hydra syntax such as `+experiment=dualmap_osg_unified`.
 
 ## Coding Style & Naming Conventions
 

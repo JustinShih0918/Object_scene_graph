@@ -713,10 +713,10 @@ against each other.*
 | **Eq. 5** $b(x)$ | `exploration/search_belief.py:96` `container_prior()`; $\kappa$ and $\gamma$ are `AFFINITY_POWER` / `CONTAINER_AFFINITY` in `graph/priors.py` |
 | **Eq. 6** unified utility $U(g)$ | `exploration/search_belief.py:157` `select_candidate()`, driven from `exploration/strategy.py` |
 | **Eq. 7** $\rho(x) \leftarrow \rho(x)(1 - d(x))$ | `exploration/search_belief.py:72` `InspectionLog.searched()` |
-| **Eq. 8** $M_\varphi$, mean over the floor's surfaces | `exploration/strategy.py:595–665`; `exploration.floor_mass_rule` (base `"sum"`, **set to `"mean"` by the arm**) |
+| **Eq. 8** $M_\varphi$, mean over the floor's surfaces | `exploration/strategy.py:597–670` (`_select_surface`); `exploration.floor_mass_rule` (base `"sum"`, **set to `"mean"` by the arm**) |
 | §III-E switch margin, cadence, window | `exploration.floor_mass_margin` (base 0.0, **set to 1.15 by the arm**); `floor.switch_min_interval` = 50; `floor.no_switch_before` = 50 and `floor.no_switch_after_frac` = 0.7 (× `agent.max_steps` 1000 = 700), applied in `mapping/portals.py:155` `may_switch()` |
-| §III-E flights > detected tracks > portals | `agent/floor_policy.py:369` `_rank_flights()`; `floor.climb_targets` |
-| §III-E deferral while a credible track remains | `agent/floor_policy.py:527` `try_switch()`; `agent.protect_floor_switch` |
+| §III-E flights > detected tracks > portals | `agent/floor_policy.py:474` `_rank_flights()`; `floor.climb_targets` |
+| §III-E deferral while a credible track remains | `agent/floor_policy.py:632` `try_switch()`; `agent.protect_floor_switch` |
 
 ## Appendix B — number → run provenance
 
@@ -728,11 +728,11 @@ viewpoint rule.
 
 | paper row | expected | run directory | status |
 |---|---|---|---|
-| Table I, Ours, in-anchor 63.0% | 34 / 54 | `outputs/osg_v4_fuse_cls_full` | the artifact holds it; **a re-run does not** — 30/54 on 2026-09-20 |
-| Table I, Ours, cross-anchor 52.8% | 28 / 53 | `outputs/osg_v4_fuse_cls_full` | the artifact holds it; **a re-run does not** — 20/53 on 2026-09-20 |
+| Table I, Ours, in-anchor 63.0% | 34 / 54 | `outputs/osg_v4_fuse_cls_full` | the artifact holds it. Re-runs: **35/54** on the original prior maps (`outputs/RERUN_UPLOADMAP`, 2026-09-27), 30/54 on rebuilt maps (`outputs/RERUN/dualmap186`, 09-20) |
+| Table I, Ours, cross-anchor 52.8% | 28 / 53 | `outputs/osg_v4_fuse_cls_full` | the artifact holds it. Re-runs: **25/53** on the original maps, 20/53 on rebuilt maps; the 28→25 residue is the container image (`CROSS_ANCHOR_REPRODUCTION.md`) |
 | Table II, ASCENT 0% / 0 | 0 / 25 | `outputs/ascent_crossanchor` | **reproduces** |
-| Table I, Ours, static 64.6% | 51 / 79 | — | **not on this machine**: no 78- or 79-episode run exists under `outputs/` |
-| Table II, Ours 40.0% / 0.162 | 10 / 25 | — | **not reconciled**: the best multi-floor run here is `outputs/mf5_pass2_final` at 9/25 = 36.0%, SPL 0.1384 (2 + 7 + 7 + 3 + 6 episodes over the five scenes, no duplicate ids, agreeing with each scene's own `summary.json`) |
+| Table I, Ours, static 64.6% | 51 / 79 | `outputs/RERUN/dualmap186` | **51/79 on rebuilt maps** (09-20); 42/79 on the original maps (09-27). The locked run held only the 107 dynamic trials, so no static run from the paper's image exists |
+| Table II, Ours 40.0% / 0.162 | 10 / 25 | `outputs/RERUN/mf5` | **reproduces, one episode above**: 11/25 = 44.0%, SPL 0.196. The earlier `outputs/mf5_pass2_final` holds 9/25 = 36.0%, SPL 0.138 |
 | Table III, w/o presence revision 41.5% | 22 / 53 | — | **not on this machine**: no 53-episode run exists |
 | Table III, w/o surface scoring 35.8% | 19 / 53 | — | **not on this machine** |
 | Table III, w/o VLM verification 52.8% | 28 / 53 | — | **not on this machine** as a separate run |
@@ -760,10 +760,9 @@ Two smaller disagreements, recorded rather than resolved:
 
 - Table I gives the static condition **78** trials (26 per scene, which is what the
   per-scene percentages divide into). `docs/DUALMAP_OFFICIAL_RERUN.md` gives **79**.
-- `configs/experiment/mf5_osg_unified.yaml` still lists scene **00808**, and its comment says
-  **26** relocations. The paper's five scenes are 00800, 00821, **00862**, 00873, 00878, and
-  it reports **25** episodes. `configs/experiment/mf5_ascent_crossanchor.yaml` already names
-  00862. Both scenes exist under the collector's multi-floor root.
+- *Resolved:* `configs/experiment/mf5_osg_unified.yaml` used to list scene **00808** and
+  **26** relocations; it now names the paper's five scenes (00800, 00821, **00862**, 00873,
+  00878) and 25 episodes, matching `mf5_ascent_crossanchor.yaml`.
 
 ## Appendix C — naming, and one note on Eq. 8
 

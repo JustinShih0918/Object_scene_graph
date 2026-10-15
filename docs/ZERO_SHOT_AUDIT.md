@@ -8,6 +8,12 @@ how much it threatens that claim and how load-bearing it is, and recommends what
 to do. Nothing here is removed unilaterally — the load-bearing ones are proposed
 as measured A/Bs.
 
+**Status, 2026-10-15: still open.** None of items 1–3 has been acted on. `CONTAINER_AFFINITY`
+and `AFFORDANCE` are still the tables at `src/osg/graph/priors.py:119` and `:138` (the paper's
+Eq. 1 and Eq. 5 cite them), and `commit_tau_by_class` still ships as a dict in
+`configs/experiment/osg_unified_pipeline.yaml`. The +3 in item 3 is the `_v4_fuse_cls` arm's
+59 → 62 on the 107 dynamic trials.
+
 The tell: the two per-class prior tables cover **exactly the seven DualMap
 classes and none of the seven YCB-only classes.**
 

@@ -3,16 +3,17 @@
 Two kinds of document live here. The **reference** set at this level describes the system as
 it is: the paper, the architecture, how to set it up, run it, measure it, and put it on a
 robot. Everything under [`history/`](history/) is the record of how it got here — experiment
-logs, frozen result tables and superseded design notes — kept because the numbers in the
-paper trace back to them, and labelled at the top of each file where they no longer describe
-the current tree.
+logs, frozen result tables and superseded design notes, kept because the constants and numbers
+of the reference set trace back to them. Being in `history/` is the label: read a file there as
+true of its date, not of the current tree. The few that are wrong even as a record of their
+date (superseded, never run) also say so at the top.
 
 ## Start here
 
 | doc | what it is |
 |---|---|
 | [PAPER.md](PAPER.md) | The ICRA 2027 submission in full, plus a paper→code map and a number→run provenance table. **The system is MD-SG in the paper and OSG in the code.** |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | The OSG pipeline module by module, and why each constant is what it is. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | The OSG pipeline module by module, the four belief mechanisms, why each constant is what it is, and the known limitations. |
 | [SETUP.md](SETUP.md) | Clone with submodules, `docker/.env`, weights, the two conda envs. |
 | [USAGE.md](USAGE.md) | How to run the pipeline, and what the default arm scores. |
 
@@ -22,8 +23,8 @@ the current tree.
 |---|---|
 | [METHODOLOGY.md](METHODOLOGY.md) | How this repo measures ObjectNav, and every difference from native ASCENT. |
 | [DYNAMIC_EXPERIMENT_PROTOCOL.md](DYNAMIC_EXPERIMENT_PROTOCOL.md) | The two-pass moved-object protocol: map the static layout, relocate, search from the stale snapshot. |
-| [UNIFIED_PIPELINE.md](UNIFIED_PIPELINE.md) | One agent across the three datasets (DualMap's release, the five-scene multi-floor set, the fifteen authored scenes). |
-| [DUALMAP_OFFICIAL_RERUN.md](DUALMAP_OFFICIAL_RERUN.md) | DualMap re-run on its own released benchmark; the source of the 30.2 % cross-anchor figure the paper compares against. |
+| [UNIFIED_PIPELINE.md](UNIFIED_PIPELINE.md) | One agent across the three datasets (DualMap's release, the five-scene multi-floor set, the fifteen authored scenes), and the paired run showing the floor group is inert on one storey. |
+| [DUALMAP_OFFICIAL_RERUN.md](DUALMAP_OFFICIAL_RERUN.md) | DualMap re-run on its own released benchmark — the source of the 30.2 % cross-anchor figure the paper compares against — and what that benchmark can and cannot resolve. |
 | [CROSS_ANCHOR_REPRODUCTION.md](CROSS_ANCHOR_REPRODUCTION.md) | Whether the paper's single-floor cross-anchor headline re-derives, what was ruled out, and the 2026-09-27 re-run on the original prior maps. **Read before quoting Table I.** |
 | [ZERO_SHOT_AUDIT.md](ZERO_SHOT_AUDIT.md) | Every piece of hand-authored per-benchmark knowledge in the pipeline. |
 
@@ -52,6 +53,8 @@ Append-only measurements and the reasoning behind decisions. Large because they 
 |---|---|
 | [AB_RESULTS.md](history/AB_RESULTS.md) | 236 KB. Every staged change S0–S76 on the ObjectNav / ASCENT-parity line, its measured effect, the decision. |
 | [DYNAMIC_SCENES.md](history/DYNAMIC_SCENES.md) | 161 KB. The dynamic-scene design and its experiment log. |
+| [AUTHORED_BENCHMARK_LADDER.md](history/AUTHORED_BENCHMARK_LADDER.md) | Conditions A–U on the authored layouts, scored by the 2 m viewpoint rule — the measurements behind many of `ARCHITECTURE.md`'s constants. Moved out of it on 2026-10-15. |
+| [DUALMAP_PROTOCOL_EARLY_ARMS.md](history/DUALMAP_PROTOCOL_EARLY_ARMS.md) | Our September arms on DualMap's 186 trials (37.6 % → the tight ring), before region-proposal fusion. Moved out of `DUALMAP_OFFICIAL_RERUN.md` on 2026-10-15. |
 | [CROSS_ANCHOR_OBSTACLE_MAP.md](history/CROSS_ANCHOR_OBSTACLE_MAP.md) | Navigating a moved layout over ASCENT's obstacle map — every measurement and every wrong turn. Carries an internal retraction. |
 | [CROSS_ANCHOR_STATUS.md](history/CROSS_ANCHOR_STATUS.md) | The summary of the above: where it stands, what was found by layer, what is left. |
 | [OVERNIGHT_SR_ITERATION.md](history/OVERNIGHT_SR_ITERATION.md) | Written as it happened, on branch `experiment/sr-70-50`. |

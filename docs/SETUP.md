@@ -28,10 +28,9 @@ The build context is the repo root (`context: ..`), which `/.dockerignore`
 trims from 35 GB on disk to ~213 MB — it drops `.conda-envs/`, `data/`,
 `outputs/`, the 4.5 GB of model weights, and `docker/.env`.
 `tests/unit/test_docker_build_context.py` checks that no `COPY` names a path
-the ignore file excludes, which fails a build as confusingly as a typo. ASCENT itself carries nine nested
-submodules (GroundingDINO, MobileSAM, D-FINE, RAM++, places365, vlfm,
-frontier_exploration, depth_camera_filtering, habitat-lab), and a non-recursive
-clone leaves all nine as empty directories. The servers import from them.
+the ignore file excludes, which fails a build as confusingly as a typo. The nine
+nested submodules are GroundingDINO, MobileSAM, D-FINE, RAM++, places365, vlfm,
+frontier_exploration, depth_camera_filtering and habitat-lab.
 
 ### The compiled CUDA extension (only for pre-merge containers)
 
@@ -272,7 +271,7 @@ checkout carried three local patches which are deliberately no longer applied:
 
 | patch | what it did | consequence of dropping it |
 |---|---|---|
-| behaviour recorder (+94 lines in `ascent_policy.py`, `ascent_trainer.py`, `llm_planner.py`, plus `behaviour_recorder.py`) | produced ASCENT's per-step trace | the reference trace cannot be regenerated. The trace **itself is preserved** in this repo at `data/reference/ascent_behaviour_100/` (gzipped, 772 KB), which is what `scripts/compare_ascent_osg.py` reads by default |
+| behaviour recorder (+94 lines in `ascent_policy.py`, `ascent_trainer.py`, `llm_planner.py`, plus `behaviour_recorder.py`) | produced ASCENT's per-step trace | the reference trace cannot be regenerated. It was meant to be preserved at `data/reference/ascent_behaviour_100/` (gzipped, 772 KB), which `scripts/compare_ascent_osg.py` reads by default, but `data/*` was gitignored and it was **never committed** — it is not in this checkout. `.gitignore` now admits `data/reference/`; restore it there from the machine that ran S71 and commit it |
 | a lock in `model_api/server_wrapper_out.py` | serialised model calls | the servers are **not reentrant** again. GroundingDINO caches per-image state on the module, so two concurrent evals race and the loser gets HTTP 500. **Run one evaluation at a time.** This repo's client retries once, which covers a transient hit, not sustained concurrency |
 | `model_api/qwen25_ollama.py` | served ASCENT's Qwen endpoint from ollama | only matters when running native ASCENT; its own launcher expects the bf16 server |
 

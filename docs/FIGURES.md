@@ -74,7 +74,7 @@ visible stair flight, and the route runs through it toward the downstairs cup.
 Render the section in `docker-nav-1` with
 `/opt/conda/envs/habitat/bin/python scripts/render_scene_graph_multifloor.py --scene 00873-bxsVRursffK --maps-root outputs/maps_p1500_osg --side-res 2800 --section-frac 0.35`.
 The resulting `outputs/figures/side_00873-bxsVRursffK_2800_0.35.npz` supplies
-the image committed as `docs/figures/hm3d_section_00873.png` (black void converted
+the image saved as `docs/figures/hm3d_section_00873.png` (black void converted
 to transparency). Then run `python3 scripts/render_teaser_scene.py` for the PDF,
 SVG, and PNG teaser. Place the PDF near the start of a two-column paper as a
 `figure*` with `\includegraphics[width=\textwidth]{figures/teaser_scene.pdf}`.

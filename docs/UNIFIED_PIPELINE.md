@@ -41,8 +41,13 @@ Three dataset presets include it:
 | preset | eval base | dataset |
 |---|---|---|
 | `dualmap_osg_unified` | `dualmap_protocol_osg_sensor_v2` | DualMap released, 107 trials |
-| `mf5_osg_unified` | `ycb_dynamic_multifloor` | 5-scene multi-floor, `outputs/dualmap_multifloor` |
-| `ycb15_osg_unified` | `ycb_authored_15` | 15-scene authored, `outputs/dualmap_authoring` |
+| `mf5_osg_unified` | `ycb_dynamic_multifloor` | 5-scene multi-floor (00800, 00821, 00862, 00873, 00878), the collector's `outputs/dualmap_multifloor` |
+| `ycb15_osg_unified` | `ycb_authored_15` | 15-scene authored, the collector's `outputs/dualmap_authoring` |
+
+The multi-floor table in the paper is a fourth preset, `mf5_osg_on_ascent_map`: the same
+dataset with each storey's obstacle map taken from an ASCENT mapping pass
+(`docs/DYNAMIC_EXPERIMENT_PROTOCOL.md`). 00862 replaced 00808 in the five scenes; the
+preset comment in `mf5_osg_unified.yaml` records why the two arms briefly disagreed.
 
 ## The agent is provably identical across the three
 
@@ -151,5 +156,20 @@ being compared against.
 the floor-relative container rule, and should not be the bar. Two of three trials
 are identical; the third differs because two extra (correctly qualified) surfaces
 enter the search, and it fails in both arms regardless (scissors is 0/9
-cross-anchor, the known-undetectable class). The test of "keep 62/107" is the
-paired SR over the full 107, which is the run to do next.
+cross-anchor, the known-undetectable class).
+
+## The full paired run
+
+The test of "keep 62/107" was the paired SR over all 107 dynamic trials. It has been run
+twice, both times with the two presets side by side on the same tree:
+
+| date | prior maps | `_v4_fuse_cls` | `dualmap_osg_unified` | trials agreeing |
+|---|---|---|---|---|
+| 2026-09-20 | rebuilt on the current tree (534 tracks on 00829) | 49/107 | 50/107 | **106 / 107** |
+| 2026-09-27 | the originals the locked run loaded (682) | 60/107 | 60/107 | **186 / 186**, static included |
+
+The floor group is worth one episode on the first run and nothing on the second, so the
+two presets are one arm on single-floor scenes. Neither run reaches 62/107; that gap is
+the prior map and the container image, not this mixin, and
+`docs/CROSS_ANCHOR_REPRODUCTION.md` takes it apart (`outputs/RERUN/` and
+`outputs/RERUN_UPLOADMAP/` hold both runs).

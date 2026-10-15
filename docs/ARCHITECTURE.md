@@ -41,16 +41,20 @@ Each line is one module. `nav_agent.py` owns the FSM state and nothing else.
 | `agent/state.py` | the states and the two literal actions, so a handler can name a state without importing the agent |
 | `agent/candidate.py` | what becomes a goal — presence, identity, evidence, reachability, and the optional VLM gate |
 | `agent/approach.py` | the terminal walk and the stop decision, plus the arrival sweep |
-| `agent/floor_policy.py` | storeys, portals, stairs. Inert unless `floor.enabled` |
+| `agent/floor_policy.py` | storeys, portals, stairs, the climb. Inert unless `floor.enabled` |
+| `agent/close_look.py` | the close look at a surface — the frame an absence decision is allowed to rest on |
 | `exploration/strategy.py` | where to go next — frontiers and mapped surfaces under one index |
 | `exploration/search_belief.py` | `b(x)`, `d(x)`, and the inspection log that retires a searched surface |
 | `exploration/selector.py` | the frontier half of that index |
 | `objects/presence.py` | is the object still at its mapped pose |
 | `objects/object_layer.py` | tracks, association, and the candidate gates |
+| `perception/region_proposer.py` | region-proposal fusion: finds the target when the detector will not name it |
 | `verification/absence.py` | "I got there and it was not there", as evidence |
 | `verification/verifier.py` | the VLM, in both its roles |
 | `graph/priors.py` | affordance and affinity — which surfaces could hold this class |
 | `graph/map_store.py` | the snapshot pass 1 writes and pass 2 loads |
+| `mapping/floors.py`, `floor_stack.py` | which storey the agent stands on; one occupancy grid per storey |
+| `mapping/stairs.py`, `portals.py` | where the agent can change storey, and where it can see another one |
 | `pipeline/components.py` | which detector, scorer, verifier, benchmark |
 | `pipeline/beliefs.py` | which belief models, with which constants |
 | `perception/vocabulary.py` | which query strings the detector is asked about |
@@ -59,7 +63,8 @@ Each line is one module. `nav_agent.py` owns the FSM state and nothing else.
 | `eval/attempts.py` | several navigation attempts per query |
 | `eval/prior_map.py` | the two-pass protocol |
 | `eval/instruments.py` | ground truth, on the runner's side of the wall |
-| `eval/record.py` | the 65 fields of `episodes.jsonl` |
+| `eval/record.py` | the fields of `episodes.jsonl` (90, pinned by `test_episode_record_schema`) |
+| `ros2/` | the real robot: sensor data in, a Nav2 goal out (`docs/ROS2.md`) |
 
 ---
 
@@ -230,14 +235,10 @@ sweep's job is to give the detector a chance, not to vote.
 
 ---
 
-## The benchmark
+## The benchmarks
 
-Three scenes × 96 episodes, half `in_anchor` (median displacement 0.72 m) and
-half `cross_anchor` (6.06 m). Success is Habitat's own criterion: geodesic
-distance from the final pose to the nearest authored view point ≤ 0.18 m.
-
-Two protocol choices are worth stating because both make the numbers *harder*,
-not easier:
+Every benchmark here runs the same two-pass protocol (`docs/DYNAMIC_EXPERIMENT_PROTOCOL.md`).
+Two choices in it are worth stating, because both make the numbers *harder*, not easier:
 
 - **Two passes.** `ycb.map_out` / `ycb.map_in`. Pass 2 navigates from pass 1's
   snapshot. `eval/prior_map.py`.
@@ -247,275 +248,24 @@ not easier:
   keeps everything the map learned and lowers the candidate's belief — it does
   not blacklist, for the same reason as above.
 
-### Results
+One agent runs on all of them: `configs/experiment/osg_unified_pipeline.yaml` carries every
+mechanism flag, and a dataset preset adds only what to load (`docs/UNIFIED_PIPELINE.md`).
 
-| condition | change | in_anchor | cross_anchor | overall | SPL |
-|---|---|---|---|---|---|
-| A | baseline | 0.438 | 0.292 | 0.365 | 0.201 |
-| B0 | + identity channel | 0.458 | 0.312 | 0.385 | 0.208 |
-| B | + VLM as candidate gate | 0.333 | 0.188 | 0.260 | 0.140 |
-| **C0** | + higher resolution (1280) | 0.542 | **0.375** | **0.458** | 0.220 |
-| D | + search-prior fix | 0.479 | 0.292 | 0.385 | 0.196 |
-| E | + unconditional frontier retirement | 0.500 | 0.354 | 0.427 | 0.221 |
-| F | + two surface-search changes | 0.479 | **0.396** | 0.438 | 0.216 |
-| G | + affinity fix | 0.479 | 0.375 | 0.427 | 0.211 |
-| H | + per-class detection gates | 0.521 | 0.375 | 0.448 | 0.228 |
-| I | (instrumentation only, no behaviour change) | 0.500 | 0.375 | 0.438 | 0.218 |
-| J | + highest-scoring names | 0.521 | 0.354 | 0.438 | 0.201 |
-| **K** | + specific names | 0.625 | 0.271 | 0.448 | 0.218 |
-| L | + reachability at the viewpoint, non-absorbing; glance floor | 0.667 | 0.396 | 0.531 | 0.256 |
-| **M** | + the target admitted on the detector's terms | **0.771** | 0.458 | **0.615** | **0.302** |
-| M2 | (M repeated, identical config) | 0.729 | **0.479** | 0.604 | 0.290 |
-| **N** | + candidates ranked by belief, not by belief x confidence | **0.812** | 0.458 | **0.635** | **0.319** |
-| Q | + the search anchor dropped once the agent has been there | 0.708 | **0.500** | 0.604 | 0.303 |
-| R | + the frontier weight back to its 1.0 default | — | — | *stopped* | — |
-| Q2 | (Q repeated, identical config) | 0.708 | **0.542** | 0.625 | 0.304 |
-| S | + absence readings refused beyond 3 m | 0.792 | 0.458 | 0.625 | 0.311 |
-| T | + S, plus a false arrival is not an arrival (1.0 m) | 0.771 | 0.417 | 0.594 | 0.290 |
-| U | + the same guard at 2.5 m | 0.750 | 0.458 | 0.604 | 0.299 |
-
-**Q is replicated.** Q2 is the same configuration run again: in_anchor is
-*identical* at 0.708 and cross_anchor is 0.500 → 0.542, the best of the whole
-campaign. Mean of the two runs: in 0.708, cross 0.521, overall 0.615. It is also
-the only condition that has ever moved 00848, which reached 14/30 under Q2
-against 11/30 in K, L, M, M2, N, S and U.
-
-So there are two configurations worth keeping, and they differ by exactly one
-flag — a test pins that, because the one flag IS the trade:
-
-| preset | in_anchor | cross_anchor | overall |
-|---|---|---|---|
-| `+experiment=ycb_dynamic_best` (N) | **0.812** | 0.458 | **0.635** |
-| `+experiment=ycb_dynamic_cross` (Q) | 0.708 | **0.521** | 0.615 |
-
-**N is still the best overall and Q the best cross_anchor.** R, S and T are all
-negative, and each is a documented result rather than a dead end:
-
-  **R** tested whether cross_anchor is short of coverage. On 00848 it tripled
-  the exploration share — surface inspections 173 → 64, frontier goals 69 → 95 —
-  and `P(look)` moved 0.40 → 0.47, the same value Q reached by another route.
-  Stopped after two scenes. Coverage is not the lever.
-
-  **S** range-gated absence readings, refusing 18 of them, and was a null. The
-  reason is worth more than the result: `_absence_at_arrival` was doing two jobs,
-  applying the evidence *and* returning an action that prevented the stop.
-  Blocking the reading removed the second job, so three-attempt burnouts went
-  4 → 12. The belief got more correct and the behaviour got worse.
-
-  **T and U** added the missing half, at 1.0 m and 2.5 m. T takes the worst
-  target on the benchmark — the 00848 pitcher — from 0/6 to 3/6; U puts it back
-  to 0/6. Neither nets positive overall (0.594, 0.604).
-
-  The threshold sweep is where the mechanism gave itself away. The guard
-  measures distance to the agent's own GOAL, and `min_dist_to_goal` on the
-  failing pitcher episodes is **0.03–0.48 m**: the agent reaches its goal every
-  time. The goal is simply in the wrong place — it commits at step 1 to a track
-  0.4 m from the object, and five steps later the navmesh reports
-  arrived-or-unreachable for that approach goal. What T actually bought was
-  budget: one extra firing per episode kept the episode alive for 251–500 steps
-  instead of 288, and the pitcher was then found *incidentally*. That is not the
-  same as steering the agent to the object, and it does not survive a change of
-  threshold. The guard is aimed at the wrong quantity.
-
-Q is the best `cross_anchor` of the campaign (0.500 against a previous best of
-0.479) and the first condition ever to move scene 00848, which had sat at
-in_anchor 0.600 for five consecutive runs. It buys that by trading, at worse
-than one for one: −5 in_anchor for +2 cross_anchor.
-
-### Two defects found by tracing one target
-
-Chasing 00848's worst target found two real defects, both fixed and both
-default-off:
-
-  **an absence reading taken from 6.4 m.** In navmesh mode `_follow_to` returns
-  None for arrived *and* unreachable, so an unreachable goal ends the approach
-  exactly as an arrival does and a reading is taken from wherever the agent
-  stands. The expectation gate would have caught it but is skipped whenever the
-  VLM answers — "a VLM that answered about the region has already looked" —
-  which holds at arm's length and not at six metres. The correct track went
-  0.82 → 0.36 and the agent never went near the object again.
-  `verification.absence_max_range_m`.
-
-  **an approach that stops without arriving.** Same root cause, worse
-  consequence: the agent commits at step 1 to a track 0.81 m from the true
-  object, is told None on step 5 while still 6.4 m away, and STOPS — burning an
-  attempt. Three attempts, episode over at step 78 with 420 steps unspent. The
-  frontier side has had this distinction since `frontier_reach_m`; the approach
-  never got it. `agent.approach_false_arrival_m`.
-
-### Cross-anchor decomposes, and the half that moves is not the half that binds
-
-```
-    SR  =  P(look at it)  x  P(success | looked)
-```
-
-| | P(look) | P(convert) | SR |
-|---|---|---|---|
-| cross_anchor K | 0.71 | 0.38 | 0.271 |
-| cross_anchor N | 0.69 | 0.67 | 0.458 |
-| cross_anchor Q | 0.73 | 0.69 | 0.500 |
-| in_anchor K | 0.94 | 0.67 | 0.625 |
-| in_anchor N | **0.94** | 0.87 | 0.812 |
-| in_anchor Q | **0.94** | 0.76 | 0.708 |
-
-**Every gain from K to Q is conversion. `P(look)` has never moved** — 0.94 on
-in_anchor and 0.69–0.73 on cross_anchor, in every condition. It is now the
-binding constraint: cross_anchor cannot exceed 0.73 however good conversion
-gets, and conversion is already 0.69. It also shows what Q actually cost — its
-in_anchor loss is conversion (0.87 → 0.76), not coverage.
-
-And the surface search is not what moves `P(look)`. It arrives at the true
-destination surface **3 times in 96 in every condition measured** — K, M, M2, N
-and Q alike — while consuming a growing share of the budget:
-
-| | K | N | Q |
-|---|---|---|---|
-| surface inspections | 206 | 343 | 367 |
-| frontier goals | **412** | 231 | **139** |
-
-`search_frontier_weight = 0.3` devalues unexplored space by 70% to fund it.
-Inspections nearly doubled, frontier goals fell by two thirds, and `P(look)`
-did not move on either half.
-
-N is the best measured configuration and is what
-`+experiment=ycb_dynamic_best` composes. It is **+2.5 episodes over the mean of
-M's two runs**, which is what the offline analysis predicted for it, and it is a
-single run — M is the replicated result. The change it makes is one sort key:
-
-| ranking key | P(correct track ranked first) |
-|---|---|
-| `best_score` alone | 0.635 |
-| `best_score * presence.p` (K–M) | 0.729 |
-| **`presence.p`, evidence as tie-break** (N) | **0.800** |
-
-Multiplying by detector confidence *hurts*, because a confident false positive is
-precisely a distant object that really does look like the target — `best_score`
-is highest exactly where it misleads. Live, N commits to the correct track in
-19/35 competing episodes against M's 19/40 and M2's 18/38, and all of the gain
-lands in in_anchor and on 00880. Two other ranking fixes were killed offline
-first: a distance/cost term (net −7, since for a cross-anchor move the ghost sits
-near the start and the true object is far) and loosening `min_presence`.
-
-M is +16 episodes on K and the best of the ladder on every column. L and M both
-lift *both* halves at once rather than trading between them, which no condition
-from A to K managed. Three defects, all found by tracing the largest failure
-bucket rather than by tuning:
-
-  an unreachable candidate was struck off **permanently**, and the question was
-  asked about the object's own position rather than the pose the agent would
-  drive to. Six of 00829's 36 target poses are off-navmesh with a reachable
-  viewpoint — proven with no detector in the loop.
-
-  a glance retired a surface **once per keyframe**, unbounded, so 64% of the
-  candidate set was written off per episode, most of it never visited. The
-  floor is `1 - search_detect_prob`, making true the claim `glance`'s own
-  docstring already made: a passing look is weaker evidence than standing there.
-
-  and the map discarded **33% of the times the detector named the target** —
-  in 11 episodes it discarded *every* naming, so no track formed, so no
-  candidate, so no approach, so the detection never got closer or bigger. All
-  11 failed. Five of them were a contradiction rather than a threshold:
-  `detector.class_conf` lowers the detector to 0.20 for the four weakest
-  classes and `scene_graph.min_det_score` 0.35 then throws away everything they
-  gained — boxes of 5146, 5077, 3102, 2808 and 1258 px, discarded on score
-  alone. Two thresholds for one decision, in two config groups, the tighter one
-  downstream. It is the likeliest reason condition H moved the population by a
-  single episode.
-
-All five ship OFF (`agent.reachable_via_viewpoint`,
-`verification.unreachable_is_absorbing`, `exploration.search_glance_floor`,
-`scene_graph.target_bypasses_gates`, `verification.target_bypasses_bbox_gate`),
-so every condition of the ladder stays reproducible from its own overrides and
-the winning combination is asserted in exactly one place:
-
-```bash
-python scripts/run_eval.py +experiment=ycb_dynamic_best \
-  'ycb.scenes=[00829-QaLdnwvtxbs]' ycb.map_in=outputs/maps_v5/00829-QaLdnwvtxbs
-```
-
-`configs/experiment/ycb_dynamic_best.yaml` is condition M. It is pinned by
-`test_the_best_known_configuration_still_composes`, because if it drifts the best
-result on this benchmark stops being reproducible and nothing else would notice.
-
-What L moved, down the funnel:
-
-| | K | L | M |
-|---|---|---|---|
-| mapped it at the new pose | 48/96 | 62/96 | **71/96** |
-| committed to a track on the real object | 54/96 | 60/96 | **66/96** |
-| conversion once committed | 80% | 85% | **89%** |
-| hit the 500-step cap | 37 | 35 | **23** |
-| looked within 3 m and missed | 29 | 20 | **12** |
-| in-situ recall | 0.471 | 0.523 | 0.525 |
-| surfaces retired unvisited (median) | 52/82 | **1/54** | 1/54 |
-| surface inspections per episode | 2.15 | **4.01** | 3.9 |
-
-**M was repeated to find out how much of that is signal.** M2 is the same
-configuration run a second time, and it reproduces to within one episode on the
-headline and within one at every stage of the funnel:
-
-| | M | M2 |
+| benchmark | preset | success |
 |---|---|---|
-| SR | 0.615 (59/96) | 0.604 (58/96) |
-| in_anchor / cross_anchor | 0.771 / 0.458 | 0.729 / 0.479 |
-| mapped it at the new pose | 71/96 | 70/96 |
-| committed to a track on the real object | 66/96 | 65/96 |
-| conversion once committed | 89% | 89% |
-| search arrived at the true surface | 3/96 | 3/96 |
+| DualMap's release, 00829 / 00848 / 00880 — 79 static, 54 in-anchor, 53 cross-anchor | `dualmap_osg_unified` | within 1 m horizontally of any instance of the query, ≤ 3 attempts (`eval/dualmap_release.py`) |
+| multi-floor cross-anchor, 5 scenes, 25 episodes | `mf5_osg_on_ascent_map` (the paper's arm), `mf5_osg_unified` | the same 1 m rule (`ycb.score_by_object_distance`) |
+| authored, 15 scenes | `ycb15_osg_unified` | the same 1 m rule |
 
-Mean of the two runs is 0.609 against K's 0.448 — **+15.5 episodes at a noise
-floor of about one**, so the gain is real. Per scene the repeat lands at −2, +1
-and +0.
+The paper's tables and the run behind each number are `docs/PAPER.md` Appendix B; whether
+they re-derive on the current tree is `docs/CROSS_ANCHOR_REPRODUCTION.md`.
 
-**The gain is not evenly spread, and one scene refuses to move at all:**
-
-| scene | K | L | M | M2 | N |
-|---|---|---|---|---|---|
-| 00829 | 21/36 | 27/36 | 32/36 | 30/36 | 32/36 |
-| 00848 | 11/30 | 11/30 | **11/30** | **12/30** | **11/30** |
-| 00880 | 11/30 | 13/30 | 16/30 | 16/30 | 18/30 |
-
-00848's in_anchor half is **identical at 0.600 across all five runs** — K, L, M,
-M2 and N. That scene is not noisy, it is stuck, and everything changed so far has
-been irrelevant to it.
-
-00848 is 0.367 under all three conditions and *identical in both halves*
-(in_anchor 0.600, cross_anchor 0.133) every time. Its failures say why: 13 of 19
-never named the target at all and 11 of 30 episodes never looked at its new
-pose. 115 bypass admissions fired there and changed nothing, because the fix
-recovers detections that were discarded and on that scene the detections do not
-exist. That is a coverage-and-perception scene, and none of these three changes
-touches it. 00829, where the gain is largest, is also the scene most of the
-tuning was done on.
-
-The false-positive risk M takes did not materialise: 491 detections entered
-through the exemption across 96 episodes and same-label tracks per episode are
-unchanged (median 3, p90 6, max 8).
-
-Two things the overall column hides:
-
-**The two difficulties trade against each other.** `cross_anchor` trails
-`in_anchor` by 0.1–0.35 throughout, which is intuitive: a cross-room move forces
-a real *search* rather than a longer look nearby. No condition is best at both —
-K is best at in_anchor (0.625), F at cross_anchor (0.396), C0 the most balanced.
-J → K changed two query strings and moved in_anchor +0.104 and cross_anchor
-−0.083. Recent work has been trading between them, not lifting both.
-
-**Mechanism results are clearer than SR:**
-
-| result | number |
-|---|---|
-| identity channel removes the livelock | repeat commits to one wrong track 251 → 6; livelocked episodes 7 → 0 |
-| false-positive flood fixed (cracker box) | 15 tracks for one box → 1; SR 0.143 → 0.429 |
-| query string fixed (soup can) | in-situ recall 0.03 → 0.19; that target's SR 0.083 → 0.583 |
-| perception overall (I → K) | in-situ recall 0.357 → 0.471; false-positive-only episodes 20 → 6 |
-| localization cliff | a track within 0.25 m of the object ⇒ SR **0.89**; beyond 2 m ⇒ 0.03 |
-
-**Run-to-run noise is about one episode.** An operational slip launched the same
-condition twice; both completed all 96 episodes and gave SR 0.438 vs 0.427, with
-six of seven per-target SRs identical. H and I (I added only instrumentation)
-gave 0.448 vs 0.438. Two independent repeats agree — so a two-or-three episode
-difference is *not* automatically noise.
+The rule matters more than any mechanism. The earlier authored benchmark scored geodesic
+distance to a goal *viewpoint*, sampled on rings out to 2.0 m — an effective tolerance of
+about 2 m to the object — and the September ladder of conditions A–U that set many of the
+constants in this document was measured under it. That ladder, with its funnels and its
+null results, is `docs/history/AUTHORED_BENCHMARK_LADDER.md`; its headline 0.812 / 0.458
+is 0.396 / 0.271 at 1 m.
 
 ---
 
@@ -574,8 +324,9 @@ the dynamic poses, swapping one candidate into the vocabulary at a time:
   tomato soup can  0.23          plate        0.47
 ```
 
-Condition J took the top scorers and they cost more than they were worth. On
-their own targets they were a large win — soup can recall 0.03 → 0.21, SR 0.083
+Condition J of the ladder (`docs/history/AUTHORED_BENCHMARK_LADDER.md`) took the top
+scorers and they cost more than they were worth. On their own targets they were a large
+win — soup can recall 0.03 → 0.21, SR 0.083
 → 0.500 — but the rest of the vocabulary gave back eight episodes for their
 seven, because "cylindrical can" describes a shape the pitcher and the bleach
 bottle also have. The cracker box went recall 0.32 → 0.58 and SR 0.667 → 0.333.
@@ -601,7 +352,7 @@ people override: `exploration.search_posterior=true` on a command line and
 `exploration.py` in the package are the same object.
 
 Nearly every default was chosen by an experiment and carries the measurement in a
-comment beside it. `tests/unit/test_config_snapshot.py` pins all 505 of them, so
+comment beside it. `tests/unit/test_config_snapshot.py` pins every one of them, so
 a constant can only change when someone changes the snapshot too — which puts it
 in the diff as what it is.
 
@@ -622,15 +373,16 @@ ycb.map_in=<dir>                           start from a stale map
 ## Testing
 
 ```bash
-pytest tests/unit -q          # 1397 passed, 2 skipped, 1 xfailed, ~50 s, no GPU or data
-pytest tests/integration -q   # + the trajectory locks, ~65 s
+pytest tests/unit -q          # 1535 passed, 2 skipped, 1 xfailed, ~50 s, no GPU or data
+pytest -m sim                 # tests/integration: the trajectory and climb locks; Habitat + HM3D
 ```
 
-Three locks exist specifically so the code can be moved without moving its
+Four locks exist specifically so the code can be moved without moving its
 behaviour:
 
-- **`test_config_snapshot`** — 505 flattened defaults, pinned.
-- **`test_episode_record_schema`** — the 65 `episodes.jsonl` keys, derived the
+- **`test_config_snapshot`** — every flattened default (532), pinned; its sibling
+  `experiment_fingerprints.json` pins what each preset composes to.
+- **`test_episode_record_schema`** — the 90 `episodes.jsonl` keys, derived the
   way the runner builds them. Nine analysis scripts read this record by name and
   none would fail loudly on a drop; they would report zero, and the conclusion
   drawn from that zero would be wrong.
@@ -640,6 +392,10 @@ behaviour:
   posterior, 300 steps) reaches DONE at step 236 having inspected three surfaces
   and made 1501 belief updates. It asserts a counter fingerprint *before* the
   action hash, so a failure names the module that moved.
+- **`test_climb_lock`** — the climb, which neither trajectory fixture reaches:
+  the real `_start_climb` + `_do_climb` from the foot of a ground-truth flight on
+  00800, in three stair-height variants, with the action sequence and the climb
+  counters pinned.
 
 ---
 
@@ -669,7 +425,8 @@ knob.
 **`min_presence = 0.45` is already at the best point on its curve — do not
 lower it.** Two or three episodes per condition end with a correct track blocked
 only by this gate, which looks like a cheap win. Measured over the 254 correct
-and 709 wrong same-label tracks pooled across K, L and M:
+and 709 wrong same-label tracks pooled across conditions K, L and M
+(`docs/history/AUTHORED_BENCHMARK_LADDER.md`):
 
 | threshold | correct admitted | wrong admitted | ratio |
 |---|---|---|---|
@@ -712,28 +469,20 @@ does exist, or a genuinely new signal should be found.
 number switched the search line off entirely, because the offline scorer measured
 order and the live system also reads magnitude. Pilot before trusting a proxy.
 
-**Two failure modes are now measured and unfixed.** 36% of the times the
-detector names the target, the map discards the detection at the admission gate;
-in four episodes of one run *every* naming was discarded, twice for a bowl named
-7 and 10 times at 3.3 m with a best box of ~550 px against the 1200 gate. Since
-no track forms, no candidate forms, so the agent never goes closer and the box
-never gets bigger — a bootstrap deadlock. And 00848 did not move at all under L,
-with cross_anchor there at 0.133.
-
-**Perception improved across the board and SR did not move (as of K).** In-situ recall
-0.357 → 0.471 and false-positive-only episodes 20 → 6 between I and K, for an
-overall SR of 0.438 → 0.448. The gains are landing where episodes were already
-being won.
-
-**Multi-floor is a separate line and is inert here.** `floor.enabled=false` in
-every YCB run. `agent/floor_policy.py` holds it, and no trajectory lock can reach
-the enabled branch because the mounted data is single-floor; three unit tests
-cover it instead. See `docs/history/MULTI_FLOOR.md`.
+**The trajectory locks are single-floor.** Both `test_trajectory_lock` fixtures run
+`ycb_authored_nav`, which composes `floor.enabled=false`, so the storey machinery in
+`agent/floor_policy.py` is guarded by `test_climb_lock` (the climb itself) and by unit
+tests, not by a whole-episode hash. The multi-floor arm is on in every `*_osg_unified`
+preset; why it is shaped as it is lives in `docs/history/MULTI_FLOOR.md` and
+`docs/history/CROSS_FLOOR_CLIMB.md`.
 
 ---
 
 ## Related documents
 
+- `docs/PAPER.md` — the method as submitted; Appendix A maps each equation to its module
+- `docs/UNIFIED_PIPELINE.md` — the one agent config the three benchmarks share
+- `docs/history/AUTHORED_BENCHMARK_LADDER.md` — conditions A–U, the measurements behind many constants here
 - `docs/history/DYNAMIC_SCENES.md` — the full design and experiment log, in order
 - `docs/history/REPORT_zh.md`, `docs/history/PROGRESS_zh.md` — report-facing summaries (中文)
 - `docs/history/MULTI_FLOOR.md` — the multi-floor line, including two negative results

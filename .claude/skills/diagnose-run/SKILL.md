@@ -67,7 +67,9 @@ python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs
 lists the episodes that changed outcome). `compare_ascent_osg.py` pairs an OSG run against
 native ASCENT's recorded 100 episodes and prints the trace metrics that carried the S71
 diagnosis (SAW episodes, never-saw STOP/timeout, climb steps on same-floor episodes, earliest
-STOP, P(success | committed)); the run needs `eval.behaviour_log=true`.
+STOP, P(success | committed)); the run needs `eval.behaviour_log=true`. That ASCENT trace
+(`data/reference/ascent_behaviour_100`) is **not in this checkout** — check it exists before
+promising this comparison; without it, pair against an earlier OSG run with `compare_runs.py`.
 
 Both arms of an A/B must share the episode set and use `verification=off` (see `run-eval`).
 

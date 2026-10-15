@@ -12,7 +12,7 @@ check is named.
 HM3D ObjectNav v1, sensor-only. The agent gets RGB-D and an odometry-style
 pose; it never sees the simulator's navmesh, the semantic mesh, or the goal
 position. Success and SPL come from habitat's own measures
-(`env.get_metrics()`, `src/osg/eval/runner.py:235`), not from anything this
+(`env.get_metrics()`, `src/osg/sim/habitat_env.py:307`), not from anything this
 repo computes.
 
 | | |
@@ -30,9 +30,6 @@ selects exactly which episodes run (`configs/eval/scenes20_ep0to4.yaml`), so
 two runs — including a run of native ASCENT in a different harness — score the
 same episodes regardless of how each iterates the dataset. Every paired number
 in `docs/history/AB_RESULTS.md` depends on this.
-
-The second benchmark, MP3D ObjectNav (21 categories, 11 val scenes), is wired
-the same way; see `docs/USAGE.md` §5 for what does and does not transfer.
 
 ---
 
@@ -164,7 +161,9 @@ non-reentrant model server used to kill multi-hour runs (it ended a 2000-episode
 run at episode 699). A server that stays down still raises.
 
 **One evaluation at a time.** The servers hold per-image state on the model
-object; they now serialise behind a lock, but concurrency is not free.
+object and are not reentrant: the lock that once serialised them was a local
+patch to the submodule, which is now pinned to upstream unmodified
+(`docs/SETUP.md` §6). Two concurrent evals race, and the loser gets HTTP 500.
 
 ---
 
@@ -208,14 +207,15 @@ operands — a dtype guard, equivalent for 0/1 masks.
 2. **Stair-disable burn.** `_disable_stair_and_reset_state` zeroes the climb
    flag *before* testing it, so the branch that burns a failed staircase off
    the map never executes and the staircase is retried immediately. Ported
-   as-is, dead branch included; `agent.stair_disable_burns_map=true` runs the
-   branch the code was evidently written for.
+   as-is, dead branch included; `+agent.stair_disable_burns_map=true` runs the
+   branch the code was evidently written for (the `+` is needed: the flag is
+   read with `getattr` and has no field in `AgentConfig`).
 3. **`_pointnav` stop radius.** The reference's radius early-return is inert —
    `stop=True` is never passed at any call site — so the mover is always asked
    with radius 0 and a network STOP comes back for the caller to interpret.
    Reproduced, but untidily: `_pointnav` still *accepts* a `stop_radius`
    argument, callers still pass `self.stop_radius` (0.9) at four sites, and the
-   body ignores it and hands the driver `0.0` (`agent.py:870`). The behaviour is
+   body ignores it and hands the driver `0.0` (`agent.py:970`). The behaviour is
    the reference's; the dead parameter is a wart worth removing.
 4. **Map anchor.** ASCENT anchors its maps at the episode start (GPS); an
    earlier version of this repo anchored at the habitat world origin, which
@@ -248,8 +248,10 @@ the comparison — but they separate both from ASCENT's published setup.
 - **One 24 GB GPU** hosts habitat, RedNet and five model servers, so the
   servers are shared between the two stacks rather than duplicated.
 - **The reference number is 65.0% on 100 episodes**, measured here, not the
-  paper's 63% on the full 2000-episode split. Compare like with like:
-  `outputs/full_final*` is this repo's full-split run.
+  paper's 63% on the full 2000-episode split. Compare like with like: this
+  repo has no finished full-split run yet. `+experiment=final_sensor` is that
+  run, `scripts/run_full_split.sh` supervises it into `outputs/full_final*`, and
+  `docs/history/AB_RESULTS.md` still lists it as pending.
 
 ---
 
@@ -261,7 +263,13 @@ python scripts/run_eval.py eval.behaviour_log=true output_dir=outputs/my_run
 python scripts/compare_ascent_osg.py data/reference/ascent_behaviour_100 outputs/my_run
 ```
 
-`pytest tests/unit -q` (~20 s, no GPU) pins the transcription: every test in
+**The reference trace is not in this checkout.** `data/reference/ascent_behaviour_100/` was
+meant to be committed beside the code (commit `11e0b4a` says so), but `data/*` was ignored
+and it never was, and the recorder patch that produced it is no longer applied to the
+submodule, so it cannot be regenerated. `.gitignore` now admits `data/reference/`: whoever
+holds the copy from the S71 machine should put it back there and commit it.
+
+`pytest tests/unit -q` (~50 s, no GPU) pins the transcription: every test in
 `tests/unit/test_ascentnav_*.py` names the reference line it was transcribed
 from, and `tests/unit/golden/` pins the composed config of every preset so a
 default cannot move unnoticed.
