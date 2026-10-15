@@ -19,6 +19,11 @@ Re-run of both benchmarks on the current tree, against the paper:
 The multi-floor arm reproduces. The single-floor dynamic conditions do not: 16
 lost against 4 gained on the 107 shared trials, spread across every query.
 
+> **Correction, 2026-10-15:** the multi-floor arm does *not* reproduce. The re-run ran
+> layouts re-authored after the paper's run (12 upward relocations where the paper's run had
+> none), and 2 of its 11 successes stopped a storey away from the object. On the object's
+> storey it is 9/25. `docs/PAPER.md`, Appendix B, *Table II, re-examined*.
+
 ## The tree that produced 62/107 is `74e0eab`
 
 `715be7d` (09-13 07:11) is docs-only and its subject records the result —

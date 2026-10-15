@@ -732,7 +732,7 @@ viewpoint rule.
 | Table I, Ours, cross-anchor 52.8% | 28 / 53 | `outputs/osg_v4_fuse_cls_full` | the artifact holds it. Re-runs: **25/53** on the original maps, 20/53 on rebuilt maps; the 28→25 residue is the container image (`CROSS_ANCHOR_REPRODUCTION.md`) |
 | Table II, ASCENT 0% / 0 | 0 / 25 | `outputs/ascent_crossanchor` | **reproduces** |
 | Table I, Ours, static 64.6% | 51 / 79 | `outputs/RERUN/dualmap186` | **51/79 on rebuilt maps** (09-20); 42/79 on the original maps (09-27). The locked run held only the 107 dynamic trials, so no static run from the paper's image exists |
-| Table II, Ours 40.0% / 0.162 | 10 / 25 | `outputs/RERUN/mf5` | **reproduces, one episode above**: 11/25 = 44.0%, SPL 0.196. The earlier `outputs/mf5_pass2_final` holds 9/25 = 36.0%, SPL 0.138 |
+| Table II, Ours 40.0% / 0.162 | 10 / 25 | `outputs/RERUN/mf5` | ~~reproduces, one episode above: 11/25 = 44.0%, SPL 0.196~~ -- **does not**: the re-run is on re-authored layouts and two of its 11 successes stopped a storey away; see *Table II, re-examined* below. The earlier `outputs/mf5_pass2_final` holds 9/25 = 36.0%, SPL 0.138 |
 | Table III, w/o presence revision 41.5% | 22 / 53 | — | **not on this machine**: no 53-episode run exists |
 | Table III, w/o surface scoring 35.8% | 19 / 53 | — | **not on this machine** |
 | Table III, w/o VLM verification 52.8% | 28 / 53 | — | **not on this machine** as a separate run |
@@ -743,7 +743,7 @@ viewpoint rule.
 > 18 trials when given the same prior map — but the prior map, which rebuilds
 > deterministically at 534 tracks against the 682 the locked run loaded.
 > [`CROSS_ANCHOR_REPRODUCTION.md`](CROSS_ANCHOR_REPRODUCTION.md) has the full audit.
-> Table II reproduces: 11/25 = 44.0%, SPL 0.196.
+> Table II: 11/25 = 44.0%, SPL 0.196 -- but see *Table II, re-examined* below.
 
 The three ablations are re-runnable as one override each on the full arm:
 
@@ -763,6 +763,22 @@ Two smaller disagreements, recorded rather than resolved:
 - *Resolved:* `configs/experiment/mf5_osg_unified.yaml` used to list scene **00808** and
   **26** relocations; it now names the paper's five scenes (00800, 00821, **00862**, 00873,
   00878) and 25 episodes, matching `mf5_ascent_crossanchor.yaml`.
+
+### Table II, re-examined (2026-10-15)
+
+Four problems with what Table II measures, found while answering the reviews. Each is
+checked against the runs on disk; `scripts/analyze_multifloor.py` reproduces the numbers.
+
+| | finding | evidence |
+|---|---|---|
+| 1 | **A stop a storey away scored.** The success rule is horizontal-only (DualMap's single-storey rule). | `outputs/RERUN/mf5`: 00862 and 00873's cracker boxes "succeeded" 2.33 / 2.11 m from the object in 3D, on the wrong storey. On the object's storey the re-run is **9/25 = 36.0%** [Wilson 95%: 20, 55], not 11/25. Fixed: `ycb.object_success_max_floor_dy_m` (default 1.0). |
+| 2 | **The two arms ran different episodes.** The layout files were re-authored at 2026-09-16 02:39. | `outputs/mf5_pass2_final` (OSG, 09-16 01:22) ran the earlier layouts, on which all 25 relocations are **downward**. `outputs/ascent_crossanchor` (ASCENT, 09-16 08:09) and `outputs/RERUN/mf5` ran the current ones: **12 upward, 13 downward**, other layout hashes. So "Table II reproduces" compares two benchmarks. On the current layouts OSG scores 1/12 upward and 8/13 downward. |
+| 3 | **The prior map never held the targets.** | 0 of 25 episodes have a same-label track within 1 m of the target's static pose in `outputs/maps_p1500_osg`; 24 have no track of the label at all. Pass 1 kept one episode's graph (best-of), whose world model was prompted with only its own target. So Table II never exercised presence-belief revision, and Fig. 1's "revisit, find absent, switch storey" did not happen in the benchmark. Fixed: pass 1 accumulates (`scripts/run_prior_maps.sh`, `ycb.map_in`), and `audit_map_coverage.py` gates on every static target being in the graph. |
+| 4 | **ASCENT could not name most targets.** | `mf5_ascent_crossanchor` never set `detector.gdino_target_url`, so D-FINE (closed-set COCO) looked for a cracker box, toy airplane, tin can. The target was in view in 3 of 25 episodes and never detected. ASCENT's own non-COCO branch (GroundingDINO by name) is `configs/experiment/mfv2_ascent.yaml`. |
+
+Benchmark v2 (`configs/experiment/mfv2_dataset.yaml`) is the replacement: static and
+cross-anchor layouts with every relocation (same-storey ones included), starts on a uniformly
+drawn storey, success on the object's storey, seeds 42/43/44.
 
 ## Appendix C — naming, and one note on Eq. 8
 
