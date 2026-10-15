@@ -50,6 +50,22 @@ _OPEN_CLIP = {
 }
 
 
+def _reparameterize(model):
+    """Apple's `reparameterize_model` when `mobileclip` is installed, else timm's.
+
+    Apple's walks every module and calls `.reparameterize()`; timm's does the
+    same and also folds `fuse()` / `switch_to_deploy()` modules. Both rewrite a
+    trained multi-branch block as the single conv it is equivalent to at
+    inference, so features agree to float precision -- and `mobileclip` is not
+    on PyPI, so a container rebuilt without GitHub access lost the whole
+    region-proposal stage over this one function (pyproject.toml)."""
+    try:
+        from mobileclip.modules.common.mobileone import reparameterize_model
+    except ImportError:
+        from timm.utils.model import reparameterize_model
+    return reparameterize_model(model)
+
+
 class FeatureEncoder:
     """Unit-norm 512-d features for crops and for text, one backbone at a time."""
 
@@ -88,9 +104,7 @@ class FeatureEncoder:
         if backbone == "mobileclip_s2":
             # Fuses the reparameterisable branches; DualMap does the same
             # (utils/object_detector.py:161-164) and inference differs without it.
-            from mobileclip.modules.common.mobileone import reparameterize_model
-
-            self.model = reparameterize_model(self.model)
+            self.model = _reparameterize(self.model)
         self.model = self.model.to(self.device).eval()
         self.tokenizer = open_clip.get_tokenizer(name)
         # Both shipped backbones are 512-d; read it off the model where the

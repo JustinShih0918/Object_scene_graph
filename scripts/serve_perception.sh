@@ -35,9 +35,15 @@ mkdir -p "$ASCENT_DIR/debug/vlm_logs"
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION"
 
+# PYTHONNOUSERSITE: both conda envs are Python 3.9, so both read the same
+# user site (~/.local/lib/python3.9). A `pip install --user` made for the
+# habitat side -- open_clip, which pulled huggingface_hub 1.8 -- then shadows
+# the ascent env's own 0.25.2, and four of the five servers died on import
+# ("No module named 'httpcore'"). The ascent env is self-contained; keep it so.
 launch() {  # name module port
     tmux new-window -t "$SESSION" -n "$1" \
         "cd $PWD/$ASCENT_DIR && PYTHONPATH=$PWD/$ASCENT_DIR \
+         PYTHONNOUSERSITE=1 \
          HF_HOME=/workspace/data/weights/hf CUDA_VISIBLE_DEVICES=0 \
          PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
          $ASCENT_PYTHON -m $2 --port $3 2>&1 | tee debug/vlm_logs/$1.log"

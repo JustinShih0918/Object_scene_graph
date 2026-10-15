@@ -34,9 +34,15 @@ models = ["ultralytics==8.3.*"]
 # `ModuleNotFoundError: No module named 'open_clip'` -- after stage 1 had spent
 # three hours building the maps it was going to read. `mobileclip` is not on
 # PyPI; Apple publish it from GitHub only.
+#
+# timm was pinned at 1.0.11, which open_clip_torch 3.3.0 cannot install with
+# (it requires timm>=1.0.17), so this extra did not resolve at all; pip picks
+# 1.0.30 for it today. mobileclip is only imported for one module
+# (`mobileclip.modules.common.mobileone`): install it with --no-deps so its own
+# pins cannot move torch.
 region-proposal = [
     "open_clip_torch==3.3.0",
-    "timm==1.0.11",
+    "timm>=1.0.17",
     "huggingface_hub==0.25.2",
     "mobileclip @ git+https://github.com/apple/ml-mobileclip.git",
 ]
