@@ -467,6 +467,13 @@ def load_prior_map(
         return None
     blob = load_map(path)
     restore_occupancy = bool(getattr(cfg.ycb, "map_in_occupancy", True))
+    # Into whatever holds the object layer, as `save_map_for_scene` writes from:
+    # NavAgent itself, or the world model riding beside a policy that has none.
+    # Without this a pass 1 driven by `ascentnav` could not accumulate -- each
+    # episode's graph only ever named its own target, the best-of rule kept one
+    # of them, and 0 of the 25 multi-floor episodes had the target in the prior
+    # (outputs/maps_p1500_osg).
+    agent = getattr(agent, "world", None) or agent
     n = apply_map(
         agent, blob,
         max_log_odds=float(cfg.scene_graph.presence.reload_max_log_odds),

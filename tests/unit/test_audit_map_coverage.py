@@ -147,7 +147,7 @@ def _args(**over):
     base = dict(min_free_frac=0.60, max_occupied_frac=0.08,
                 max_target_free_m=1.5, min_stair_cells=50,
                 min_ramp_span_frac=0.60, require_graph_floor=True,
-                storey_match_m=1.0, exempt_storeys={})
+                storey_match_m=1.0, exempt_storeys={}, max_target_track_m=1.0)
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -298,3 +298,37 @@ def test_a_reachable_storey_with_no_coverage_still_fails():
     row = _row(free=0.0)
     row["storeys"][0]["unreachable"] = False
     assert any("free" in f for f in audit.gate(row, _args()))
+
+
+def _target(handle, in_prior, storey=0, d=0.3):
+    return {"layout_id": "static", "handle": handle, "label": handle, "storey": storey,
+            "gate_ok": True, "position": [0.0, 0.9, 0.0],
+            "in_prior": in_prior, "prior_track_m": d if in_prior else None}
+
+
+def test_a_static_target_missing_from_the_graph_trips_the_gate():
+    """0 of 25 multi-floor search targets were in outputs/maps_p1500_osg at
+    their static pose, and nothing failed: pass 2 had no stale belief to revise
+    and the benchmark never exercised presence revision."""
+    row = _row(targets=[_target("003_cracker_box", True), _target("024_bowl", False)])
+    failures = audit.gate(row, _args())
+    assert any("024_bowl" in f and "scene-graph" in f for f in failures)
+    assert not any("003_cracker_box" in f for f in failures)
+
+
+def test_the_graph_gate_can_be_switched_off_and_respects_exemptions():
+    row = _row(targets=[_target("024_bowl", False, storey=0)])
+    assert audit.gate(row, _args(max_target_track_m=0.0)) == []
+    exempt = {"00800-TEEsavR23oF": (0,)}
+    assert audit.gate(row, _args(exempt_storeys=exempt)) == []
+
+
+def test_nearest_same_label_track_is_horizontal_and_same_storey():
+    item = {"label": "bowl", "position": [0.0, 0.9, 0.0]}
+    tracks = [
+        {"label": "bowl", "center": [0.6, 0.85, 0.8]},     # 1.0 m away, same storey
+        {"label": "bowl", "center": [0.1, 3.9, 0.0]},      # right above, a storey up
+        {"label": "plate", "center": [0.0, 0.9, 0.0]},     # right there, wrong label
+    ]
+    assert abs(audit.nearest_same_label_m(item, tracks) - 1.0) < 1e-9
+    assert audit.nearest_same_label_m(item, tracks[1:]) is None

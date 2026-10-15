@@ -44,22 +44,39 @@ STEPS=${STEPS:-1500}
 # +0.012, so the tail is paid for at roughly 13 minutes per point of coverage.
 # MAX_EPISODES is that tail cut off; set it to -1 to keep every episode.
 #
-# 3, not 1, and not 6. One 1500-step episode already passes the gate that
+# It was 3, not 1 and not 6, while only occupancy counted. One 1500-step episode already passes the gate that
 # matters -- every authored target inside the mapped region -- but its worst
 # target sat 1.46 m from mapped free space against a 1.5 m gate, which is no
 # margin at all. Three is past where the 500-step curve flattened (+0.047 at
 # the third episode, then +0.010, +0.012, +0.012) and costs ~38 min a scene
 # against ~90. Raise it for a scene the audit fails; the resume check is
 # count-aware, so re-running tops a scene up rather than skipping it.
-MAX_EPISODES=${MAX_EPISODES:-3}
-OBS=${OBS:-outputs/maps_p1500_ascent}
-OSG=${OSG:-outputs/maps_p1500_osg}
-OUT=${OUT:-outputs/prior1500}
-# The multi-floor five, then DualMap's released three. The released layouts are
-# read in authored form from `outputs/collector_layouts` -- NOT
-# `outputs/substituted_layouts`, which swaps the scissors for a bleach cleanser
-# and would put a bleach bottle at the scissors' position.
-MF5="00800-TEEsavR23oF 00808-y9hTuugGdiq 00821-eF36g7L6Z9M 00873-bxsVRursffK 00878-XB4GS9ShBRE"
+#
+# -1 (one episode per authored target) since the scene graph ACCUMULATES. The
+# 3-episode cap above was set by OCCUPANCY coverage, and occupancy is not the
+# whole prior: each episode's world model is prompted with its own target, and
+# the scene graph used to be best-of rather than accumulated, so the snapshot
+# named at most one target and in practice none -- 0 of the 25 multi-floor
+# search episodes had their target at its static pose in
+# outputs/maps_p1500_osg, and pass 2 never had a stale belief to revise. Every
+# target now gets the episode whose vocabulary names it, chained through
+# `ycb.map_in` exactly as the single-floor maps are (campaign/rebuild_maps.sh),
+# and `audit_map_coverage.py --graphs` gates on the result.
+MAX_EPISODES=${MAX_EPISODES:--1}
+OBS=${OBS:-outputs/maps_v2_ascent}
+OSG=${OSG:-outputs/maps_v2_osg}
+OUT=${OUT:-outputs/prior_v2}
+# The scene graph's own detector. The 11s head was the world model's default;
+# pass 2 searches with 11L (configs/detector/yoloe.yaml), and a prior mapped by
+# a weaker detector than the one that later disputes it is a confound.
+WM_WEIGHTS=${WM_WEIGHTS:-data/weights/yoloe-11l-seg.pt}
+# The paper's five multi-floor scenes, 00808 (the development scene), then
+# DualMap's released three. The released layouts are read in authored form
+# from `outputs/collector_layouts` -- NOT `outputs/substituted_layouts`, which
+# swaps the scissors for a bleach cleanser and would put a bleach bottle at the
+# scissors' position. 00862 was missing here after it replaced 00808 in the
+# paper's set (configs/experiment/mf5_osg_unified.yaml).
+MF5="00800-TEEsavR23oF 00821-eF36g7L6Z9M 00862-LT9Jq6dN3Ea 00873-bxsVRursffK 00878-XB4GS9ShBRE 00808-y9hTuugGdiq"
 DUALMAP="00829-QaLdnwvtxbs 00848-ziup5kvtCCR 00880-Nfvxx8J5NCo"
 COLLECTOR_LAYOUTS=${COLLECTOR_LAYOUTS:-outputs/collector_layouts}
 
@@ -113,7 +130,8 @@ PYCOUNT
   python scripts/run_eval.py +experiment=mf5_mapping_both \
     "ycb.scenes=[$scene]" "agent.max_steps=$STEPS" \
     "eval.num_episodes=$MAX_EPISODES" \
-    "ycb.obstacle_map_out=$OBS" "ycb.map_out=$OSG" \
+    "ycb.obstacle_map_out=$OBS" "ycb.map_out=$OSG" "ycb.map_in=$OSG" \
+    "agent.osg_world_model_weights=$WM_WEIGHTS" \
     ycb.obstacle_map_union=true \
     eval.behaviour_log=true eval.save_viz=false \
     "${extra[@]}" "output_dir=$OUT/$scene" > "$OUT/$scene.log" 2>&1
@@ -130,6 +148,7 @@ cat <<EOF
         --maps $OBS --graphs $OSG \\
         --layout-root /habitat-data-collector/outputs/dualmap_multifloor \\
         --layout-root $COLLECTOR_LAYOUTS --layout-indices 1 \\
+        --max-target-track-m 1.0 \\
         --exempt-storey 00808-y9hTuugGdiq:0 \\
         --exempt-storey 00878-XB4GS9ShBRE:0 \\
         --out outputs/audit/map_coverage_${STEPS}.json --label ${STEPS}-union

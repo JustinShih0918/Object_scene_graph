@@ -518,3 +518,26 @@ def test_scene_graph_only_keeps_tracks_but_not_occupancy(tmp_path):
     assert n == 2, "the object tracks must still load"
     assert {t.label for t in without.object_layer.tracks()} == {"mug", "bowl"}
     assert (without.costmap.grid == -1).all(), "occupancy leaked in"
+
+
+def test_pass_one_accumulates_into_the_world_model_of_a_policy_without_one(tmp_path):
+    """An `ascentnav` pass 1 carries its scene graph on `agent.world`. The save
+    side already wrote from there; the load side has to read into it too, or
+    each episode starts empty and the snapshot only ever names one target
+    (0 of 25 multi-floor episodes had the target in outputs/maps_p1500_osg)."""
+    from types import SimpleNamespace
+
+    from osg.eval.prior_map import load_prior_map
+
+    built = agent_with([track(1, "cracker box"), track(2, "toy airplane", center=(3.0, 0.8, 1.0))])
+    save_map(tmp_path / "00800-TEEsavR23oF.json", built, scene="00800-TEEsavR23oF",
+             layout_id="static")
+    cfg = SimpleNamespace(
+        ycb=SimpleNamespace(map_in=str(tmp_path), map_out=str(tmp_path), map_in_occupancy=True),
+        scene_graph=SimpleNamespace(presence=SimpleNamespace(reload_max_log_odds=1.5)),
+    )
+    policy = SimpleNamespace(world=agent_with([]))
+    note = load_prior_map(cfg, policy, "00800-TEEsavR23oF")
+    assert note["tracks"] == 2
+    labels = sorted(t.label for t in policy.world.object_layer.tracks(include_blacklisted=True))
+    assert labels == ["cracker box", "toy airplane"]

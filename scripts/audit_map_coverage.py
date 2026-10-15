@@ -482,8 +482,47 @@ def audit_scene(scene: str, args, layout_roots: Sequence[Path]) -> dict:
                             gate_ok=bool(d <= args.max_target_free_m))
             item["island_ok"] = (item["island"] == main_island)
             targets.append(item)
+    graph_tracks = graph_tracks_of(args.graphs, scene)
+    for item in targets:
+        if item["layout_id"] != "static" or graph_tracks is None:
+            continue
+        item["prior_track_m"] = nearest_same_label_m(item, graph_tracks)
+        item["in_prior"] = bool(
+            item["prior_track_m"] is not None
+            and item["prior_track_m"] <= args.max_target_track_m)
     row["targets"] = targets
     return row
+
+
+def graph_tracks_of(graphs_dir: Optional[Path], scene: str) -> Optional[List[dict]]:
+    if graphs_dir is None:
+        return None
+    path = _map_path(str(graphs_dir), scene)
+    if not path.exists():
+        return None
+    return list(json.loads(path.read_text(encoding="utf-8")).get("tracks") or [])
+
+
+def nearest_same_label_m(item: dict, tracks: Sequence[dict]) -> Optional[float]:
+    """Horizontal distance from an authored static pose to the nearest track of
+    the same label on the same storey, or None if the graph names none.
+
+    This is the question the multi-floor prior once failed silently: the
+    occupancy covered every target and the scene graph held 0 of the 25 search
+    targets at their static poses (outputs/maps_p1500_osg), so pass 2 had no
+    stale belief to revise and the benchmark never exercised presence
+    revision. 1.5 m vertical is "same storey" for an object on furniture."""
+    pos = item["position"]
+    best = None
+    for track in tracks:
+        if str(track.get("label", "")) != item["label"]:
+            continue
+        centre = track.get("center") or track.get("centre")
+        if not centre or len(centre) < 3 or abs(float(centre[1]) - pos[1]) > 1.5:
+            continue
+        d = float(np.hypot(float(centre[0]) - pos[0], float(centre[2]) - pos[2]))
+        best = d if best is None else min(best, d)
+    return best
 
 
 def gate(row: dict, args) -> List[str]:
@@ -530,6 +569,15 @@ def gate(row: dict, args) -> List[str]:
                 failures.append(f"storey {i}: no scene-graph floor within "
                                 f"{args.storey_match_m} m, and no obstacle-map "
                                 "cluster to seed one from")
+    if args.max_target_track_m > 0:
+        missing = [t for t in row.get("targets", [])
+                   if t.get("in_prior") is False and t["storey"] not in
+                   args.exempt_storeys.get(row["scene"], ())]
+        if missing:
+            failures.append(
+                f"{len(missing)} static target(s) with no same-label scene-graph "
+                f"track within {args.max_target_track_m} m: "
+                f"{sorted(t['handle'] for t in missing)}")
     out = [t for t in row.get("targets", [])
            if not t.get("gate_ok") and t["storey"] not in
            args.exempt_storeys.get(row["scene"], ())]
@@ -599,6 +647,16 @@ def print_scene(row: dict, args) -> None:
             print(f"      {t['layout_id']:<16} {t['handle']:<22} storey {t['storey']} "
                   f"cell={t['cell']:<9} d_free="
                   f"{'inf' if d is None or not np.isfinite(d) else f'{d:.2f}'}")
+        checked = [t for t in targets if "in_prior" in t]
+        if checked:
+            have = [t for t in checked if t["in_prior"]]
+            print(f"   prior graph: {len(have)}/{len(checked)} static target(s) have a "
+                  f"same-label track within {args.max_target_track_m} m")
+            for t in checked:
+                if not t["in_prior"]:
+                    d = t.get("prior_track_m")
+                    print(f"      missing {t['handle']:<22} storey {t['storey']} nearest "
+                          f"{'none' if d is None else f'{d:.2f} m'}")
         off = [t for t in targets if not t.get("island_ok")]
         if off:
             print(f"      {len(off)} target(s) NOT on the main island: "
@@ -688,6 +746,11 @@ def main() -> int:
                     help="MEASURED as a bound: the 00800 union put all 12 "
                          "authored positions within 1.2 m; before it, one was "
                          "5.1 m outside")
+    ap.add_argument("--max-target-track-m", type=float, default=1.0,
+                    help="every STATIC target needs a same-label scene-graph track "
+                         "this close (horizontal, same storey), or pass 2 has no "
+                         "stale belief to revise. The success radius. <= 0 disables; "
+                         "skipped without --graphs")
     ap.add_argument("--min-stair-cells", type=int, default=50,
                     help="CHOSEN, order-of-magnitude: 00800 holds ~933")
     ap.add_argument("--min-ramp-span-frac", type=float, default=0.60,
