@@ -75,6 +75,14 @@ def manifest_cache_payload(
             )
         ],
         "start_on_prior_floor": bool(getattr(cfg.ycb, "start_on_prior_floor", False)),
+        # The draw's rule, not just the flag: a manifest built while the draw
+        # still included object-less storeys must not satisfy the current one.
+        "start_storey_uniform": (
+            "object_storeys" if bool(getattr(cfg.ycb, "start_storey_uniform", False))
+            else False),
+        # Missing until now: a manifest built with the control arm's starts was
+        # a cache hit for the normal arm, and vice versa.
+        "start_on_target_floor": bool(getattr(cfg.ycb, "start_on_target_floor", False)),
         "relocation_floor_tolerance_m": float(
             getattr(cfg.ycb, "relocation_floor_tolerance_m", 0.5)
         ),
@@ -156,6 +164,20 @@ def _finite_point(value: Any) -> np.ndarray | None:
     if point.shape != (3,) or not np.isfinite(point).all():
         return None
     return point
+
+
+def _target_floor_y(info: Dict[str, Any]) -> Optional[float]:
+    """The navigable floor height at the target, from the episode's manifest.
+
+    `destination_floor_y` is the height of the target's first goal view point,
+    which generation already requires to be navigable; a manifest cached
+    before that field existed still carries the view points themselves."""
+    value = info.get("destination_floor_y")
+    if value is None:
+        viewpoints = info.get("viewpoints") or []
+        if viewpoints and viewpoints[0].get("position") is not None:
+            value = viewpoints[0]["position"][1]
+    return None if value is None else float(value)
 
 
 def _geodesic_distance(
@@ -388,11 +410,86 @@ def _viewpoints_for_object(simulator: _ManifestSimulator, authored, cfg) -> List
     return viewpoints
 
 
+def _starts_on_uniform_storeys(
+    pathfinder, goals, authored, cfg, storey_heights: Sequence[float],
+) -> List[Dict[str, Any]]:
+    """One start per `starts_per_target`, its storey drawn uniformly.
+
+    The storey is drawn first and the point second, so a two-storey scene
+    starts half its episodes on the object's storey whatever the two storeys'
+    areas are -- an area-uniform point would let the bigger floor decide how
+    often the stairs are needed. A storey with no point far enough from the
+    object (or not connected to it) is skipped for the next one in the draw.
+    The point is never on the stairs: it must be within
+    `relocation_floor_tolerance_m` of a storey's height."""
+    tol = float(getattr(cfg.ycb, "relocation_floor_tolerance_m", 0.5))
+    starts: List[Dict[str, Any]] = []
+    for start_index in range(int(cfg.ycb.starts_per_target)):
+        derived_seed = int(cfg.ycb.seed) + int(authored.semantic_id) * 1009 + start_index
+        pathfinder.seed(derived_seed)
+        rng = np.random.default_rng(derived_seed)
+        found = None
+        for storey in rng.permutation(len(storey_heights)):
+            height = float(storey_heights[int(storey)])
+            for _ in range(int(cfg.ycb.start_sample_attempts)):
+                point = _finite_point(pathfinder.get_random_navigable_point())
+                if point is None or abs(float(point[1]) - height) > tol:
+                    continue
+                distance = _geodesic_distance(pathfinder, point, goals)
+                if math.isfinite(distance) and distance >= float(cfg.ycb.start_min_geodesic_m):
+                    found = {
+                        "position": [float(x) for x in point],
+                        "rotation": _random_yaw(rng),
+                        "initial_geodesic_distance": distance,
+                        "start_storey_y": height,
+                    }
+                    break
+            if found is not None:
+                break
+        if found is None:
+            raise YCBLayoutError(
+                f"could not sample a start >= {cfg.ycb.start_min_geodesic_m} m "
+                f"from {authored.handle} on any of the storeys {list(storey_heights)}"
+            )
+        starts.append(found)
+    return starts
+
+
+def _benchmark_storeys(pathfinder, layout, source_layout, cfg) -> List[float]:
+    """The storeys a start may be drawn on: the scene's navmesh storeys that
+    hold an authored object, before or after the move.
+
+    Not every navmesh storey. 00878's basement is navigable, holds no object
+    in any layout, and is out of the prior map's scope (the coverage audit
+    exempts it); drawing over it would start a third of that scene's episodes
+    in a room nothing in the benchmark is about."""
+    from ..eval.floors import navmesh_storeys
+
+    tol = float(getattr(cfg.ycb, "relocation_floor_tolerance_m", 0.5))
+    heights = [
+        float(s["height"]) for s in navmesh_storeys(
+            pathfinder, n_points=4000, seed=int(cfg.ycb.seed))["storeys"]
+        if int(s["n_points"]) > 0
+    ]
+    floors = []
+    for source in (layout, source_layout):
+        for obj in getattr(source, "objects", ()) or ():
+            snapped = _finite_point(pathfinder.snap_point(
+                np.asarray(obj.translation, dtype=np.float32)))
+            if snapped is not None:
+                floors.append(float(snapped[1]))
+    used = [h for h in heights if any(abs(h - f) <= tol for f in floors)]
+    return used or heights
+
+
 def _starts_for_object(
     pathfinder, viewpoints: Sequence[Mapping[str, Any]], authored, cfg,
     required_floor_y: Optional[float] = None,
+    storey_heights: Optional[Sequence[float]] = None,
 ) -> List[Dict[str, Any]]:
     goals = [item["position"] for item in viewpoints]
+    if required_floor_y is None and storey_heights:
+        return _starts_on_uniform_storeys(pathfinder, goals, authored, cfg, storey_heights)
     starts: List[Dict[str, Any]] = []
     for start_index in range(int(cfg.ycb.starts_per_target)):
         derived_seed = int(cfg.ycb.seed) + int(authored.semantic_id) * 1009 + start_index
@@ -430,6 +527,10 @@ def generate_manifest(
     cache_key = manifest_cache_key(layout, cfg, source_layout)
     simulator = _ManifestSimulator(layout, cfg)
     try:
+        storey_heights = None
+        if bool(getattr(cfg.ycb, "start_storey_uniform", False)):
+            storey_heights = _benchmark_storeys(
+                simulator.sim.pathfinder, layout, source_layout, cfg)
         episodes: List[Dict[str, Any]] = []
         skipped_targets: List[Dict[str, Any]] = []
         source_by_id = {
@@ -499,6 +600,7 @@ def generate_manifest(
                 starts = _starts_for_object(
                     simulator.sim.pathfinder, viewpoints, authored, cfg,
                     required_floor_y=required_y,
+                    storey_heights=storey_heights,
                 )
             except YCBLayoutError as exc:
                 if not (
@@ -798,12 +900,23 @@ class ObjectDistanceRule:
     an authored episode. Pure bookkeeping, so it is testable without habitat.
 
     Distance is to the object's position (zero extent), which is what the
-    released harness uses for its YCB targets too."""
+    released harness uses for its YCB targets too.
 
-    def __init__(self, enabled: bool, threshold_m: float = 1.0, max_attempts: int = 3) -> None:
+    The released rule is single-storey, and horizontal distance alone cannot
+    tell a stop beside the object from a stop on the floor above it. When
+    `max_floor_dy_m` > 0 and the env has set `target_floor_y` (the navigable
+    floor height at the object, `destination_floor_y` in the manifest), a stop
+    also has to stand within that height of the object's floor. Measured on
+    outputs/RERUN/mf5: 00862's and 00873's cracker boxes both "succeeded" from
+    the wrong storey, 0.62 / 0.57 m horizontal and 2.33 / 2.11 m in 3D, each a
+    stop at a false positive directly above or below the object."""
+
+    def __init__(self, enabled: bool, threshold_m: float = 1.0, max_attempts: int = 3,
+                 max_floor_dy_m: float = 0.0) -> None:
         self.enabled = bool(enabled)
         self.threshold_m = float(threshold_m)
         self.max_attempts = int(max_attempts)
+        self.max_floor_dy_m = float(max_floor_dy_m)
         #: Set by the env: attempts -> geodesic from the episode start to the
         #: winning stop, or None. The rule is pure bookkeeping and holds no
         #: simulator, so the one thing it cannot compute is a path length.
@@ -815,6 +928,20 @@ class ObjectDistanceRule:
         self._travelled = 0.0
         self._previous: Optional[np.ndarray] = None
         self.shortest_m: Optional[float] = None
+        #: The navigable floor height at the object, set by the env per episode.
+        #: None leaves the rule horizontal-only, and every attempt records
+        #: `on_target_floor: None` so that case is visible in the record.
+        self.target_floor_y: Optional[float] = None
+
+    @property
+    def floor_checked(self) -> bool:
+        return self.max_floor_dy_m > 0.0 and self.target_floor_y is not None
+
+    def on_target_floor(self, position: np.ndarray) -> Optional[bool]:
+        """Is this pose on the object's storey? None when the rule cannot say."""
+        if not self.floor_checked:
+            return None
+        return bool(abs(float(position[1]) - float(self.target_floor_y)) <= self.max_floor_dy_m)
 
     def travelled(self, position: np.ndarray) -> None:
         if self._previous is not None:
@@ -828,7 +955,9 @@ class ObjectDistanceRule:
 
     def record_stop(self, step: int, position: np.ndarray, target: np.ndarray) -> bool:
         horizontal, spatial = self.distances(position, target)
-        success = bool(horizontal <= self.threshold_m)
+        within = bool(horizontal <= self.threshold_m)
+        on_floor = self.on_target_floor(position)
+        success = within and on_floor is not False
         if self.attempts and self.attempts[-1]["step"] == int(step):
             # The episode loop asks before stepping and habitat's terminal STOP
             # follows at the same pose: one stop, not two.
@@ -839,6 +968,12 @@ class ObjectDistanceRule:
             "position": [float(x) for x in position],
             "distance_horizontal_m": horizontal,
             "distance_3d_m": spatial,
+            "floor_dy_m": (None if self.target_floor_y is None
+                           else abs(float(position[1]) - float(self.target_floor_y))),
+            "on_target_floor": on_floor,
+            # What the horizontal-only rule would have said, so a run under the
+            # floor check can still be read against the numbers before it.
+            "success_horizontal_only": within,
             "success": success,
         })
         return success
@@ -867,18 +1002,25 @@ class ObjectDistanceRule:
             spl = shortest_m / max(shortest_m, self._travelled, 1e-12)
         return {
             "success": int(success),
+            "success_horizontal_only": int(any(
+                bool(a.get("success_horizontal_only", a["success"]))
+                for a in attempts[: self.max_attempts])),
             "spl": float(spl),
             "travelled_m": float(self._travelled),
             "attempts": attempts,
             "attempt_count": len(attempts),
             "final_distance_horizontal_m": horizontal,
             "final_distance_3d_m": spatial,
+            "target_floor_y": self.target_floor_y,
             "shortest_path_to_object_m": shortest_m,
-            "success_definition": (
-                f"horizontal distance to the object <= {self.threshold_m} m, "
-                f"within {self.max_attempts} attempts"
-            ),
+            "success_definition": self.definition(),
         }
+
+    def definition(self) -> str:
+        text = f"horizontal distance to the object <= {self.threshold_m} m"
+        if self.max_floor_dy_m > 0.0:
+            text += f" on the object's storey (floor height within {self.max_floor_dy_m} m)"
+        return text + f", within {self.max_attempts} attempts"
 
 
 class YCBAuthoredNavEnv(HabitatObjectNavEnv):
@@ -915,6 +1057,7 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
         self._object_rule = ObjectDistanceRule(
             enabled=bool(getattr(cfg.ycb, "score_by_object_distance", False)),
             threshold_m=float(getattr(cfg.ycb, "object_success_distance_m", 1.0)),
+            max_floor_dy_m=float(getattr(cfg.ycb, "object_success_max_floor_dy_m", 0.0)),
         )
 
     def reset(self):
@@ -951,6 +1094,7 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
             raise RuntimeError("failed to refresh observations after YCB object injection")
         self._frame_id = 0
         if self._object_rule.enabled:
+            self._object_rule.target_floor_y = _target_floor_y(info)
             self._start_position = np.asarray(
                 self.env.sim.get_agent_state().position, dtype=float)
             self._object_rule.shortest_fallback = self._shortest_to_stop
@@ -1000,6 +1144,10 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
                 if not np.isfinite(snapped).all():
                     continue
                 if self._object_rule.distances(snapped, target)[0] > threshold:
+                    continue
+                if self._object_rule.on_target_floor(snapped) is False:
+                    # A point under a mezzanine snaps to the storey below; the
+                    # shortest path must end where a stop would score.
                     continue
                 key = tuple(np.round(snapped, 2))
                 if key in seen:
@@ -1184,8 +1332,7 @@ class YCBAuthoredNavEnv(HabitatObjectNavEnv):
         return {
             "mode": "ycb_authored",
             "success_rule": (
-                f"horizontal distance to the object <= {self._object_rule.threshold_m} m, "
-                f"within {self._object_rule.max_attempts} attempts"
+                self._object_rule.definition()
                 if self._object_rule.enabled else "habitat viewpoint"
             ),
             "selected_layouts": [

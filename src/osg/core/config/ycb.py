@@ -75,6 +75,14 @@ class YCBAuthoredConfig:
     # the terminal approach. Measured against the normal start (on the prior
     # storey) it says whether a scene's failures are stairs or approach.
     start_on_target_floor: bool = False
+    # Draw each start's STOREY uniformly from the scene's navmesh storeys, then
+    # the point on it (`_starts_on_uniform_storeys`). With neither flag above,
+    # a start is an area-uniform navigable point, which lets the bigger storey
+    # decide how often the stairs are needed and can land on a stair tread.
+    # Benchmark v2 (configs/experiment/mfv2_dataset.yaml) uses this so that the
+    # agent must work out whether to change storey at all: about half its
+    # episodes start on the object's storey.
+    start_storey_uniform: bool = False
     relocation_floor_tolerance_m: float = 0.5
     # Explicit scene lists normally fail on any absent requested slot. Combined
     # campaigns span heterogeneous authoring coverage and opt into recording
@@ -167,6 +175,15 @@ class YCBAuthoredConfig:
     # Habitat's own numbers are kept under habitat_success / habitat_spl.
     score_by_object_distance: bool = False
     object_success_distance_m: float = 1.0
+    # ...and the stop must be on the object's storey: the agent's floor height
+    # within this of the navigable floor at the object. The released rule is
+    # single-storey and horizontal distance alone cannot tell a stop beside the
+    # object from one on the floor above it -- 2 of the 11 successes in
+    # outputs/RERUN/mf5 stopped a storey away (00862 / 00873 cracker box, 2.33
+    # / 2.11 m in 3D). 1.0 m because storeys here are >= 1.8 m apart
+    # (`floor.new_level_m`) and a split-level step is under a metre. A no-op on
+    # a single storey; 0 restores the horizontal-only rule.
+    object_success_max_floor_dy_m: float = 1.0
     target_labels: Dict[str, str] = field(
         default_factory=lambda: dict(YCB_TARGET_LABELS)
     )

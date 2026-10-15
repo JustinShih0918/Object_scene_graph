@@ -572,6 +572,7 @@
   "ycb.map_in_occupancy": true,
   "ycb.map_out": "",
   "ycb.object_success_distance_m": 1.0,
+  "ycb.object_success_max_floor_dy_m": 1.0,
   "ycb.obstacle_map_in": "",
   "ycb.obstacle_map_out": "",
   "ycb.obstacle_map_overwrite": false,
@@ -595,6 +596,7 @@
   "ycb.start_on_prior_floor": false,
   "ycb.start_on_target_floor": false,
   "ycb.start_sample_attempts": 2000,
+  "ycb.start_storey_uniform": false,
   "ycb.starts_per_target": 1,
   "ycb.storey_seed_tol_m": 1.0,
   "ycb.target_labels": {

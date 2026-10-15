@@ -33,6 +33,53 @@ def test_height_does_not_count():
     assert rule.record_stop(1, np.array([0.5, 0.1, 0.0]), np.array([0.0, 2.5, 0.0])) is True
 
 
+def test_a_stop_on_another_storey_does_not_score():
+    """outputs/RERUN/mf5 00862 cracker box: 0.62 m horizontal, a storey up."""
+    rule = ObjectDistanceRule(enabled=True, max_floor_dy_m=1.0)
+    rule.target_floor_y = 0.106
+    target = np.array([-1.0, 1.0, 4.0])
+    assert rule.record_stop(141, np.array([-1.2, 3.306, 4.6]), target) is False
+    attempt = rule.attempts[-1]
+    assert attempt["on_target_floor"] is False
+    assert attempt["success_horizontal_only"] is True
+    assert abs(attempt["floor_dy_m"] - 3.2) < 1e-6
+    summary = rule.summary(np.array([-1.2, 3.306, 4.6]), target)
+    assert summary["success"] == 0 and summary["success_horizontal_only"] == 1
+
+
+def test_the_same_stop_on_the_objects_storey_scores():
+    rule = ObjectDistanceRule(enabled=True, max_floor_dy_m=1.0)
+    rule.target_floor_y = 0.106
+    # A split-level step under a metre is still the object's storey.
+    assert rule.record_stop(5, np.array([-1.2, 0.7, 4.6]), np.array([-1.0, 1.0, 4.0])) is True
+    assert rule.attempts[-1]["on_target_floor"] is True
+
+
+def test_without_a_target_floor_the_rule_stays_horizontal_and_says_so():
+    rule = ObjectDistanceRule(enabled=True, max_floor_dy_m=1.0)
+    assert rule.record_stop(1, np.array([0.5, 3.0, 0.0]), np.array([0.0, 0.0, 0.0])) is True
+    assert rule.attempts[-1]["on_target_floor"] is None
+
+
+def test_zero_tolerance_is_the_horizontal_only_rule():
+    rule = ObjectDistanceRule(enabled=True, max_floor_dy_m=0.0)
+    rule.target_floor_y = 0.0
+    assert rule.record_stop(1, np.array([0.5, 3.0, 0.0]), np.array([0.0, 0.0, 0.0])) is True
+    assert "storey" not in rule.definition()
+
+
+def test_the_shipped_default_checks_the_storey():
+    from osg.core.config import OSGConfig
+    assert OSGConfig().ycb.object_success_max_floor_dy_m == 1.0
+
+
+def test_target_floor_comes_from_the_manifest_or_its_first_view_point():
+    from osg.sim.ycb_env import _target_floor_y
+    assert _target_floor_y({"destination_floor_y": 3.16}) == 3.16
+    assert _target_floor_y({"viewpoints": [{"position": [1.0, 0.16, 2.0]}]}) == 0.16
+    assert _target_floor_y({}) is None
+
+
 def test_the_terminal_stop_at_the_same_step_is_one_attempt():
     rule = ObjectDistanceRule(enabled=True)
     target = np.array([0.0, 0.0, 0.0])
