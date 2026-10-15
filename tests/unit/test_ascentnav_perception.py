@@ -228,3 +228,46 @@ def test_the_maps_see_filtered_depth_and_the_mover_sees_metres(monkeypatch):
     f.depth[0:5, 0:5] = 0.0                           # no-hit pixels
     a.act(f)
     assert seen["min"] > 0.0, "zeros were filled before the obstacle map saw them"
+
+
+def test_groundingdino_is_asked_for_the_query_only(monkeypatch):
+    """ASCENT's non-COCO branch looks for the TARGET by name; the transcription
+    keeps target detections only (`_filter_target`). Asking GroundingDINO for
+    every non-COCO name in the 40-class vocabulary cost ~20 calls a frame."""
+    from osg.perception.detector import DFineDetector
+
+    det = DFineDetector(gdino_url="http://gdino", use_sam=False, gdino_conf=0.4)
+    det.set_vocabulary(["cracker box", "cabinet", "shelf", "chair", "desk"])
+    asked = []
+
+    def post(url, payload):
+        if url == "http://gdino":
+            asked.append(payload["caption"])
+            return {"boxes": [[0.1, 0.1, 0.5, 0.5]], "logits": [0.6],
+                    "phrases": ["cracker box"]}
+        return {"boxes": [], "logits": [], "phrases": []}
+
+    monkeypatch.setattr(det, "_post", post)
+    out = det.detect(np.zeros((16, 16, 3), np.uint8))
+    assert asked == ["cracker box ."]
+    assert [d.label for d in out] == ["cracker box"]
+
+
+def test_a_coco_query_is_d_fines_and_never_reaches_groundingdino(monkeypatch):
+    """`bowl` is a COCO class: ASCENT takes it from the COCO detector at the
+    COCO threshold (`map_controller.py:707-712`), not from GroundingDINO."""
+    from osg.perception.detector import DFineDetector
+
+    det = DFineDetector(gdino_url="http://gdino", use_sam=False, conf=0.8)
+    det.set_vocabulary(["bowl", "cabinet", "shelf"])
+    asked = []
+
+    def post(url, payload):
+        asked.append(url)
+        return {"boxes": [[0.1, 0.1, 0.5, 0.5], [0.5, 0.5, 0.9, 0.9], [0.0, 0.0, 0.2, 0.2]],
+                "logits": [0.85, 0.95, 0.5], "phrases": ["bowl", "cup", "bowl"]}
+
+    monkeypatch.setattr(det, "_post", post)
+    out = det.detect(np.zeros((16, 16, 3), np.uint8))
+    assert "http://gdino" not in asked
+    assert [(d.label, round(d.score, 2)) for d in out] == [("bowl", 0.85)]

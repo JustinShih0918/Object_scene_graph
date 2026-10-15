@@ -152,6 +152,22 @@ class YoloeDetector(Detector):
 
 # HM3D ObjectNav's six goal categories are all COCO classes, under COCO's
 # names. This is the whole reason a closed-set detector is usable here.
+# The 80 COCO classes D-FINE answers in, in its label order
+# (`vlfm/vlm/coco_classes.py`, which `model_api/dfine_out.py` reads).
+COCO_CLASSES = (
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
+    "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
+    "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
+    "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard",
+    "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard",
+    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl",
+    "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza",
+    "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet",
+    "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven",
+    "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+    "hair drier", "toothbrush",
+)
+
 COCO_TO_HM3D = {
     "chair": "chair",
     "bed": "bed",
@@ -323,6 +339,7 @@ class DFineDetector(Detector):
         self.gdino_url = str(gdino_url or "")
         self.gdino_conf = float(gdino_conf)
         self._open_vocab: List[str] = []
+        self._coco_query: Optional[str] = None
         self.n_gdino_calls = 0
         self.n_calls = 0
         self.n_errors = 0
@@ -339,12 +356,26 @@ class DFineDetector(Detector):
                    if self._normalize(v) in wanted}
         keep = {c for c in COCO_TO_HM3D if c in wanted}
         self._wanted = keep or None
-        # Whatever COCO cannot name is asked of GroundingDINO by name, which is
-        # what ASCENT does for a non-COCO query.
+        # The QUERY, if COCO cannot name it, is asked of GroundingDINO by name,
+        # which is what ASCENT does for a non-COCO query. Only the query: every
+        # caller passes it first (`navigation/agent.py`, `target_vocabulary`),
+        # and ASCENT keeps nothing but target detections (`_filter_target`).
+        # Asking for every non-COCO name in the 40-class vocabulary instead
+        # was ~20 GroundingDINO calls a frame for boxes that were thrown away:
+        # the first Benchmark v2 smoke episode ran over 30 minutes against
+        # ~10 for the same budget without the branch. No measured arm set
+        # `gdino_target_url` before this, so none is changed by it.
         nameable = {self._normalize(v) for v in COCO_TO_HM3D.values()}
-        self._open_vocab = sorted(
-            self._normalize(c) for c in classes
-            if self._normalize(c) not in nameable)
+        query = self._normalize(classes[0]) if classes else ""
+        # ASCENT's branch (`map_controller.py:696-711`): a query that IS a COCO
+        # class is D-FINE's, at the COCO threshold, whatever HM3D calls it --
+        # "bowl" and "banana" are COCO classes and were being sent to
+        # GroundingDINO because only the six ObjectNav classes were mapped.
+        self._coco_query = (
+            query if query in COCO_CLASSES and query not in COCO_TO_HM3D else None)
+        self._open_vocab = (
+            [query] if query and query not in nameable and self._coco_query is None
+            else [])
 
     def _post(self, url: str, payload: dict) -> Optional[dict]:
         import json as _json
@@ -423,11 +454,14 @@ class DFineDetector(Detector):
         for box, logit, phrase in zip(resp["boxes"], resp["logits"],
                                       resp.get("phrases", [])):
             coco = self._normalize(phrase)
-            if coco not in COCO_TO_HM3D:
+            if coco == self._coco_query:
+                label = coco
+            elif coco not in COCO_TO_HM3D:
                 continue
-            if self._wanted is not None and coco not in self._wanted:
+            elif self._wanted is not None and coco not in self._wanted:
                 continue
-            label = COCO_TO_HM3D[coco]
+            else:
+                label = COCO_TO_HM3D[coco]
             score = float(logit)
             if not self._admits(label, score):
                 continue
